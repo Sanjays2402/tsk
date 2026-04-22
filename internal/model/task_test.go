@@ -78,6 +78,46 @@ func TestNormalizeTags(t *testing.T) {
 	}
 }
 
+func TestPriorityStringAndShort(t *testing.T) {
+	cases := []struct {
+		p     Priority
+		long  string
+		short string
+	}{
+		{PriorityLow, "low", "L"},
+		{PriorityMedium, "medium", "M"},
+		{PriorityHigh, "high", "H"},
+		{PriorityUrgent, "urgent", "U"},
+		{Priority(99), "medium", "M"},
+	}
+	for _, c := range cases {
+		if c.p.String() != c.long {
+			t.Errorf("%d.String()=%q want %q", c.p, c.p.String(), c.long)
+		}
+		if c.p.Short() != c.short {
+			t.Errorf("%d.Short()=%q want %q", c.p, c.p.Short(), c.short)
+		}
+	}
+}
+
+func TestHasTagAndDue(t *testing.T) {
+	tm := time.Now()
+	task := Task{Tags: []string{"home", "work"}, Due: &tm}
+	if !task.HasTag("HOME") {
+		t.Error("HasTag failed")
+	}
+	if task.HasTag("nope") {
+		t.Error("HasTag false positive")
+	}
+	if !task.HasDue() {
+		t.Error("HasDue")
+	}
+	empty := Task{}
+	if empty.HasDue() {
+		t.Error("empty HasDue")
+	}
+}
+
 func TestSortBy(t *testing.T) {
 	a := time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC)
 	b := time.Date(2026, 4, 22, 0, 0, 0, 0, time.UTC)
