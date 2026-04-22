@@ -69,7 +69,98 @@ func Parse(input string, now time.Time, loc *time.Location) (time.Time, error) {
 	if t, ok := parseRelative(s, anchor); ok {
 		return t, nil
 	}
+	if t, ok := parseMonthDay(s, anchor); ok {
+		return t, nil
+	}
 	return time.Time{}, &ParseError{Input: raw}
+}
+
+// monthWords maps every month name and short form to time.Month. Both the
+// three-letter abbreviation (jan..dec) and the full name are accepted, plus
+// the common "sept" variant.
+var monthWords = map[string]time.Month{
+	"jan": time.January, "january": time.January,
+	"feb": time.February, "february": time.February,
+	"mar": time.March, "march": time.March,
+	"apr": time.April, "april": time.April,
+	"may": time.May,
+	"jun": time.June, "june": time.June,
+	"jul": time.July, "july": time.July,
+	"aug": time.August, "august": time.August,
+	"sep": time.September, "sept": time.September, "september": time.September,
+	"oct": time.October, "october": time.October,
+	"nov": time.November, "november": time.November,
+	"dec": time.December, "december": time.December,
+}
+
+// monthDayRE matches "jul 4", "july 4", "jul 4 2027". The year is optional.
+var monthDayRE = regexp.MustCompile(`^([a-z]+)\s+(\d{1,2})(?:\s+(\d{4}))?$`)
+
+// dayMonthRE matches "4 jul" / "4 jul 2027" (day-first style).
+var dayMonthRE = regexp.MustCompile(`^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$`)
+
+// parseMonthDay handles "jul", "jul 4", "july 4", "jul 4 2027", "4 jul".
+// A bare month name (no day) resolves to the first of that month in the next
+// occurrence — current year if the month is still ahead or is the current
+// month, otherwise next year.
+func parseMonthDay(s string, anchor time.Time) (time.Time, bool) {
+	loc := anchor.Location()
+
+	if month, ok := monthWords[s]; ok {
+		return bareMonth(anchor, month, loc), true
+	}
+	if m := monthDayRE.FindStringSubmatch(s); m != nil {
+		month, ok := monthWords[m[1]]
+		if !ok {
+			return time.Time{}, false
+		}
+		return resolveMonthDay(anchor, month, atoi(m[2]), m[3], loc)
+	}
+	if m := dayMonthRE.FindStringSubmatch(s); m != nil {
+		month, ok := monthWords[m[2]]
+		if !ok {
+			return time.Time{}, false
+		}
+		return resolveMonthDay(anchor, month, atoi(m[1]), m[3], loc)
+	}
+	return time.Time{}, false
+}
+
+// bareMonth resolves a month-only input to the 1st of that month, rolling to
+// next year if the month is already behind us.
+func bareMonth(anchor time.Time, month time.Month, loc *time.Location) time.Time {
+	year := anchor.Year()
+	candidate := time.Date(year, month, 1, 0, 0, 0, 0, loc)
+	if candidate.Before(anchor) {
+		year++
+	}
+	return time.Date(year, month, 1, 0, 0, 0, 0, loc)
+}
+
+// resolveMonthDay builds the target date. If an explicit year string is given,
+// it is used verbatim. Otherwise we pick the next occurrence: current year if
+// the date is today-or-later, else next year. Invalid day numbers (e.g. Feb 30)
+// are rejected rather than silently normalised, so the user notices the typo.
+func resolveMonthDay(anchor time.Time, month time.Month, day int, yearStr string, loc *time.Location) (time.Time, bool) {
+	if day < 1 || day > 31 {
+		return time.Time{}, false
+	}
+	var year int
+	if yearStr != "" {
+		year = atoi(yearStr)
+	} else {
+		year = anchor.Year()
+		candidate := time.Date(year, month, day, 0, 0, 0, 0, loc)
+		if candidate.Before(anchor) {
+			year++
+		}
+	}
+	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	// time.Date normalises overflow (Feb 30 -> Mar 2). Reject that so typos surface.
+	if t.Month() != month || t.Day() != day {
+		return time.Time{}, false
+	}
+	return t, true
 }
 
 // relativeRE matches "3d", "in 3d", "2w", "in 1m", etc. The unit is one of

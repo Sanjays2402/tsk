@@ -167,6 +167,57 @@ func TestParseDSTBoundaries(t *testing.T) {
 	}
 }
 
+func TestParseMonthDay(t *testing.T) {
+	now, loc := fixedNow(t)
+	cases := []struct {
+		in   string
+		want time.Time
+	}{
+		// Anchor: 2026-04-21 (Tue). "jul" is still ahead -> 2026-07-01.
+		{"jul", ymd(t, 2026, time.July, 1)},
+		{"july", ymd(t, 2026, time.July, 1)},
+		// "mar" is behind -> roll to next year.
+		{"mar", ymd(t, 2027, time.March, 1)},
+		// Current month: "apr" today (21st), bare month = Apr 1, which is past,
+		// so it must roll to next year.
+		{"apr", ymd(t, 2027, time.April, 1)},
+		{"jul 4", ymd(t, 2026, time.July, 4)},
+		{"july 4", ymd(t, 2026, time.July, 4)},
+		{"jul 4 2027", ymd(t, 2027, time.July, 4)},
+		{"4 jul", ymd(t, 2026, time.July, 4)},
+		{"4 jul 2027", ymd(t, 2027, time.July, 4)},
+		{"JUL   4", ymd(t, 2026, time.July, 4)},
+		// Day behind current date in current month rolls to next year.
+		{"apr 10", ymd(t, 2027, time.April, 10)},
+		// Day today or ahead in current month stays in current year.
+		{"apr 21", ymd(t, 2026, time.April, 21)},
+		{"apr 30", ymd(t, 2026, time.April, 30)},
+		{"sept 1", ymd(t, 2026, time.September, 1)},
+		{"dec 25", ymd(t, 2026, time.December, 25)},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := Parse(tc.in, now, loc)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("got %s want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseMonthDayInvalid(t *testing.T) {
+	now, loc := fixedNow(t)
+	for _, in := range []string{"feb 30", "jul 32", "jul 0", "jul 4 99", "foo 4"} {
+		if _, err := Parse(in, now, loc); err == nil {
+			t.Fatalf("%q should fail", in)
+		}
+	}
+}
+
 func TestParseEmptyIsSentinel(t *testing.T) {
 	now, loc := fixedNow(t)
 	_, err := Parse("  ", now, loc)
