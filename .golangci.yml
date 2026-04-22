@@ -1,32 +1,29 @@
-version: "2"
-
 run:
   timeout: 5m
 
 linters:
-  default: none
+  disable-all: true
   enable:
     - errcheck
+    - gofmt
     - govet
     - ineffassign
     - staticcheck
     - unused
+    - gosimple
     - misspell
     - revive
     - gocyclo
-  settings:
-    gocyclo:
-      min-complexity: 15
-    revive:
-      rules:
-        - name: exported
-          disabled: false
-        - name: package-comments
-          disabled: true
 
-formatters:
-  enable:
-    - gofmt
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: package-comments
+        disabled: true
 
 issues:
   max-issues-per-linter: 0
