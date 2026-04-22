@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,7 +11,7 @@ import (
 )
 
 var (
-	version = "dev"
+	version = "0.2.0"
 	commit  = "none"
 	date    = "unknown"
 )
@@ -20,6 +21,10 @@ func main() {
 	commands.SetTUI(tui.Run)
 	if err := commands.NewRoot().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		var ec commands.ExitCoder
+		if errors.As(err, &ec) {
+			os.Exit(ec.ExitCode())
+		}
 		os.Exit(1)
 	}
 }

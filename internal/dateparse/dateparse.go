@@ -1,0 +1,339 @@
+// Package dateparse parses natural-language due-date inputs into a concrete
+// time.Time, anchored to a caller-supplied "now" and location. It exists so
+// users can type "tomorrow", "fri", "in 3d", or "jul 4" instead of a strict
+// YYYY-MM-DD. The canonical YYYY-MM-DD format still round-trips unchanged.
+//
+// The package intentionally uses only the standard library (time + regexp).
+package dateparse
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// ErrEmpty is returned when the input is empty or only whitespace.
+var ErrEmpty = fmt.Errorf("empty date input")
+
+// ParseError wraps a parse failure with the original input for nicer messages.
+type ParseError struct {
+	Input string
+}
+
+// Error implements error. The message mirrors the CLI guidance: it nudges the
+// user toward one of the accepted shapes.
+func (e *ParseError) Error() string {
+	return fmt.Sprintf("can't parse %q as a date. try: tomorrow, fri, in 3d, 2026-05-01", e.Input)
+}
+
+// isoLayout is the canonical YYYY-MM-DD format that has always been accepted.
+const isoLayout = "2006-01-02"
+
+// Parse resolves input into a time.Time at start-of-day in loc, relative to
+// now. It accepts:
+//
+//   - YYYY-MM-DD (backward compatible)
+//   - today, tomorrow, tmrw, yesterday
+//   - weekday names (mon..sun, monday..sunday) — next occurrence; same-day
+//     weekday resolves to seven days out
+//   - relative offsets: "in 3d", "3d", "in 2w", "2w", "in 1m", "1m"
+//   - month-day: "jul 4", "july 4", "jul 4 2027", "4 jul", "jul"
+//   - aliases: "next week", "next month", "next mon", "eow", "eom"
+//
+// All results are normalised to 00:00:00 in loc on the target calendar day.
+// Parse returns a *ParseError when the input matches no supported shape.
+func Parse(input string, now time.Time, loc *time.Location) (time.Time, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+	raw := strings.TrimSpace(input)
+	if raw == "" {
+		return time.Time{}, ErrEmpty
+	}
+	s := strings.ToLower(raw)
+	// Collapse internal whitespace runs so "jul   4" parses the same as "jul 4".
+	s = collapseSpaces(s)
+
+	anchor := startOfDay(now, loc)
+
+	if t, ok := parseISO(raw, loc); ok {
+		return t, nil
+	}
+	if t, ok := parseKeyword(s, anchor); ok {
+		return t, nil
+	}
+	if t, ok := parseWeekday(s, anchor); ok {
+		return t, nil
+	}
+	if t, ok := parseRelative(s, anchor); ok {
+		return t, nil
+	}
+	if t, ok := parseMonthDay(s, anchor); ok {
+		return t, nil
+	}
+	if t, ok := parseAlias(s, anchor); ok {
+		return t, nil
+	}
+	return time.Time{}, &ParseError{Input: raw}
+}
+
+// parseAlias handles compound phrases: "next week", "next month", "next mon",
+// "eow", and "eom".
+//
+// Conventions:
+//   - "next week" = the Monday of the following ISO-style week (Mon-anchored).
+//   - "next month" = first day of the following calendar month.
+//   - "next <weekday>" = the weekday occurring in the following week (always
+//     at least 7 days out), which matches how most humans read it.
+//   - "eow" = the upcoming Sunday (Sun is the end-of-week in the common US read).
+//   - "eom" = the last day of the current calendar month.
+func parseAlias(s string, anchor time.Time) (time.Time, bool) {
+	loc := anchor.Location()
+	switch s {
+	case "eow", "end of week":
+		return nextWeekday(anchor, time.Sunday, true), true
+	case "eom", "end of month":
+		return endOfMonth(anchor, loc), true
+	case "next week":
+		// Advance to the Monday of the next week.
+		mon := nextWeekday(anchor, time.Monday, false)
+		return mon, true
+	case "next month":
+		y, m, _ := anchor.Date()
+		return time.Date(y, m+1, 1, 0, 0, 0, 0, loc), true
+	}
+	if strings.HasPrefix(s, "next ") {
+		rest := strings.TrimSpace(strings.TrimPrefix(s, "next "))
+		if wd, ok := weekdayFromWord(rest); ok {
+			// "next mon": force at least a full week forward.
+			first := nextWeekday(anchor, wd, false)
+			if first.Sub(anchor) < 7*24*time.Hour {
+				first = addDays(first, 7)
+			}
+			return first, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// endOfMonth returns the last day of anchor's calendar month at 00:00 in loc.
+func endOfMonth(anchor time.Time, loc *time.Location) time.Time {
+	y, m, _ := anchor.Date()
+	// First of next month, minus one day.
+	firstNext := time.Date(y, m+1, 1, 0, 0, 0, 0, loc)
+	return addDays(firstNext, -1)
+}
+
+// monthWords maps every month name and short form to time.Month. Both the
+// three-letter abbreviation (jan..dec) and the full name are accepted, plus
+// the common "sept" variant.
+var monthWords = map[string]time.Month{
+	"jan": time.January, "january": time.January,
+	"feb": time.February, "february": time.February,
+	"mar": time.March, "march": time.March,
+	"apr": time.April, "april": time.April,
+	"may": time.May,
+	"jun": time.June, "june": time.June,
+	"jul": time.July, "july": time.July,
+	"aug": time.August, "august": time.August,
+	"sep": time.September, "sept": time.September, "september": time.September,
+	"oct": time.October, "october": time.October,
+	"nov": time.November, "november": time.November,
+	"dec": time.December, "december": time.December,
+}
+
+// monthDayRE matches "jul 4", "july 4", "jul 4 2027". The year is optional.
+var monthDayRE = regexp.MustCompile(`^([a-z]+)\s+(\d{1,2})(?:\s+(\d{4}))?$`)
+
+// dayMonthRE matches "4 jul" / "4 jul 2027" (day-first style).
+var dayMonthRE = regexp.MustCompile(`^(\d{1,2})\s+([a-z]+)(?:\s+(\d{4}))?$`)
+
+// parseMonthDay handles "jul", "jul 4", "july 4", "jul 4 2027", "4 jul".
+// A bare month name (no day) resolves to the first of that month in the next
+// occurrence — current year if the month is still ahead or is the current
+// month, otherwise next year.
+func parseMonthDay(s string, anchor time.Time) (time.Time, bool) {
+	loc := anchor.Location()
+
+	if month, ok := monthWords[s]; ok {
+		return bareMonth(anchor, month, loc), true
+	}
+	if m := monthDayRE.FindStringSubmatch(s); m != nil {
+		month, ok := monthWords[m[1]]
+		if !ok {
+			return time.Time{}, false
+		}
+		return resolveMonthDay(anchor, month, atoi(m[2]), m[3], loc)
+	}
+	if m := dayMonthRE.FindStringSubmatch(s); m != nil {
+		month, ok := monthWords[m[2]]
+		if !ok {
+			return time.Time{}, false
+		}
+		return resolveMonthDay(anchor, month, atoi(m[1]), m[3], loc)
+	}
+	return time.Time{}, false
+}
+
+// bareMonth resolves a month-only input to the 1st of that month, rolling to
+// next year if the month is already behind us.
+func bareMonth(anchor time.Time, month time.Month, loc *time.Location) time.Time {
+	year := anchor.Year()
+	candidate := time.Date(year, month, 1, 0, 0, 0, 0, loc)
+	if candidate.Before(anchor) {
+		year++
+	}
+	return time.Date(year, month, 1, 0, 0, 0, 0, loc)
+}
+
+// resolveMonthDay builds the target date. If an explicit year string is given,
+// it is used verbatim. Otherwise we pick the next occurrence: current year if
+// the date is today-or-later, else next year. Invalid day numbers (e.g. Feb 30)
+// are rejected rather than silently normalised, so the user notices the typo.
+func resolveMonthDay(anchor time.Time, month time.Month, day int, yearStr string, loc *time.Location) (time.Time, bool) {
+	if day < 1 || day > 31 {
+		return time.Time{}, false
+	}
+	var year int
+	if yearStr != "" {
+		year = atoi(yearStr)
+	} else {
+		year = anchor.Year()
+		candidate := time.Date(year, month, day, 0, 0, 0, 0, loc)
+		if candidate.Before(anchor) {
+			year++
+		}
+	}
+	t := time.Date(year, month, day, 0, 0, 0, 0, loc)
+	// time.Date normalises overflow (Feb 30 -> Mar 2). Reject that so typos surface.
+	if t.Month() != month || t.Day() != day {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// relativeRE matches "3d", "in 3d", "2w", "in 1m", etc. The unit is one of
+// d (days), w (weeks), m (months), y (years). The optional "in " prefix is
+// accepted purely for readability.
+var relativeRE = regexp.MustCompile(`^(?:in\s+)?(\d+)\s*(d|w|m|y|day|days|week|weeks|month|months|year|years)$`)
+
+// parseRelative matches "in 3d", "3d", "2w", "1m", "1y" and their long forms.
+// Months and years use calendar math (time.AddDate) so "1m" on Jan 31 lands on
+// the Go-standard normalised date (Mar 3 or similar), not a drifting 30-day
+// approximation.
+func parseRelative(s string, anchor time.Time) (time.Time, bool) {
+	m := relativeRE.FindStringSubmatch(s)
+	if m == nil {
+		return time.Time{}, false
+	}
+	n := atoi(m[1])
+	switch m[2] {
+	case "d", "day", "days":
+		return addDays(anchor, n), true
+	case "w", "week", "weeks":
+		return addDays(anchor, n*7), true
+	case "m", "month", "months":
+		return anchor.AddDate(0, n, 0), true
+	case "y", "year", "years":
+		return anchor.AddDate(n, 0, 0), true
+	}
+	return time.Time{}, false
+}
+
+// atoi is a tiny, allocation-free decimal parser. The regex guarantees digits.
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
+}
+
+// parseISO accepts the canonical YYYY-MM-DD format. Preserving this path keeps
+// existing scripts and stored tasks working.
+func parseISO(raw string, loc *time.Location) (time.Time, bool) {
+	t, err := time.ParseInLocation(isoLayout, raw, loc)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+// parseKeyword handles the fixed-form words: today / tomorrow / tmrw / yesterday.
+func parseKeyword(s string, anchor time.Time) (time.Time, bool) {
+	switch s {
+	case "today", "now":
+		return anchor, true
+	case "tomorrow", "tmrw", "tmr":
+		return addDays(anchor, 1), true
+	case "yesterday":
+		return addDays(anchor, -1), true
+	}
+	return time.Time{}, false
+}
+
+// parseWeekday resolves "mon", "monday", etc. to the next occurrence. If today
+// is the named weekday, the result is seven days out — matching user intent of
+// "the next Monday", not "today".
+func parseWeekday(s string, anchor time.Time) (time.Time, bool) {
+	wd, ok := weekdayFromWord(s)
+	if !ok {
+		return time.Time{}, false
+	}
+	return nextWeekday(anchor, wd, false), true
+}
+
+// weekdayFromWord maps both short (mon) and long (monday) weekday forms.
+func weekdayFromWord(s string) (time.Weekday, bool) {
+	switch s {
+	case "mon", "monday":
+		return time.Monday, true
+	case "tue", "tues", "tuesday":
+		return time.Tuesday, true
+	case "wed", "weds", "wednesday":
+		return time.Wednesday, true
+	case "thu", "thur", "thurs", "thursday":
+		return time.Thursday, true
+	case "fri", "friday":
+		return time.Friday, true
+	case "sat", "saturday":
+		return time.Saturday, true
+	case "sun", "sunday":
+		return time.Sunday, true
+	}
+	return 0, false
+}
+
+// nextWeekday returns the next date whose weekday matches want. If includeToday
+// is false and today already matches, it rolls forward seven days.
+func nextWeekday(anchor time.Time, want time.Weekday, includeToday bool) time.Time {
+	delta := int(want) - int(anchor.Weekday())
+	if delta < 0 {
+		delta += 7
+	}
+	if delta == 0 && !includeToday {
+		delta = 7
+	}
+	return addDays(anchor, delta)
+}
+
+// addDays advances by n calendar days without drifting across DST transitions,
+// by using time.Date so the hour stays pinned to 00:00 local.
+func addDays(t time.Time, n int) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d+n, 0, 0, 0, 0, t.Location())
+}
+
+// startOfDay truncates t to 00:00:00 in loc.
+func startOfDay(t time.Time, loc *time.Location) time.Time {
+	in := t.In(loc)
+	y, m, d := in.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, loc)
+}
+
+var wsRun = regexp.MustCompile(`\s+`)
+
+func collapseSpaces(s string) string {
+	return strings.TrimSpace(wsRun.ReplaceAllString(s, " "))
+}

@@ -4,13 +4,33 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Sanjays2402/tsk/internal/dateparse"
 	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/Sanjays2402/tsk/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+var (
+	tuiLocOnce sync.Once
+	tuiLocVal  *time.Location
+)
+
+// pacificLoc returns the cached America/Los_Angeles location, falling back to
+// time.Local when zoneinfo data is unavailable.
+func pacificLoc() *time.Location {
+	tuiLocOnce.Do(func() {
+		if l, err := time.LoadLocation("America/Los_Angeles"); err == nil {
+			tuiLocVal = l
+			return
+		}
+		tuiLocVal = time.Local
+	})
+	return tuiLocVal
+}
 
 // App is the bubbletea Model for tsk's interactive UI.
 type App struct {
@@ -121,6 +141,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.cyclePriority()
 	case matches(m, a.keys.TagEdit):
 		a.startEditTags()
+	case matches(m, a.keys.DueEdit):
+		a.startEditDue()
 	case matches(m, a.keys.Search):
 		a.form = formSearch
 		a.inputCur = inputBox{label: "search", value: a.filter, focus: true}
@@ -152,6 +174,21 @@ func (a *App) startEditTags() {
 	a.form = formTags
 	t := a.store.ByID(id)
 	a.inputCur = inputBox{label: "tags (comma-sep)", value: strings.Join(t.Tags, ","), focus: true}
+}
+
+func (a *App) startEditDue() {
+	id := a.currentID()
+	if id == 0 {
+		return
+	}
+	a.editing = id
+	a.form = formDue
+	t := a.store.ByID(id)
+	cur := ""
+	if t != nil && t.Due != nil {
+		cur = t.Due.Format(model.DateLayout)
+	}
+	a.inputCur = inputBox{label: "due (YYYY-MM-DD, tomorrow, fri, in 3d, eow; empty to clear)", value: cur, focus: true}
 }
 
 func (a *App) handleFormKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -193,6 +230,24 @@ func (a *App) commitForm() (tea.Model, tea.Cmd) {
 			t.NormalizeTags()
 			_ = a.store.Save()
 			a.status = "tags updated"
+		}
+	case formDue:
+		if t := a.store.ByID(a.editing); t != nil {
+			if val == "" {
+				t.Due = nil
+				_ = a.store.Save()
+				a.status = "due cleared"
+			} else {
+				loc := pacificLoc()
+				due, err := dateparse.Parse(val, time.Now().In(loc), loc)
+				if err != nil {
+					a.status = err.Error()
+				} else {
+					t.Due = &due
+					_ = a.store.Save()
+					a.status = "due updated"
+				}
+			}
 		}
 	case formSearch:
 		a.filter = val
@@ -398,7 +453,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · ␣ toggle · a add · e edit · d delete · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -434,6 +489,7 @@ func (a *App) helpView() string {
 		{"a", "add task"},
 		{"e", "edit title"},
 		{"t", "edit tags"},
+		{"D", "set due date"},
 		{"p", "cycle priority"},
 		{"d", "delete (confirm)"},
 		{"/", "fuzzy filter"},
