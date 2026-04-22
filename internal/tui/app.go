@@ -232,23 +232,7 @@ func (a *App) commitForm() (tea.Model, tea.Cmd) {
 			a.status = "tags updated"
 		}
 	case formDue:
-		if t := a.store.ByID(a.editing); t != nil {
-			if val == "" {
-				t.Due = nil
-				_ = a.store.Save()
-				a.status = "due cleared"
-			} else {
-				loc := pacificLoc()
-				due, err := dateparse.Parse(val, time.Now().In(loc), loc)
-				if err != nil {
-					a.status = err.Error()
-				} else {
-					t.Due = &due
-					_ = a.store.Save()
-					a.status = "due updated"
-				}
-			}
-		}
+		a.commitDue(val)
 	case formSearch:
 		a.filter = val
 	case formSort:
@@ -259,6 +243,30 @@ func (a *App) commitForm() (tea.Model, tea.Cmd) {
 	a.form = formNone
 	a.editing = 0
 	return a, nil
+}
+
+// commitDue applies the parsed due-date form value to the current task, or
+// clears the due date if the input is empty.
+func (a *App) commitDue(val string) {
+	t := a.store.ByID(a.editing)
+	if t == nil {
+		return
+	}
+	if val == "" {
+		t.Due = nil
+		_ = a.store.Save()
+		a.status = "due cleared"
+		return
+	}
+	loc := pacificLoc()
+	due, err := dateparse.Parse(val, time.Now().In(loc), loc)
+	if err != nil {
+		a.status = err.Error()
+		return
+	}
+	t.Due = &due
+	_ = a.store.Save()
+	a.status = "due updated"
 }
 
 func (a *App) handleConfirmKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
