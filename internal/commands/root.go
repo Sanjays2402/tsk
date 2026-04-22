@@ -64,7 +64,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print build version",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "tsk %s (commit %s, built %s)\n", buildVersion, buildCommit, buildDate)
+			pf(cmd.OutOrStdout(), "tsk %s (commit %s, built %s)\n", buildVersion, buildCommit, buildDate)
 			return nil
 		},
 	}

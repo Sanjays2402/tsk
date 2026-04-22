@@ -4,17 +4,17 @@ import "github.com/charmbracelet/bubbles/key"
 
 // Keymap holds the bindable keys the TUI listens for.
 type Keymap struct {
-	Up, Down           key.Binding
-	Toggle             key.Binding
-	Add, Edit, Delete  key.Binding
-	PriorityCycle      key.Binding
-	TagEdit            key.Binding
-	Search             key.Binding
-	SortMenu           key.Binding
-	Help               key.Binding
-	Quit               key.Binding
-	Confirm, Cancel    key.Binding
-	Section            key.Binding
+	Up, Down          key.Binding
+	Toggle            key.Binding
+	Add, Edit, Delete key.Binding
+	PriorityCycle     key.Binding
+	TagEdit           key.Binding
+	Search            key.Binding
+	SortMenu          key.Binding
+	Help              key.Binding
+	Quit              key.Binding
+	Confirm, Cancel   key.Binding
+	Section           key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.

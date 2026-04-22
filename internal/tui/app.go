@@ -23,8 +23,6 @@ type App struct {
 	selection int
 	collapsed map[sectionKind]bool
 	form      formMode
-	input     interface{ View() string }
-	inputRaw  string
 	inputCur  inputBox
 	editing   int
 	confirm   int
@@ -78,19 +76,32 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Form input mode
 	if a.form != formNone {
 		return a.handleFormKey(m)
 	}
 	if a.confirm != 0 {
 		return a.handleConfirmKey(m)
 	}
+	if handled, model, cmd := a.handleGlobalKey(m); handled {
+		return model, cmd
+	}
+	a.handleNavKey(m)
+	return a, nil
+}
+
+func (a *App) handleGlobalKey(m tea.KeyMsg) (bool, tea.Model, tea.Cmd) {
 	switch {
 	case matches(m, a.keys.Quit):
-		return a, tea.Quit
+		return true, a, tea.Quit
 	case matches(m, a.keys.Help):
 		a.showHelp = !a.showHelp
-		return a, nil
+		return true, a, nil
+	}
+	return false, a, nil
+}
+
+func (a *App) handleNavKey(m tea.KeyMsg) {
+	switch {
 	case matches(m, a.keys.Down):
 		a.moveSelection(1)
 	case matches(m, a.keys.Up):
@@ -101,12 +112,7 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.form = formAdd
 		a.inputCur = inputBox{label: "new task", focus: true}
 	case matches(m, a.keys.Edit):
-		if id := a.currentID(); id != 0 {
-			a.editing = id
-			a.form = formEditTitle
-			t := a.store.ByID(id)
-			a.inputCur = inputBox{label: "edit title", value: t.Title, focus: true}
-		}
+		a.startEditTitle()
 	case matches(m, a.keys.Delete):
 		if id := a.currentID(); id != 0 {
 			a.confirm = id
@@ -114,12 +120,7 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case matches(m, a.keys.PriorityCycle):
 		a.cyclePriority()
 	case matches(m, a.keys.TagEdit):
-		if id := a.currentID(); id != 0 {
-			a.editing = id
-			a.form = formTags
-			t := a.store.ByID(id)
-			a.inputCur = inputBox{label: "tags (comma-sep)", value: strings.Join(t.Tags, ","), focus: true}
-		}
+		a.startEditTags()
 	case matches(m, a.keys.Search):
 		a.form = formSearch
 		a.inputCur = inputBox{label: "search", value: a.filter, focus: true}
@@ -129,7 +130,28 @@ func (a *App) handleKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case matches(m, a.keys.Section):
 		a.toggleSection()
 	}
-	return a, nil
+}
+
+func (a *App) startEditTitle() {
+	id := a.currentID()
+	if id == 0 {
+		return
+	}
+	a.editing = id
+	a.form = formEditTitle
+	t := a.store.ByID(id)
+	a.inputCur = inputBox{label: "edit title", value: t.Title, focus: true}
+}
+
+func (a *App) startEditTags() {
+	id := a.currentID()
+	if id == 0 {
+		return
+	}
+	a.editing = id
+	a.form = formTags
+	t := a.store.ByID(id)
+	a.inputCur = inputBox{label: "tags (comma-sep)", value: strings.Join(t.Tags, ","), focus: true}
 }
 
 func (a *App) handleFormKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -424,7 +446,7 @@ func (a *App) helpView() string {
 	b.WriteString(a.pal.Section.Render("Help"))
 	b.WriteByte('\n')
 	for _, r := range rows {
-		b.WriteString(fmt.Sprintf("  %-5s  %s\n", r[0], r[1]))
+		fmt.Fprintf(&b, "  %-5s  %s\n", r[0], r[1])
 	}
 	return b.String()
 }

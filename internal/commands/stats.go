@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"fmt"
 	"sort"
 	"time"
 
@@ -20,17 +19,17 @@ func newStatsCmd() *cobra.Command {
 			}
 			summary := computeStats(s.Tasks, time.Now())
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "total:       %d\n", summary.Total)
-			fmt.Fprintf(out, "done:        %d\n", summary.Done)
-			fmt.Fprintf(out, "undone:      %d\n", summary.Undone)
-			fmt.Fprintf(out, "overdue:     %d\n", summary.Overdue)
-			fmt.Fprintf(out, "today:       %d\n", summary.Today)
-			fmt.Fprintf(out, "completion:  %.0f%%\n", summary.Completion)
-			fmt.Fprintf(out, "streak:      %d day(s)\n", summary.Streak)
+			pf(out, "total:       %d\n", summary.Total)
+			pf(out, "done:        %d\n", summary.Done)
+			pf(out, "undone:      %d\n", summary.Undone)
+			pf(out, "overdue:     %d\n", summary.Overdue)
+			pf(out, "today:       %d\n", summary.Today)
+			pf(out, "completion:  %.0f%%\n", summary.Completion)
+			pf(out, "streak:      %d day(s)\n", summary.Streak)
 			if len(summary.TopTags) > 0 {
-				fmt.Fprintln(out, "top tags:")
+				pln(out, "top tags:")
 				for _, tc := range summary.TopTags {
-					fmt.Fprintf(out, "  %-16s %d\n", tc.Tag, tc.Count)
+					pf(out, "  %-16s %d\n", tc.Tag, tc.Count)
 				}
 			}
 			return nil

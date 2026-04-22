@@ -28,7 +28,7 @@ func newInitCmd() *cobra.Command {
 			if err := store.AtomicWriteFile(path, []byte("# tsk\n\n"), 0o644); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "created %s\n", path)
+			pf(cmd.OutOrStdout(), "created %s\n", path)
 			return nil
 		},
 	}

@@ -35,14 +35,14 @@ func newNextCmd() *cobra.Command {
 				}
 			}
 			if best == nil {
-				fmt.Fprintln(cmd.OutOrStdout(), "all caught up")
+				pln(cmd.OutOrStdout(), "all caught up")
 				return nil
 			}
 			line := fmt.Sprintf("#%d [%s] %s", best.ID, best.Priority, best.Title)
 			if best.Due != nil {
 				line += "  due:" + best.Due.Format(model.DateLayout)
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), line)
+			pln(cmd.OutOrStdout(), line)
 			return nil
 		},
 	}

@@ -48,38 +48,17 @@ func newLsCmd() *cobra.Command {
 }
 
 func applyFilters(in []model.Task, f lsFilters) ([]model.Task, error) {
-	var prio model.Priority
-	prioFilter := false
-	if f.priorityStr != "" {
-		p, err := model.ParsePriority(f.priorityStr)
-		if err != nil {
-			return nil, err
-		}
-		prio = p
-		prioFilter = true
+	prio, prioFilter, err := resolvePriorityFilter(f.priorityStr)
+	if err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	out := make([]model.Task, 0, len(in))
 	for _, t := range in {
-		switch {
-		case f.all:
-			// everything
-		case f.done:
-			if !t.Done {
-				continue
-			}
-		default:
-			if t.Done {
-				continue
-			}
-		}
-		if f.today && !t.IsDueToday(now) {
+		if !passStateFilter(t, f) {
 			continue
 		}
-		if f.overdue && !t.IsOverdue(now) {
-			continue
-		}
-		if f.upcoming && !t.IsUpcoming(now) {
+		if !passDueFilter(t, f, now) {
 			continue
 		}
 		if f.tag != "" && !t.HasTag(f.tag) {
@@ -93,6 +72,41 @@ func applyFilters(in []model.Task, f lsFilters) ([]model.Task, error) {
 	return out, nil
 }
 
+func resolvePriorityFilter(s string) (model.Priority, bool, error) {
+	if s == "" {
+		return model.PriorityMedium, false, nil
+	}
+	p, err := model.ParsePriority(s)
+	if err != nil {
+		return 0, false, err
+	}
+	return p, true, nil
+}
+
+func passStateFilter(t model.Task, f lsFilters) bool {
+	switch {
+	case f.all:
+		return true
+	case f.done:
+		return t.Done
+	default:
+		return !t.Done
+	}
+}
+
+func passDueFilter(t model.Task, f lsFilters, now time.Time) bool {
+	if f.today && !t.IsDueToday(now) {
+		return false
+	}
+	if f.overdue && !t.IsOverdue(now) {
+		return false
+	}
+	if f.upcoming && !t.IsUpcoming(now) {
+		return false
+	}
+	return true
+}
+
 func printTasks(w io.Writer, tasks []model.Task, asJSON bool) error {
 	if asJSON {
 		enc := json.NewEncoder(w)
@@ -100,7 +114,7 @@ func printTasks(w io.Writer, tasks []model.Task, asJSON bool) error {
 		return enc.Encode(tasks)
 	}
 	if len(tasks) == 0 {
-		fmt.Fprintln(w, "no tasks")
+		pln(w, "no tasks")
 		return nil
 	}
 	for _, t := range tasks {
@@ -115,7 +129,7 @@ func printTasks(w io.Writer, tasks []model.Task, asJSON bool) error {
 		if len(t.Tags) > 0 {
 			line += "  #" + strings.Join(t.Tags, " #")
 		}
-		fmt.Fprintln(w, line)
+		pln(w, line)
 	}
 	return nil
 }

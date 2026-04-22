@@ -47,7 +47,7 @@ func runToggle(done bool) func(*cobra.Command, []string) error {
 		if !done {
 			verb = "undone"
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "marked %d task(s) %s\n", len(args), verb)
+		pf(cmd.OutOrStdout(), "marked %d task(s) %s\n", len(args), verb)
 		return nil
 	}
 }
@@ -75,7 +75,7 @@ func newRmCmd() *cobra.Command {
 			if err := s.Save(); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "removed %d task(s)\n", len(args))
+			pf(cmd.OutOrStdout(), "removed %d task(s)\n", len(args))
 			return nil
 		},
 	}

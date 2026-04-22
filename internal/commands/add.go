@@ -51,7 +51,7 @@ func newAddCmd() *cobra.Command {
 			if err := s.Save(); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "added #%d: %s\n", id, title)
+			pf(cmd.OutOrStdout(), "added #%d: %s\n", id, title)
 			return nil
 		},
 	}
