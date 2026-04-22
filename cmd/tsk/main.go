@@ -1,7 +1,12 @@
 // Package main is the tsk command-line entry point.
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/Sanjays2402/tsk/internal/commands"
+)
 
 var (
 	version = "dev"
@@ -10,5 +15,9 @@ var (
 )
 
 func main() {
-	fmt.Printf("tsk %s (%s) %s\n", version, commit, date)
+	commands.SetVersion(version, commit, date)
+	if err := commands.NewRoot().Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
