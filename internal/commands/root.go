@@ -43,6 +43,7 @@ func NewRoot() *cobra.Command {
 		newNextCmd(),
 		newStatsCmd(),
 		newExportCmd(),
+		newCompletionCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
