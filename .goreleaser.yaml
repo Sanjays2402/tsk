@@ -1,0 +1,75 @@
+version: 2
+
+project_name: tsk
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: tsk
+    main: ./cmd/tsk
+    binary: tsk
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: tsk
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# Homebrew tap skeleton (not activated; flip `skip_upload` to false once the tap repo exists).
+brews:
+  - name: tsk
+    skip_upload: true
+    repository:
+      owner: Sanjays2402
+      name: homebrew-tap
+    homepage: "https://github.com/Sanjays2402/tsk"
+    description: "Fast, keyboard-first markdown todo manager"
+    license: MIT
+    commit_author:
+      name: Sanjay Santhanam
+      email: 51058514+Sanjays2402@users.noreply.github.com
+    install: |
+      bin.install "tsk"
+    test: |
+      system "#{bin}/tsk", "version"
+
+release:
+  draft: false
+  prerelease: auto
