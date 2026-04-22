@@ -66,7 +66,47 @@ func Parse(input string, now time.Time, loc *time.Location) (time.Time, error) {
 	if t, ok := parseWeekday(s, anchor); ok {
 		return t, nil
 	}
+	if t, ok := parseRelative(s, anchor); ok {
+		return t, nil
+	}
 	return time.Time{}, &ParseError{Input: raw}
+}
+
+// relativeRE matches "3d", "in 3d", "2w", "in 1m", etc. The unit is one of
+// d (days), w (weeks), m (months), y (years). The optional "in " prefix is
+// accepted purely for readability.
+var relativeRE = regexp.MustCompile(`^(?:in\s+)?(\d+)\s*(d|w|m|y|day|days|week|weeks|month|months|year|years)$`)
+
+// parseRelative matches "in 3d", "3d", "2w", "1m", "1y" and their long forms.
+// Months and years use calendar math (time.AddDate) so "1m" on Jan 31 lands on
+// the Go-standard normalised date (Mar 3 or similar), not a drifting 30-day
+// approximation.
+func parseRelative(s string, anchor time.Time) (time.Time, bool) {
+	m := relativeRE.FindStringSubmatch(s)
+	if m == nil {
+		return time.Time{}, false
+	}
+	n := atoi(m[1])
+	switch m[2] {
+	case "d", "day", "days":
+		return addDays(anchor, n), true
+	case "w", "week", "weeks":
+		return addDays(anchor, n*7), true
+	case "m", "month", "months":
+		return anchor.AddDate(0, n, 0), true
+	case "y", "year", "years":
+		return anchor.AddDate(n, 0, 0), true
+	}
+	return time.Time{}, false
+}
+
+// atoi is a tiny, allocation-free decimal parser. The regex guarantees digits.
+func atoi(s string) int {
+	n := 0
+	for _, c := range s {
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // parseISO accepts the canonical YYYY-MM-DD format. Preserving this path keeps

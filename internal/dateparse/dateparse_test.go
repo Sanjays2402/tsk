@@ -93,6 +93,80 @@ func TestParseErrorMessage(t *testing.T) {
 	}
 }
 
+func TestParseRelative(t *testing.T) {
+	now, loc := fixedNow(t)
+	cases := []struct {
+		in   string
+		want time.Time
+	}{
+		{"3d", ymd(t, 2026, time.April, 24)},
+		{"in 3d", ymd(t, 2026, time.April, 24)},
+		{"IN 3 days", ymd(t, 2026, time.April, 24)},
+		{"2w", ymd(t, 2026, time.May, 5)},
+		{"in 2 weeks", ymd(t, 2026, time.May, 5)},
+		{"1m", ymd(t, 2026, time.May, 21)},
+		{"in 1 month", ymd(t, 2026, time.May, 21)},
+		{"1y", ymd(t, 2027, time.April, 21)},
+		{"0d", ymd(t, 2026, time.April, 21)},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := Parse(tc.in, now, loc)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("got %s want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseRelativeRejectsJunk(t *testing.T) {
+	now, loc := fixedNow(t)
+	for _, in := range []string{"3", "3x", "d3", "in 3", "-3d", "3 hours", "in"} {
+		if _, err := Parse(in, now, loc); err == nil {
+			t.Fatalf("%q should fail", in)
+		}
+	}
+}
+
+func TestParseDSTBoundaries(t *testing.T) {
+	_, loc := fixedNow(t)
+	// Spring forward: 2026-03-08. Parsing "tomorrow" from 2026-03-07 noon
+	// should land on 2026-03-08 midnight local.
+	spring := time.Date(2026, time.March, 7, 12, 0, 0, 0, loc)
+	got, err := Parse("tomorrow", spring, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, time.March, 8, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("spring got %s want %s", got, want)
+	}
+	// Fall back: 2026-11-01. "in 1d" from Oct 31 noon lands on Nov 1 midnight.
+	fall := time.Date(2026, time.October, 31, 12, 0, 0, 0, loc)
+	got, err = Parse("in 1d", fall, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = time.Date(2026, time.November, 1, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("fall got %s want %s", got, want)
+	}
+	// Seven days straddling fall-back: "1w" from Oct 28 should be Nov 4.
+	sep := time.Date(2026, time.October, 28, 12, 0, 0, 0, loc)
+	got, err = Parse("1w", sep, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = time.Date(2026, time.November, 4, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("1w got %s want %s", got, want)
+	}
+}
+
 func TestParseEmptyIsSentinel(t *testing.T) {
 	now, loc := fixedNow(t)
 	_, err := Parse("  ", now, loc)
