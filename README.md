@@ -38,7 +38,7 @@ brew install Sanjays2402/tap/tsk   # coming soon
 
 ```
 tsk init                                   # create .tsk.md in cwd
-tsk add "Buy milk" -p high -d 2026-04-25 -t errand -t home
+tsk add "Buy milk" -p high -d tomorrow -t errand -t home
 tsk ls                                     # undone by default
 tsk ls --all --tag errand
 tsk done 1
@@ -47,6 +47,18 @@ tsk stats
 tsk export --json > tasks.json
 tsk                                        # launch the TUI
 ```
+
+### Dates
+
+`-d/--due` (and the TUI `D` key) accept natural language as well as `YYYY-MM-DD`:
+
+- `today`, `tomorrow`, `tmrw`, `yesterday`
+- Weekdays: `mon`..`sun` / `monday`..`sunday` — next occurrence
+- Relative: `3d`, `2w`, `1m`, `in 3d`, `in 2 weeks`
+- Months: `jul 4`, `july 4 2027`, `4 jul`, `dec`
+- Aliases: `next week`, `next month`, `next mon`, `eow`, `eom`
+
+All dates resolve in `America/Los_Angeles`. Unknown inputs exit with code 2 and a hint.
 
 ### TUI keys
 
@@ -57,6 +69,7 @@ tsk                                        # launch the TUI
 | `a`       | Add task (inline form)      |
 | `e`       | Edit title                  |
 | `t`       | Edit tags                   |
+| `D`       | Set due date (natural lang) |
 | `p`       | Cycle priority              |
 | `d`       | Delete (`y` to confirm)     |
 | `/`       | Fuzzy filter                |
