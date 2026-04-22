@@ -218,6 +218,65 @@ func TestParseMonthDayInvalid(t *testing.T) {
 	}
 }
 
+func TestParseAliases(t *testing.T) {
+	now, loc := fixedNow(t)
+	cases := []struct {
+		in   string
+		want time.Time
+	}{
+		// Anchor: Tue 2026-04-21. EOW = upcoming Sunday = Apr 26.
+		{"eow", ymd(t, 2026, time.April, 26)},
+		{"end of week", ymd(t, 2026, time.April, 26)},
+		// EOM = last day of April 2026.
+		{"eom", ymd(t, 2026, time.April, 30)},
+		{"end of month", ymd(t, 2026, time.April, 30)},
+		// next week = following Monday = Apr 27.
+		{"next week", ymd(t, 2026, time.April, 27)},
+		// next month = May 1.
+		{"next month", ymd(t, 2026, time.May, 1)},
+		// next mon: Monday of the following week = May 4.
+		{"next mon", ymd(t, 2026, time.May, 4)},
+		{"next monday", ymd(t, 2026, time.May, 4)},
+		// next fri: Fri of following week = May 1.
+		{"next fri", ymd(t, 2026, time.May, 1)},
+		// next tue: already 7 days out, stays 7 days out = Apr 28.
+		{"next tue", ymd(t, 2026, time.April, 28)},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := Parse(tc.in, now, loc)
+			if err != nil {
+				t.Fatalf("err: %v", err)
+			}
+			if !got.Equal(tc.want) {
+				t.Fatalf("got %s want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseEOMAcrossYear(t *testing.T) {
+	_, loc := fixedNow(t)
+	dec := time.Date(2026, time.December, 15, 10, 0, 0, 0, loc)
+	got, err := Parse("eom", dec, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, time.December, 31, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("got %s want %s", got, want)
+	}
+	got, err = Parse("next month", dec, loc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = time.Date(2027, time.January, 1, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}
+
 func TestParseEmptyIsSentinel(t *testing.T) {
 	now, loc := fixedNow(t)
 	_, err := Parse("  ", now, loc)

@@ -72,7 +72,57 @@ func Parse(input string, now time.Time, loc *time.Location) (time.Time, error) {
 	if t, ok := parseMonthDay(s, anchor); ok {
 		return t, nil
 	}
+	if t, ok := parseAlias(s, anchor); ok {
+		return t, nil
+	}
 	return time.Time{}, &ParseError{Input: raw}
+}
+
+// parseAlias handles compound phrases: "next week", "next month", "next mon",
+// "eow", and "eom".
+//
+// Conventions:
+//   - "next week" = the Monday of the following ISO-style week (Mon-anchored).
+//   - "next month" = first day of the following calendar month.
+//   - "next <weekday>" = the weekday occurring in the following week (always
+//     at least 7 days out), which matches how most humans read it.
+//   - "eow" = the upcoming Sunday (Sun is the end-of-week in the common US read).
+//   - "eom" = the last day of the current calendar month.
+func parseAlias(s string, anchor time.Time) (time.Time, bool) {
+	loc := anchor.Location()
+	switch s {
+	case "eow", "end of week":
+		return nextWeekday(anchor, time.Sunday, true), true
+	case "eom", "end of month":
+		return endOfMonth(anchor, loc), true
+	case "next week":
+		// Advance to the Monday of the next week.
+		mon := nextWeekday(anchor, time.Monday, false)
+		return mon, true
+	case "next month":
+		y, m, _ := anchor.Date()
+		return time.Date(y, m+1, 1, 0, 0, 0, 0, loc), true
+	}
+	if strings.HasPrefix(s, "next ") {
+		rest := strings.TrimSpace(strings.TrimPrefix(s, "next "))
+		if wd, ok := weekdayFromWord(rest); ok {
+			// "next mon": force at least a full week forward.
+			first := nextWeekday(anchor, wd, false)
+			if first.Sub(anchor) < 7*24*time.Hour {
+				first = addDays(first, 7)
+			}
+			return first, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// endOfMonth returns the last day of anchor's calendar month at 00:00 in loc.
+func endOfMonth(anchor time.Time, loc *time.Location) time.Time {
+	y, m, _ := anchor.Date()
+	// First of next month, minus one day.
+	firstNext := time.Date(y, m+1, 1, 0, 0, 0, 0, loc)
+	return addDays(firstNext, -1)
 }
 
 // monthWords maps every month name and short form to time.Month. Both the
