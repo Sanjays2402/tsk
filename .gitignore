@@ -1,0 +1,11 @@
+/dist/
+/bin/
+*.test
+*.out
+coverage.*
+.DS_Store
+.idea/
+.vscode/
+.tsk.md
+tsk
+!cmd/tsk/
