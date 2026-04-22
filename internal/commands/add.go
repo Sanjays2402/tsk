@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Sanjays2402/tsk/internal/dateparse"
 	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/spf13/cobra"
 )
@@ -37,9 +38,10 @@ func newAddCmd() *cobra.Command {
 				Created:  time.Now(),
 			}
 			if dueStr != "" {
-				t, err := time.ParseInLocation(model.DateLayout, dueStr, time.Local)
+				loc := PacificLoc()
+				t, err := dateparse.Parse(dueStr, time.Now().In(loc), loc)
 				if err != nil {
-					return fmt.Errorf("invalid --due (want YYYY-MM-DD): %w", err)
+					return usageErrorf("%s", err.Error())
 				}
 				task.Due = &t
 			}
@@ -56,7 +58,7 @@ func newAddCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&priorityStr, "priority", "p", "medium", "priority (low|medium|high|urgent)")
-	cmd.Flags().StringVarP(&dueStr, "due", "d", "", "due date (YYYY-MM-DD)")
+	cmd.Flags().StringVarP(&dueStr, "due", "d", "", "due date (YYYY-MM-DD, or tomorrow/fri/in 3d/jul 4/eow/...)")
 	cmd.Flags().StringArrayVarP(&tags, "tag", "t", nil, "tag (repeatable)")
 	cmd.Flags().StringVarP(&notes, "notes", "n", "", "freeform notes")
 	return cmd
