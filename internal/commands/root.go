@@ -41,6 +41,8 @@ func NewRoot() *cobra.Command {
 		newRmCmd(),
 		newEditCmd(),
 		newNextCmd(),
+		newStatsCmd(),
+		newExportCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
