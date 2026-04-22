@@ -9,6 +9,7 @@ type Keymap struct {
 	Add, Edit, Delete key.Binding
 	PriorityCycle     key.Binding
 	TagEdit           key.Binding
+	DueEdit           key.Binding
 	Search            key.Binding
 	SortMenu          key.Binding
 	Help              key.Binding
@@ -28,6 +29,7 @@ func DefaultKeymap() Keymap {
 		Delete:        key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "delete")),
 		PriorityCycle: key.NewBinding(key.WithKeys("p"), key.WithHelp("p", "priority")),
 		TagEdit:       key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "tags")),
+		DueEdit:       key.NewBinding(key.WithKeys("D"), key.WithHelp("D", "due")),
 		Search:        key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
 		SortMenu:      key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
 		Help:          key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
