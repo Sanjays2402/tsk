@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Sanjays2402/tsk/internal/commands"
+	"github.com/Sanjays2402/tsk/internal/tui"
 )
 
 var (
@@ -16,6 +17,7 @@ var (
 
 func main() {
 	commands.SetVersion(version, commit, date)
+	commands.SetTUI(tui.Run)
 	if err := commands.NewRoot().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
