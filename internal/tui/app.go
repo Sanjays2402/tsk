@@ -215,20 +215,20 @@ func (a *App) commitForm() (tea.Model, tea.Cmd) {
 	case formAdd:
 		if val != "" {
 			a.store.Add(model.Task{Title: val, Priority: model.PriorityMedium, Created: time.Now()})
-			_ = a.store.Save()
+			a.saveWithStatus()
 			a.status = "added"
 		}
 	case formEditTitle:
 		if t := a.store.ByID(a.editing); t != nil && val != "" {
 			t.Title = val
-			_ = a.store.Save()
+			a.saveWithStatus()
 			a.status = "edited"
 		}
 	case formTags:
 		if t := a.store.ByID(a.editing); t != nil {
 			t.Tags = splitTags(val)
 			t.NormalizeTags()
-			_ = a.store.Save()
+			a.saveWithStatus()
 			a.status = "tags updated"
 		}
 	case formDue:
@@ -254,7 +254,7 @@ func (a *App) commitDue(val string) {
 	}
 	if val == "" {
 		t.Due = nil
-		_ = a.store.Save()
+		a.saveWithStatus()
 		a.status = "due cleared"
 		return
 	}
@@ -265,15 +265,27 @@ func (a *App) commitDue(val string) {
 		return
 	}
 	t.Due = &due
-	_ = a.store.Save()
+	a.saveWithStatus()
 	a.status = "due updated"
+}
+
+// saveWithStatus persists the store and surfaces any error to the footer
+// instead of swallowing it. On success it deliberately leaves a.status
+// unchanged so callers that set a success message (e.g. "deleted") win.
+func (a *App) saveWithStatus() {
+	if err := a.store.Save(); err != nil {
+		a.status = "save failed: " + err.Error()
+	}
 }
 
 func (a *App) handleConfirmKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if matches(m, a.keys.Confirm) {
 		a.store.Remove(a.confirm)
-		_ = a.store.Save()
-		a.status = "deleted"
+		if err := a.store.Save(); err != nil {
+			a.status = "save failed: " + err.Error()
+		} else {
+			a.status = "deleted"
+		}
 	}
 	a.confirm = 0
 	return a, nil
@@ -351,7 +363,7 @@ func (a *App) toggleCurrent() {
 	}
 	t := a.store.ByID(id)
 	a.store.SetDone(id, !t.Done)
-	_ = a.store.Save()
+	a.saveWithStatus()
 }
 
 func (a *App) cyclePriority() {
@@ -361,7 +373,7 @@ func (a *App) cyclePriority() {
 	}
 	t := a.store.ByID(id)
 	t.Priority = model.Priority((int(t.Priority) + 1) % 4)
-	_ = a.store.Save()
+	a.saveWithStatus()
 }
 
 func (a *App) toggleSection() {
