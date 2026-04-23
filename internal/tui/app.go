@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -19,10 +20,25 @@ var (
 	tuiLocVal  *time.Location
 )
 
-// pacificLoc returns the cached America/Los_Angeles location, falling back to
-// time.Local when zoneinfo data is unavailable.
+// pacificLoc returns the cached location tsk uses for natural-language
+// date parsing. The name is kept for continuity; actual resolution follows
+// the same priority order as commands.ResolveTZ ($TSK_TZ, $TZ, time.Local,
+// America/Los_Angeles).
 func pacificLoc() *time.Location {
 	tuiLocOnce.Do(func() {
+		for _, candidate := range []string{os.Getenv("TSK_TZ"), os.Getenv("TZ")} {
+			if candidate == "" {
+				continue
+			}
+			if l, err := time.LoadLocation(candidate); err == nil {
+				tuiLocVal = l
+				return
+			}
+		}
+		if time.Local != time.UTC {
+			tuiLocVal = time.Local
+			return
+		}
 		if l, err := time.LoadLocation("America/Los_Angeles"); err == nil {
 			tuiLocVal = l
 			return

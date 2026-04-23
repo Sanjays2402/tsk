@@ -45,6 +45,7 @@ tsk done 1
 tsk next                                   # highest-priority undone
 tsk stats
 tsk export --json > tasks.json
+tsk export --format markdown    # shareable markdown
 tsk                                        # launch the TUI
 ```
 
@@ -58,7 +59,13 @@ tsk                                        # launch the TUI
 - Months: `jul 4`, `july 4 2027`, `4 jul`, `dec`
 - Aliases: `next week`, `next month`, `next mon`, `eow`, `eom`
 
-All dates resolve in `America/Los_Angeles`. Unknown inputs exit with code 2 and a hint.
+All dates resolve in the time zone returned by `$TSK_TZ`, then `$TZ`, then the
+system local zone, with `America/Los_Angeles` as a last-resort fallback on
+stripped containers. Unknown inputs exit with code 2 and a hint.
+
+```
+TSK_TZ=America/New_York tsk add "Call mom" -d tomorrow
+```
 
 ### TUI keys
 

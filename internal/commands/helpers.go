@@ -38,11 +38,37 @@ var (
 	locVal  *time.Location
 )
 
-// PacificLoc returns the cached America/Los_Angeles location, falling back to
-// time.Local if the zoneinfo database is unavailable (rare but possible on
-// stripped containers).
-func PacificLoc() *time.Location {
+// ResolveTZ returns the time.Location tsk should interpret natural-language
+// dates in. It resolves in priority order:
+//
+//  1. $TSK_TZ, if set to a valid IANA zone name (e.g. "America/New_York")
+//  2. $TZ, if set to a valid IANA zone (standard *nix convention)
+//  3. time.Local (the system default)
+//  4. America/Los_Angeles, as a last-resort fallback if time.Local resolves
+//     to UTC on a container with no zoneinfo (which would silently make
+//     "tomorrow" mean "UTC tomorrow").
+//
+// The result is cached — first call wins, later env changes are ignored
+// within the same process. Tests that need to override should call
+// ResetTZForTest.
+func ResolveTZ() *time.Location {
 	locOnce.Do(func() {
+		for _, candidate := range []string{os.Getenv("TSK_TZ"), os.Getenv("TZ")} {
+			if candidate == "" {
+				continue
+			}
+			if l, err := time.LoadLocation(candidate); err == nil {
+				locVal = l
+				return
+			}
+		}
+		// Prefer system local over a blind LA default; only fall back to LA
+		// when time.Local is UTC (typical on stripped containers without
+		// /etc/localtime) to avoid the "tomorrow = UTC tomorrow" footgun.
+		if time.Local != time.UTC {
+			locVal = time.Local
+			return
+		}
 		if l, err := time.LoadLocation("America/Los_Angeles"); err == nil {
 			locVal = l
 			return
@@ -50,6 +76,19 @@ func PacificLoc() *time.Location {
 		locVal = time.Local
 	})
 	return locVal
+}
+
+// ResetTZForTest clears the cached location so tests can re-resolve under a
+// different $TSK_TZ. Must not be called from production code paths.
+func ResetTZForTest() {
+	locOnce = sync.Once{}
+	locVal = nil
+}
+
+// PacificLoc is retained for backward compatibility with existing callers.
+// New code should prefer ResolveTZ.
+func PacificLoc() *time.Location {
+	return ResolveTZ()
 }
 
 // pf is a tolerant Fprintf: errors writing to user-facing output are ignored.
