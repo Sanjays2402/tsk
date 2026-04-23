@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,13 +113,13 @@ func (s *Store) SetDone(id int, done bool) bool {
 }
 
 func (s *Store) nextID() int {
-	max := 0
+	maxID := 0
 	for _, t := range s.Tasks {
-		if t.ID > max {
-			max = t.ID
+		if t.ID > maxID {
+			maxID = t.ID
 		}
 	}
-	return max + 1
+	return maxID + 1
 }
 
 func (s *Store) assignIDs() {
@@ -224,7 +225,7 @@ func applyMeta(t *model.Task, meta string) {
 		key, val := match[1], match[2]
 		switch strings.ToLower(key) {
 		case "id":
-			if n, err := parseInt(val); err == nil {
+			if n, err := strconv.Atoi(val); err == nil {
 				t.ID = n
 			}
 		case "prio", "priority":
@@ -250,12 +251,6 @@ func applyMeta(t *model.Task, meta string) {
 			}
 		}
 	}
-}
-
-func parseInt(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscanf(s, "%d", &n)
-	return n, err
 }
 
 func (s *Store) render() []byte {
