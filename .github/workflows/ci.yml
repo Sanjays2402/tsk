@@ -19,6 +19,11 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: true
+      - name: Verify go.mod/go.sum
+        run: |
+          go mod verify
+          go mod download
+          go mod tidy -diff
       - run: go vet ./...
       - run: go test -race -cover ./...
 
