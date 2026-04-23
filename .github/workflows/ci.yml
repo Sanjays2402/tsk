@@ -19,11 +19,15 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
           cache: true
-      - name: Verify go.mod/go.sum
+      - name: Verify go.sum integrity
         run: |
           go mod verify
           go mod download
-          go mod tidy -diff
+      # go mod tidy -diff is flaky on Windows due to go.sum line-ending
+      # handling; run it only on Linux where diff semantics are stable.
+      - name: Check go.mod/go.sum are tidy
+        if: matrix.os == 'ubuntu-latest'
+        run: go mod tidy -diff
       - run: go vet ./...
       - run: go test -race -cover ./...
 
@@ -35,6 +39,8 @@ jobs:
         with:
           go-version: "1.24.x"
           cache: true
-      - uses: golangci/golangci-lint-action@v6
+      # v8+ of the action pulls the v2 golangci-lint binary that our
+      # .golangci.yml targets. v6 defaulted to 1.64 which is v1-only.
+      - uses: golangci/golangci-lint-action@v8
         with:
-          version: latest
+          version: v2.1.6
