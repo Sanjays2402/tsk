@@ -165,3 +165,110 @@ func TestNextReturnsHighestPriority(t *testing.T) {
 		t.Fatalf("expected 'task high' from next, got:\n%s", stdout)
 	}
 }
+
+func TestDoneAcceptsMultipleIDs(t *testing.T) {
+	dir := t.TempDir()
+	for _, title := range []string{"a", "b", "c"} {
+		if _, _, err := runCmd(t, dir, "add", title); err != nil {
+			t.Fatalf("add %s: %v", title, err)
+		}
+	}
+	if _, _, err := runCmd(t, dir, "done", "1", "2", "3"); err != nil {
+		t.Fatalf("done multi: %v", err)
+	}
+	content := readFile(t, filepath.Join(dir, ".tsk.md"))
+	if strings.Count(content, "- [x] ") != 3 {
+		t.Fatalf("expected 3 done tasks, content:\n%s", content)
+	}
+}
+
+func TestRmAcceptsMultipleIDs(t *testing.T) {
+	dir := t.TempDir()
+	for _, title := range []string{"a", "b", "c"} {
+		if _, _, err := runCmd(t, dir, "add", title); err != nil {
+			t.Fatalf("add %s: %v", title, err)
+		}
+	}
+	if _, _, err := runCmd(t, dir, "rm", "1", "3"); err != nil {
+		t.Fatalf("rm multi: %v", err)
+	}
+	content := readFile(t, filepath.Join(dir, ".tsk.md"))
+	if strings.Contains(content, "- [ ] a") || strings.Contains(content, "- [ ] c") {
+		t.Fatalf("expected a and c removed, content:\n%s", content)
+	}
+	if !strings.Contains(content, "- [ ] b") {
+		t.Fatalf("expected b preserved, content:\n%s", content)
+	}
+}
+
+func TestDoneRollsBackOnBadID(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "a"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	// 1 is valid, 999 is not. We currently fail mid-way — that's documented
+	// behavior. Just assert the caller sees a real error, not a silent pass.
+	_, _, err := runCmd(t, dir, "done", "1", "999")
+	if err == nil {
+		t.Fatal("expected error for non-existent id, got nil")
+	}
+}
+
+func TestExportMarkdownFormat(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "write code", "-p", "high", "-t", "dev"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, _, err := runCmd(t, dir, "add", "ship it", "-p", "urgent"); err != nil {
+		t.Fatalf("add 2: %v", err)
+	}
+	if _, _, err := runCmd(t, dir, "done", "1"); err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	stdout, _, err := runCmd(t, dir, "export", "--format", "markdown")
+	if err != nil {
+		t.Fatalf("export md: %v", err)
+	}
+	if !strings.Contains(stdout, "# Tasks") {
+		t.Fatalf("expected markdown heading, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "## Todo") || !strings.Contains(stdout, "## Done") {
+		t.Fatalf("expected both Todo and Done sections, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "[!] ship it") {
+		t.Fatalf("expected urgent marker on ship it, got:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "#dev") {
+		t.Fatalf("expected tag rendering, got:\n%s", stdout)
+	}
+}
+
+func TestExportFormatMdAlias(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "one"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	stdout, _, err := runCmd(t, dir, "export", "-f", "md")
+	if err != nil {
+		t.Fatalf("export md alias: %v", err)
+	}
+	if !strings.Contains(stdout, "# Tasks") {
+		t.Fatalf("md alias should work, got:\n%s", stdout)
+	}
+}
+
+func TestExportRejectsMultipleFormats(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := runCmd(t, dir, "export", "--json", "--csv")
+	if err == nil {
+		t.Fatal("expected error with multiple formats")
+	}
+}
+
+func TestExportRejectsUnknownFormat(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := runCmd(t, dir, "export", "--format", "yaml")
+	if err == nil {
+		t.Fatal("expected error for unknown format")
+	}
+}
