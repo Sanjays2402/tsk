@@ -12,7 +12,7 @@ Inspired by [HxX2/todocli](https://github.com/HxX2/todocli).
 - Walks up from `$PWD` to find the nearest `.tsk.md`, like a `.git` directory. Falls back to `~/.tsk/global.md`.
 - Respects `NO_COLOR`.
 - Shell completions for bash, zsh, fish, and powershell.
-- 🟠 Amber / gold palette with adaptive dark/light terminal support.
+- Amber / gold palette with adaptive dark/light terminal support.
 
 ## Install
 
@@ -31,22 +31,22 @@ Grab the archive for your OS/arch from [Releases](https://github.com/Sanjays2402
 A tap will live at `Sanjays2402/homebrew-tap` — not yet published.
 
 ```
-brew install Sanjays2402/tap/tsk   # coming soon
+brew install Sanjays2402/tap/tsk # coming soon
 ```
 
 ## Usage
 
 ```
-tsk init                                   # create .tsk.md in cwd
+tsk init # create .tsk.md in cwd
 tsk add "Buy milk" -p high -d tomorrow -t errand -t home
-tsk ls                                     # undone by default
+tsk ls # undone by default
 tsk ls --all --tag errand
 tsk done 1
-tsk next                                   # highest-priority undone
+tsk next # highest-priority undone
 tsk stats
 tsk export --json > tasks.json
-tsk export --format markdown    # shareable markdown
-tsk                                        # launch the TUI
+tsk export --format markdown # shareable markdown
+tsk # launch the TUI
 ```
 
 ### Dates
@@ -69,21 +69,21 @@ TSK_TZ=America/New_York tsk add "Call mom" -d tomorrow
 
 ### TUI keys
 
-| Key       | Action                      |
+| Key | Action |
 |-----------|-----------------------------|
-| `j` / `k` | Move selection              |
-| `␣` / `⏎` | Toggle done                 |
-| `a`       | Add task (inline form)      |
-| `e`       | Edit title                  |
-| `t`       | Edit tags                   |
-| `D`       | Set due date (natural lang) |
-| `p`       | Cycle priority              |
-| `d`       | Delete (`y` to confirm)     |
-| `/`       | Fuzzy filter                |
-| `s`       | Sort: priority / due / created / id |
-| `tab`     | Collapse current section    |
-| `?`       | Help overlay                |
-| `q`       | Quit                        |
+| `j` / `k` | Move selection |
+| `␣` / `⏎` | Toggle done |
+| `a` | Add task (inline form) |
+| `e` | Edit title |
+| `t` | Edit tags |
+| `D` | Set due date (natural lang) |
+| `p` | Cycle priority |
+| `d` | Delete (`y` to confirm) |
+| `/` | Fuzzy filter |
+| `s` | Sort: priority / due / created / id |
+| `tab` | Collapse current section |
+| `?` | Help overlay |
+| `q` | Quit |
 
 ### Storage format
 
@@ -91,7 +91,7 @@ TSK_TZ=America/New_York tsk add "Call mom" -d tomorrow
 
 ```
 - [ ] Buy milk <!-- id:1 prio:medium due:2026-04-25 tags:errand,home created:2026-04-21T19:20:00-07:00 -->
-      Notes text here, indented 6 spaces if present.
+ Notes text here, indented 6 spaces if present.
 - [x] Pay rent <!-- id:2 prio:high completed:2026-04-20T09:00:00-07:00 -->
 ```
 
