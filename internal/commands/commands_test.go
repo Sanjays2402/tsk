@@ -272,3 +272,100 @@ func TestExportRejectsUnknownFormat(t *testing.T) {
 		t.Fatal("expected error for unknown format")
 	}
 }
+
+func TestDoneSpawnsRecurringTask(t *testing.T) {
+	dir := t.TempDir()
+	// Add a daily recurring task with a known due date.
+	if _, _, err := runCmd(t, dir, "add", "morning standup",
+		"-r", "daily", "-d", "2026-05-09"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	stdout, _, err := runCmd(t, dir, "done", "1")
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if !strings.Contains(stdout, "→ recurring: created #2 due:2026-05-10") {
+		t.Fatalf("expected recurrence spawn line in stdout, got:\n%s", stdout)
+	}
+	content := readFile(t, filepath.Join(dir, ".tsk.md"))
+	// Original is done.
+	if !strings.Contains(content, "- [x] morning standup") {
+		t.Fatalf("expected #1 marked done, got:\n%s", content)
+	}
+	// New task #2 is open, has recur:daily and due 2026-05-10.
+	if !strings.Contains(content, "- [ ] morning standup") {
+		t.Fatalf("expected new open instance, got:\n%s", content)
+	}
+	if !strings.Contains(content, "due:2026-05-10") {
+		t.Fatalf("expected next due 2026-05-10, got:\n%s", content)
+	}
+	if strings.Count(content, "recur:daily") != 2 {
+		t.Fatalf("expected recur:daily on both instances, got:\n%s", content)
+	}
+}
+
+func TestDoneNonRecurringDoesNotSpawn(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "one-off", "-d", "2026-05-09"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	stdout, _, err := runCmd(t, dir, "done", "1")
+	if err != nil {
+		t.Fatalf("done: %v", err)
+	}
+	if strings.Contains(stdout, "recurring:") {
+		t.Fatalf("unexpected recurrence line in stdout:\n%s", stdout)
+	}
+	content := readFile(t, filepath.Join(dir, ".tsk.md"))
+	if strings.Count(content, "one-off") != 1 {
+		t.Fatalf("expected only one task, got:\n%s", content)
+	}
+}
+
+func TestSetRecurAddsAndClears(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "weekly chore"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if _, _, err := runCmd(t, dir, "set-recur", "1", "weekly"); err != nil {
+		t.Fatalf("set-recur: %v", err)
+	}
+	content := readFile(t, filepath.Join(dir, ".tsk.md"))
+	if !strings.Contains(content, "recur:weekly") {
+		t.Fatalf("expected recur:weekly, got:\n%s", content)
+	}
+	if _, _, err := runCmd(t, dir, "set-recur", "1", "none"); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	content = readFile(t, filepath.Join(dir, ".tsk.md"))
+	if strings.Contains(content, "recur:") {
+		t.Fatalf("expected recur cleared, got:\n%s", content)
+	}
+}
+
+func TestSetRecurRejectsBadRule(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := runCmd(t, dir, "add", "x"); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	_, _, err := runCmd(t, dir, "set-recur", "1", "blue-moon")
+	if err == nil {
+		t.Fatal("expected error for bad rule")
+	}
+	var ec ExitCoder
+	if !asExitCoder(err, &ec) || ec.ExitCode() != 2 {
+		t.Fatalf("expected exit code 2, got %v", err)
+	}
+}
+
+func TestAddRejectsBadRecur(t *testing.T) {
+	dir := t.TempDir()
+	_, _, err := runCmd(t, dir, "add", "x", "-r", "monsoonly")
+	if err == nil {
+		t.Fatal("expected error for bad --recur")
+	}
+	var ec ExitCoder
+	if !asExitCoder(err, &ec) || ec.ExitCode() != 2 {
+		t.Fatalf("expected exit code 2, got %v", err)
+	}
+}

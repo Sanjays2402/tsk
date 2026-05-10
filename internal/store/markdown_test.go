@@ -246,3 +246,99 @@ func TestReplaceTasks(t *testing.T) {
 		t.Errorf("replace with nil should clear, got %+v", s.Tasks)
 	}
 }
+
+func TestRecurRoundTrip(t *testing.T) {
+	input := `# Tasks
+
+- [ ] Pay rent <!-- id:1 prio:high recur:monthly due:2026-06-01 created:2026-05-09T08:00:00-07:00 -->
+- [ ] Standup <!-- id:2 prio:medium recur:weekdays -->
+- [ ] Sprint review <!-- id:3 prio:medium recur:every:2w due:2026-05-22 -->
+- [ ] No recur <!-- id:4 prio:low -->
+- [ ] Bad recur silently dropped <!-- id:5 prio:medium recur:never -->
+`
+	s := &Store{}
+	if err := s.parse([]byte(input)); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(s.Tasks) != 5 {
+		t.Fatalf("want 5 tasks, got %d", len(s.Tasks))
+	}
+	if s.Tasks[0].Recur == nil || s.Tasks[0].Recur.String() != "monthly" {
+		t.Fatalf("task 1 recur = %v", s.Tasks[0].Recur)
+	}
+	if s.Tasks[1].Recur == nil || s.Tasks[1].Recur.String() != "weekdays" {
+		t.Fatalf("task 2 recur = %v", s.Tasks[1].Recur)
+	}
+	if s.Tasks[2].Recur == nil || s.Tasks[2].Recur.String() != "every:2w" {
+		t.Fatalf("task 3 recur = %v", s.Tasks[2].Recur)
+	}
+	if s.Tasks[3].Recur != nil {
+		t.Fatalf("task 4 should have no recur, got %v", s.Tasks[3].Recur)
+	}
+	if s.Tasks[4].Recur != nil {
+		t.Fatalf("task 5 invalid recur should silently drop, got %v", s.Tasks[4].Recur)
+	}
+
+	// Render -> reparse must round-trip recur values that survived parse.
+	out := s.render()
+	rendered := string(out)
+	if !strings.Contains(rendered, "recur:monthly") {
+		t.Fatalf("rendered missing recur:monthly:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "recur:weekdays") {
+		t.Fatalf("rendered missing recur:weekdays:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "recur:every:2w") {
+		t.Fatalf("rendered missing recur:every:2w:\n%s", rendered)
+	}
+	// Render must place recur after prio: and before due:.
+	for _, line := range strings.Split(rendered, "\n") {
+		if !strings.Contains(line, "recur:") {
+			continue
+		}
+		prioIdx := strings.Index(line, "prio:")
+		recurIdx := strings.Index(line, "recur:")
+		if prioIdx < 0 || prioIdx > recurIdx {
+			t.Fatalf("recur should appear after prio in: %s", line)
+		}
+		if dueIdx := strings.Index(line, "due:"); dueIdx >= 0 && dueIdx < recurIdx {
+			t.Fatalf("recur should appear before due in: %s", line)
+		}
+	}
+
+	s2 := &Store{}
+	if err := s2.parse(out); err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	for i := 0; i < 4; i++ {
+		got, want := s.Tasks[i].Recur, s2.Tasks[i].Recur
+		switch {
+		case got == nil && want == nil:
+			continue
+		case got == nil || want == nil:
+			t.Fatalf("recur lost on roundtrip at %d: %v vs %v", i, got, want)
+		case got.String() != want.String():
+			t.Fatalf("recur mismatch on roundtrip at %d: %q vs %q", i, got.String(), want.String())
+		}
+	}
+}
+
+func TestRenderByteStableWithoutRecur(t *testing.T) {
+	// A file with no recur-bearing tasks must round-trip byte-identically
+	// (sans implicit ID assignment), ensuring the new code path doesn't
+	// mutate non-recur output.
+	input := "# Tasks\n\n- [ ] Buy milk <!-- id:1 prio:medium due:2026-04-25 tags:errand,home -->\n- [x] Pay rent <!-- id:2 prio:high -->\n"
+	s := &Store{}
+	if err := s.parse([]byte(input)); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	first := string(s.render())
+	s2 := &Store{}
+	if err := s2.parse([]byte(first)); err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	second := string(s2.render())
+	if first != second {
+		t.Fatalf("non-recur render not byte-stable across roundtrip:\n--- first ---\n%s\n--- second ---\n%s", first, second)
+	}
+}
