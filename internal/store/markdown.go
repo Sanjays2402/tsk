@@ -263,6 +263,11 @@ func applyMeta(t *model.Task, meta string) {
 				continue
 			}
 			t.Tags = append(t.Tags, strings.Split(val, ",")...)
+		case "recur":
+			if rc, err := model.ParseRecurrence(val); err == nil {
+				rc := rc
+				t.Recur = &rc
+			}
 		case "created":
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Created = tm
@@ -314,6 +319,9 @@ func renderMeta(t model.Task) string {
 		parts = append(parts, fmt.Sprintf("id:%d", t.ID))
 	}
 	parts = append(parts, fmt.Sprintf("prio:%s", t.Priority))
+	if t.Recur != nil {
+		parts = append(parts, fmt.Sprintf("recur:%s", t.Recur.String()))
+	}
 	if t.Due != nil {
 		parts = append(parts, fmt.Sprintf("due:%s", t.Due.Format(model.DateLayout)))
 	}
