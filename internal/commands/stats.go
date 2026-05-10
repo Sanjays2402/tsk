@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,6 +15,7 @@ import (
 
 func newStatsCmd() *cobra.Command {
 	var sinceRaw string
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Show task counts, completion %, streak, and top tags",
@@ -22,7 +25,8 @@ Flags:
   --since <dur>  Restrict completion-derived metrics to tasks completed within
                  the window. Accepts 7d, 30d, 90d, 2w, 1m, 1y, or any Go
                  duration string (e.g. 72h). Total / Undone / Overdue / Today
-                 always reflect the whole store.`,
+                 always reflect the whole store.
+  --json         Emit a stable JSON document instead of human output.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -43,6 +47,11 @@ Flags:
 			now := time.Now()
 			summary := computeStats(s.Tasks, now, since)
 			out := cmd.OutOrStdout()
+
+			if asJSON {
+				return emitStatsJSON(out, summary, since)
+			}
+
 			pf(out, "total:       %d\n", summary.Total)
 			pf(out, "done:        %d\n", summary.Done)
 			pf(out, "undone:      %d\n", summary.Undone)
@@ -63,12 +72,89 @@ Flags:
 		},
 	}
 	cmd.Flags().StringVar(&sinceRaw, "since", "", "only consider completions within this duration (e.g. 7d, 2w, 1m, 72h)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (machine-readable, stable schema)")
 	return cmd
+}
+
+// statsJSON is the stable contract for `tsk stats --json`.
+//
+// Schema (do not break without a major version):
+//
+//	{
+//	  "total": int, "done": int, "undone": int,
+//	  "overdue": int, "today": int,
+//	  "completion": float64, "streak": int,
+//	  "since_seconds": int,
+//	  "top_tags": [{"tag": string, "count": int}, ...],
+//	  "completion_history": [{"date": "YYYY-MM-DD", "count": int}, ...]
+//	}
+//
+// `completion_history` is always populated (length 30, oldest-first) so the
+// schema is stable regardless of whether the caller passed --graph.
+type statsJSON struct {
+	Total             int            `json:"total"`
+	Done              int            `json:"done"`
+	Undone            int            `json:"undone"`
+	Overdue           int            `json:"overdue"`
+	Today             int            `json:"today"`
+	Completion        float64        `json:"completion"`
+	Streak            int            `json:"streak"`
+	SinceSeconds      int            `json:"since_seconds"`
+	TopTags           []tagCountJSON `json:"top_tags"`
+	CompletionHistory []dayCountJSON `json:"completion_history"`
+}
+
+type tagCountJSON struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+type dayCountJSON struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+func emitStatsJSON(w io.Writer, s statsSummary, since time.Duration) error {
+	tags := make([]tagCountJSON, 0, len(s.TopTags))
+	for _, t := range s.TopTags {
+		tags = append(tags, tagCountJSON{Tag: t.Tag, Count: t.Count})
+	}
+	hist := make([]dayCountJSON, 0, len(s.CompletionHistory))
+	for _, d := range s.CompletionHistory {
+		hist = append(hist, dayCountJSON{Date: d.Date, Count: d.Count})
+	}
+	doc := statsJSON{
+		Total:             s.Total,
+		Done:              s.Done,
+		Undone:            s.Undone,
+		Overdue:           s.Overdue,
+		Today:             s.Today,
+		Completion:        s.Completion,
+		Streak:            s.Streak,
+		SinceSeconds:      int(since / time.Second),
+		TopTags:           tags,
+		CompletionHistory: hist,
+	}
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(b); err != nil {
+		return err
+	}
+	_, err = w.Write([]byte("\n"))
+	return err
 }
 
 // tagCount pairs a tag with its occurrence count for top-tag reporting.
 type tagCount struct {
 	Tag   string
+	Count int
+}
+
+// dayCount is one bucket of the 30-day completion history.
+type dayCount struct {
+	Date  string // YYYY-MM-DD, in `now`'s zone
 	Count int
 }
 
@@ -78,6 +164,10 @@ type statsSummary struct {
 	Completion                          float64
 	Streak                              int
 	TopTags                             []tagCount
+	// CompletionHistory is always the trailing 30 days, oldest-first.
+	// It is independent of `--since`: the visualization stays comparable
+	// across windows because it always reflects the same 30-day span.
+	CompletionHistory []dayCount
 }
 
 // computeStats aggregates metrics from the task list.
@@ -148,7 +238,41 @@ func computeStats(tasks []model.Task, now time.Time, since time.Duration) statsS
 		tags = tags[:5]
 	}
 	s.TopTags = tags
+
+	// 30-day history is always whole-store and independent of `--since`.
+	s.CompletionHistory = completionHistory(tasks, now, 30)
 	return s
+}
+
+// completionHistory builds an oldest-first slice of length `days` covering
+// the trailing window ending on `now`'s calendar day. Each bucket counts
+// tasks whose `Completed` timestamp falls on that date in `now`'s zone.
+func completionHistory(tasks []model.Task, now time.Time, days int) []dayCount {
+	if days <= 0 {
+		return nil
+	}
+	loc := now.Location()
+	y, m, d := now.In(loc).Date()
+	end := time.Date(y, m, d, 0, 0, 0, 0, loc)
+	out := make([]dayCount, days)
+	for i := 0; i < days; i++ {
+		d := end.AddDate(0, 0, -(days - 1 - i))
+		out[i] = dayCount{Date: d.Format(model.DateLayout), Count: 0}
+	}
+	idx := make(map[string]int, days)
+	for i, b := range out {
+		idx[b.Date] = i
+	}
+	for _, t := range tasks {
+		if !t.Done || t.Completed == nil {
+			continue
+		}
+		key := t.Completed.In(loc).Format(model.DateLayout)
+		if i, ok := idx[key]; ok {
+			out[i].Count++
+		}
+	}
+	return out
 }
 
 // currentStreak counts consecutive days ending at `now` where at least one task
