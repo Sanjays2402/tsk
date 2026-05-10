@@ -16,6 +16,7 @@ import (
 func newStatsCmd() *cobra.Command {
 	var sinceRaw string
 	var asJSON bool
+	var withGraph bool
 	cmd := &cobra.Command{
 		Use:   "stats",
 		Short: "Show task counts, completion %, streak, and top tags",
@@ -26,7 +27,11 @@ Flags:
                  the window. Accepts 7d, 30d, 90d, 2w, 1m, 1y, or any Go
                  duration string (e.g. 72h). Total / Undone / Overdue / Today
                  always reflect the whole store.
-  --json         Emit a stable JSON document instead of human output.`,
+  --graph        Append a 30-day completion sparkline below the summary.
+                 The sparkline is always the trailing 30 days, independent
+                 of --since.
+  --json         Emit a stable JSON document instead of human output.
+                 --json wins when combined with --graph.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -68,11 +73,15 @@ Flags:
 					pf(out, "  %-16s %d\n", tc.Tag, tc.Count)
 				}
 			}
+			if withGraph {
+				pf(out, "30d completions:  %s\n", renderSparkline(summary.CompletionHistory))
+			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&sinceRaw, "since", "", "only consider completions within this duration (e.g. 7d, 2w, 1m, 72h)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (machine-readable, stable schema)")
+	cmd.Flags().BoolVar(&withGraph, "graph", false, "append a 30-day completion sparkline")
 	return cmd
 }
 
@@ -301,6 +310,46 @@ func currentStreak(tasks []model.Task, now time.Time) int {
 		break
 	}
 	return streak
+}
+
+// renderSparkline maps a slice of day counts onto the 9-rune sparkline
+// alphabet, oldest-first. Empty input yields an empty string. Output is
+// plain runes only — no ANSI escapes — so it's safe under NO_COLOR.
+func renderSparkline(history []dayCount) string {
+	if len(history) == 0 {
+		return ""
+	}
+	// 9 characters: space then 8 increasing block heights.
+	const alphabet = " ▁▂▃▄▅▆▇█"
+	rs := []rune(alphabet)
+	max := 0
+	for _, b := range history {
+		if b.Count > max {
+			max = b.Count
+		}
+	}
+	var sb strings.Builder
+	sb.Grow(len(history) * 4)
+	for _, b := range history {
+		var r rune
+		switch {
+		case max == 0, b.Count == 0:
+			r = rs[0]
+		default:
+			// Map [1..max] -> [1..len(rs)-1] with ceiling division so any
+			// nonzero count gets at least the smallest visible block.
+			step := (b.Count*(len(rs)-1) + max - 1) / max
+			if step < 1 {
+				step = 1
+			}
+			if step > len(rs)-1 {
+				step = len(rs) - 1
+			}
+			r = rs[step]
+		}
+		sb.WriteRune(r)
+	}
+	return sb.String()
 }
 
 // parseDurationLocal accepts the friendly suffixes 7d, 2w, 1m, 1y in addition
