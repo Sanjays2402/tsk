@@ -106,6 +106,32 @@ stripped containers. Unknown inputs exit with code 2 and a hint.
 TSK_TZ=America/New_York tsk add "Call mom" -d tomorrow
 ```
 
+### Recurring tasks
+
+A task can carry a recurrence rule. When you mark a recurring task done, tsk
+completes the current instance and spawns a new open task with a fresh due
+date computed from the rule.
+
+Syntax (case-insensitive):
+
+- `daily`, `weekly`, `monthly`, `yearly`
+- `weekdays` (Mon-Fri only — Friday + weekdays = next Monday)
+- `every:Nd`, `every:Nw`, `every:Nm`, `every:Ny` (e.g. `every:3d`, `every:2w`)
+
+Monthly rules clamp overflow: Jan 31 + 1 month is Feb 28 (or 29 in leap years).
+Yearly rules clamp Feb 29 to Feb 28 in non-leap years.
+
+```
+tsk add "Pay rent" -d 2026-06-01 -r monthly
+tsk add "Standup" -r weekdays
+tsk set-recur 4 every:2w   # add or change a rule on an existing task
+tsk set-recur 4 none       # clear the rule
+tsk done 4                 # marks #4 done AND creates the next instance
+```
+
+The new instance is anchored on the just-completed task's `due` date (or
+today if it had none) and always advances at least one full step.
+
 ### TUI keys
 
 | Key | Action |
@@ -131,7 +157,7 @@ TSK_TZ=America/New_York tsk add "Call mom" -d tomorrow
 ```
 - [ ] Buy milk <!-- id:1 prio:medium due:2026-04-25 tags:errand,home created:2026-04-21T19:20:00-07:00 -->
  Notes text here, indented 6 spaces if present.
-- [x] Pay rent <!-- id:2 prio:high completed:2026-04-20T09:00:00-07:00 -->
+- [x] Pay rent <!-- id:2 prio:high recur:monthly completed:2026-04-20T09:00:00-07:00 -->
 ```
 
 Rules:
