@@ -245,38 +245,64 @@ func applyMeta(t *model.Task, meta string) {
 	}
 	for _, match := range metaPairRe.FindAllStringSubmatch(meta, -1) {
 		key, val := match[1], match[2]
-		switch strings.ToLower(key) {
-		case "id":
-			if n, err := strconv.Atoi(val); err == nil {
-				t.ID = n
-			}
-		case "prio", "priority":
-			if p, err := model.ParsePriority(val); err == nil {
-				t.Priority = p
-			}
-		case "due":
-			if tm, err := time.Parse(model.DateLayout, val); err == nil {
-				t.Due = &tm
-			}
-		case "tags":
-			if val == "" {
-				continue
-			}
-			t.Tags = append(t.Tags, strings.Split(val, ",")...)
-		case "recur":
-			if rc, err := model.ParseRecurrence(val); err == nil {
-				rc := rc
-				t.Recur = &rc
-			}
-		case "created":
-			if tm, err := time.Parse(TimeLayout, val); err == nil {
-				t.Created = tm
-			}
-		case "completed":
-			if tm, err := time.Parse(TimeLayout, val); err == nil {
-				t.Completed = &tm
-			}
+		if handler, ok := metaHandlers[strings.ToLower(key)]; ok {
+			handler(t, val)
 		}
+	}
+}
+
+var metaHandlers = map[string]func(*model.Task, string){
+	"id":        applyMetaID,
+	"prio":      applyMetaPrio,
+	"priority":  applyMetaPrio,
+	"due":       applyMetaDue,
+	"tags":      applyMetaTags,
+	"recur":     applyMetaRecur,
+	"created":   applyMetaCreated,
+	"completed": applyMetaCompleted,
+}
+
+func applyMetaID(t *model.Task, val string) {
+	if n, err := strconv.Atoi(val); err == nil {
+		t.ID = n
+	}
+}
+
+func applyMetaPrio(t *model.Task, val string) {
+	if p, err := model.ParsePriority(val); err == nil {
+		t.Priority = p
+	}
+}
+
+func applyMetaDue(t *model.Task, val string) {
+	if tm, err := time.Parse(model.DateLayout, val); err == nil {
+		t.Due = &tm
+	}
+}
+
+func applyMetaTags(t *model.Task, val string) {
+	if val == "" {
+		return
+	}
+	t.Tags = append(t.Tags, strings.Split(val, ",")...)
+}
+
+func applyMetaRecur(t *model.Task, val string) {
+	if rc, err := model.ParseRecurrence(val); err == nil {
+		rc := rc
+		t.Recur = &rc
+	}
+}
+
+func applyMetaCreated(t *model.Task, val string) {
+	if tm, err := time.Parse(TimeLayout, val); err == nil {
+		t.Created = tm
+	}
+}
+
+func applyMetaCompleted(t *model.Task, val string) {
+	if tm, err := time.Parse(TimeLayout, val); err == nil {
+		t.Completed = &tm
 	}
 }
 
