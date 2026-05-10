@@ -126,11 +126,11 @@ type dayCountJSON struct {
 func emitStatsJSON(w io.Writer, s statsSummary, since time.Duration) error {
 	tags := make([]tagCountJSON, 0, len(s.TopTags))
 	for _, t := range s.TopTags {
-		tags = append(tags, tagCountJSON{Tag: t.Tag, Count: t.Count})
+		tags = append(tags, tagCountJSON(t))
 	}
 	hist := make([]dayCountJSON, 0, len(s.CompletionHistory))
 	for _, d := range s.CompletionHistory {
-		hist = append(hist, dayCountJSON{Date: d.Date, Count: d.Count})
+		hist = append(hist, dayCountJSON(d))
 	}
 	doc := statsJSON{
 		Total:             s.Total,
@@ -192,47 +192,59 @@ type statsSummary struct {
 func computeStats(tasks []model.Task, now time.Time, since time.Duration) statsSummary {
 	var s statsSummary
 	s.Total = len(tasks)
+	s.Undone, s.Overdue, s.Today = wholeStoreCounts(tasks, now)
+	doneCount, tagMap, windowed := windowedDoneStats(tasks, now, since)
+	s.Done = doneCount
+	if s.Total > 0 {
+		s.Completion = float64(s.Done) / float64(s.Total) * 100
+	}
+	s.Streak = currentStreak(windowed, now)
+	s.TopTags = topTagsFromMap(tagMap, 5)
+	// 30-day history is always whole-store and independent of `--since`.
+	s.CompletionHistory = completionHistory(tasks, now, 30)
+	return s
+}
 
-	// Whole-store passes: undone, overdue, today.
+func wholeStoreCounts(tasks []model.Task, now time.Time) (undone, overdue, today int) {
 	for _, t := range tasks {
 		if !t.Done {
-			s.Undone++
+			undone++
 		}
 		if t.IsOverdue(now) {
-			s.Overdue++
+			overdue++
 		}
 		if t.IsDueToday(now) {
-			s.Today++
+			today++
 		}
 	}
+	return
+}
 
-	// Windowed pass: Done, TopTags, and the streak input.
-	cutoff := time.Time{}
+func windowedDoneStats(tasks []model.Task, now time.Time, since time.Duration) (int, map[string]int, []model.Task) {
+	var cutoff time.Time
 	if since > 0 {
 		cutoff = now.Add(-since)
 	}
 	tagMap := map[string]int{}
 	windowed := make([]model.Task, 0, len(tasks))
+	done := 0
 	for _, t := range tasks {
 		if !t.Done {
 			continue
 		}
-		if since > 0 {
-			if t.Completed == nil || t.Completed.Before(cutoff) {
-				continue
-			}
+		if since > 0 && (t.Completed == nil || t.Completed.Before(cutoff)) {
+			continue
 		}
-		s.Done++
+		done++
 		windowed = append(windowed, t)
 		for _, tag := range t.Tags {
 			tagMap[tag]++
 		}
 	}
-	if s.Total > 0 {
-		s.Completion = float64(s.Done) / float64(s.Total) * 100
-	}
-	s.Streak = currentStreak(windowed, now)
+	return done, tagMap, windowed
+}
 
+func topTagsFromMap(tagMap map[string]int, limit int) []tagCount {
 	tags := make([]tagCount, 0, len(tagMap))
 	for k, v := range tagMap {
 		tags = append(tags, tagCount{k, v})
@@ -243,14 +255,10 @@ func computeStats(tasks []model.Task, now time.Time, since time.Duration) statsS
 		}
 		return tags[i].Tag < tags[j].Tag
 	})
-	if len(tags) > 5 {
-		tags = tags[:5]
+	if limit > 0 && len(tags) > limit {
+		tags = tags[:limit]
 	}
-	s.TopTags = tags
-
-	// 30-day history is always whole-store and independent of `--since`.
-	s.CompletionHistory = completionHistory(tasks, now, 30)
-	return s
+	return tags
 }
 
 // completionHistory builds an oldest-first slice of length `days` covering
