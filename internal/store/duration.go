@@ -30,33 +30,8 @@ func ParseDuration(s string) (time.Duration, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty duration")
 	}
-	last := s[len(s)-1]
-	prefix := s[:len(s)-1]
-	switch last {
-	case 'd', 'D':
-		n, err := strconv.Atoi(prefix)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("invalid days duration %q", s)
-		}
-		return time.Duration(n) * 24 * time.Hour, nil
-	case 'w', 'W':
-		n, err := strconv.Atoi(prefix)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("invalid weeks duration %q", s)
-		}
-		return time.Duration(n) * 7 * 24 * time.Hour, nil
-	case 'm', 'M':
-		// Months only when the prefix is a bare integer. Otherwise fall
-		// through to the Go duration fallback (e.g. "90m", "1h30m").
-		if n, err := strconv.Atoi(prefix); err == nil && n >= 0 {
-			return time.Duration(n) * 30 * 24 * time.Hour, nil
-		}
-	case 'y', 'Y':
-		n, err := strconv.Atoi(prefix)
-		if err != nil || n < 0 {
-			return 0, fmt.Errorf("invalid years duration %q", s)
-		}
-		return time.Duration(n) * 365 * 24 * time.Hour, nil
+	if d, ok, err := parseUnitDuration(s); ok || err != nil {
+		return d, err
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
@@ -66,4 +41,39 @@ func ParseDuration(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid duration %q (negative)", s)
 	}
 	return d, nil
+}
+
+// parseUnitDuration handles the d/w/m/y suffix forms. Returns (d, true, nil) on
+// a clean match, (0, false, nil) when the input doesn't carry a recognized
+// suffix (caller should try the Go duration fallback), or (0, _, err) on an
+// outright invalid suffix-form input.
+func parseUnitDuration(s string) (time.Duration, bool, error) {
+	last := s[len(s)-1]
+	prefix := s[:len(s)-1]
+	switch last {
+	case 'd', 'D':
+		d, err := scaleUnit(prefix, 24*time.Hour, "days", s)
+		return d, true, err
+	case 'w', 'W':
+		d, err := scaleUnit(prefix, 7*24*time.Hour, "weeks", s)
+		return d, true, err
+	case 'y', 'Y':
+		d, err := scaleUnit(prefix, 365*24*time.Hour, "years", s)
+		return d, true, err
+	case 'm', 'M':
+		// Months only when the prefix is a bare integer. Otherwise fall
+		// through to the Go duration fallback (e.g. "90m", "1h30m").
+		if n, err := strconv.Atoi(prefix); err == nil && n >= 0 {
+			return time.Duration(n) * 30 * 24 * time.Hour, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
+func scaleUnit(prefix string, unit time.Duration, label, raw string) (time.Duration, error) {
+	n, err := strconv.Atoi(prefix)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid %s duration %q", label, raw)
+	}
+	return time.Duration(n) * unit, nil
 }
