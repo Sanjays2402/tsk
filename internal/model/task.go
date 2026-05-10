@@ -81,6 +81,7 @@ type Task struct {
 	Notes     string
 	Created   time.Time
 	Completed *time.Time
+	Recur     *Recurrence
 }
 
 // HasDue reports whether the task has a due date set.
