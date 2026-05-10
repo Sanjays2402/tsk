@@ -88,6 +88,49 @@ Writes are atomic (tempfile + fsync + rename). Both commands accept
 `--dry-run` to preview changes; `purge` additionally requires an explicit
 selection flag, refusing to delete-everything-by-accident.
 
+### Stats and history
+
+`tsk stats` summarizes totals, completion %, streak, and top tags. Three flags
+extend it for trend analysis and scripting:
+
+```
+tsk stats --since 30d   # restrict completion-derived metrics to a window
+tsk stats --graph       # append a 30-day completion sparkline
+tsk stats --json        # emit a stable JSON document
+```
+
+`--since` accepts `7d`, `30d`, `90d`, `2w`, `1m`, `1y`, or any Go duration
+string (`72h`, `1h30m`). Total / Undone / Overdue / Today always reflect the
+whole store; only Done / Completion / Streak / TopTags are restricted to the
+window.
+
+`--graph` renders a 30-day sparkline using the alphabet ` ▁▂▃▄▅▆▇█`, oldest
+on the left, today on the right. Plain runes — no ANSI — so it works under
+`NO_COLOR`. The sparkline window is always 30 days, independent of `--since`,
+so the visualization stays comparable across filters.
+
+```
+30d completions:  ▁▂▁▃▄▂▁ ... █
+```
+
+`--graph` and `--json` are independent. When both are set, JSON wins so
+callers get exactly one machine-readable document. `--json` is the stable
+contract for scripts and dashboards; the schema is:
+
+```
+{
+  "total": int, "done": int, "undone": int,
+  "overdue": int, "today": int,
+  "completion": float64, "streak": int,
+  "since_seconds": int,
+  "top_tags":           [{"tag": string, "count": int}, ...],
+  "completion_history": [{"date": "YYYY-MM-DD", "count": int}, ...]
+}
+```
+
+`completion_history` is always present and always 30 buckets oldest-first,
+regardless of whether `--graph` was passed.
+
 ### Dates
 
 `-d/--due` (and the TUI `D` key) accept natural language as well as `YYYY-MM-DD`:
