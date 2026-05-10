@@ -16,6 +16,7 @@ func newAddCmd() *cobra.Command {
 		dueStr      string
 		tags        []string
 		notes       string
+		recurStr    string
 	)
 	cmd := &cobra.Command{
 		Use:   "add <title>",
@@ -45,6 +46,13 @@ func newAddCmd() *cobra.Command {
 				}
 				task.Due = &t
 			}
+			if recurStr != "" {
+				rc, err := model.ParseRecurrence(recurStr)
+				if err != nil {
+					return usageErrorf("%s", err.Error())
+				}
+				task.Recur = &rc
+			}
 			s, err := resolveStore(cmd, false)
 			if err != nil {
 				return err
@@ -61,5 +69,6 @@ func newAddCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&dueStr, "due", "d", "", "due date (YYYY-MM-DD, or tomorrow/fri/in 3d/jul 4/eow/...)")
 	cmd.Flags().StringArrayVarP(&tags, "tag", "t", nil, "tag (repeatable)")
 	cmd.Flags().StringVarP(&notes, "notes", "n", "", "freeform notes")
+	cmd.Flags().StringVarP(&recurStr, "recur", "r", "", "recurrence rule (daily|weekly|monthly|yearly|weekdays|every:Nd|every:Nw|every:Nm|every:Ny)")
 	return cmd
 }
