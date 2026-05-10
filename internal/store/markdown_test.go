@@ -196,3 +196,53 @@ func TestRemoveAndSetDone(t *testing.T) {
 		t.Error("remove nonexistent returned true")
 	}
 }
+
+func TestPartition(t *testing.T) {
+	s := &Store{Tasks: []model.Task{
+		{ID: 1, Title: "a", Done: false},
+		{ID: 2, Title: "b", Done: true},
+		{ID: 3, Title: "c", Done: true},
+		{ID: 4, Title: "d", Done: false},
+	}}
+	kept, removed := s.Partition(func(t model.Task) bool { return t.Done })
+	if len(kept) != 2 || len(removed) != 2 {
+		t.Fatalf("got kept=%d removed=%d, want 2/2", len(kept), len(removed))
+	}
+	if kept[0].ID != 1 || kept[1].ID != 4 {
+		t.Errorf("kept order wrong: %+v", kept)
+	}
+	if removed[0].ID != 2 || removed[1].ID != 3 {
+		t.Errorf("removed order wrong: %+v", removed)
+	}
+	// pure: original slice unchanged
+	if len(s.Tasks) != 4 {
+		t.Errorf("Partition mutated s.Tasks: len=%d", len(s.Tasks))
+	}
+}
+
+func TestPartitionEmpty(t *testing.T) {
+	s := &Store{}
+	kept, removed := s.Partition(func(model.Task) bool { return true })
+	if kept != nil || removed != nil {
+		t.Errorf("expected nil slices on empty store, got %v / %v", kept, removed)
+	}
+}
+
+func TestReplaceTasks(t *testing.T) {
+	s := &Store{
+		Header: "# tasks\n",
+		Tasks:  []model.Task{{ID: 1, Title: "old"}},
+	}
+	newTasks := []model.Task{{ID: 99, Title: "new"}}
+	s.ReplaceTasks(newTasks)
+	if len(s.Tasks) != 1 || s.Tasks[0].Title != "new" {
+		t.Errorf("replace failed: %+v", s.Tasks)
+	}
+	if s.Header != "# tasks\n" {
+		t.Errorf("Header should be untouched, got %q", s.Header)
+	}
+	s.ReplaceTasks(nil)
+	if len(s.Tasks) != 0 {
+		t.Errorf("replace with nil should clear, got %+v", s.Tasks)
+	}
+}

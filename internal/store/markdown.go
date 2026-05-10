@@ -96,6 +96,28 @@ func (s *Store) Remove(id int) bool {
 	return false
 }
 
+// Partition splits Tasks into two slices according to pred. Tasks for which
+// pred returns true land in removed; the rest in kept. The split is order-
+// preserving and does not mutate s.Tasks. Both returned slices are freshly
+// allocated and safe to retain.
+func (s *Store) Partition(pred func(model.Task) bool) (kept, removed []model.Task) {
+	for _, t := range s.Tasks {
+		if pred(t) {
+			removed = append(removed, t)
+			continue
+		}
+		kept = append(kept, t)
+	}
+	return kept, removed
+}
+
+// ReplaceTasks swaps the in-memory task slice. Header is preserved. Useful
+// for archive/purge, which compute the surviving slice externally and need
+// to write it back without further mutation.
+func (s *Store) ReplaceTasks(tasks []model.Task) {
+	s.Tasks = tasks
+}
+
 // SetDone toggles the completion state of the task with the given ID.
 func (s *Store) SetDone(id int, done bool) bool {
 	t := s.ByID(id)

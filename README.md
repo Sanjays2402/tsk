@@ -46,8 +46,47 @@ tsk next # highest-priority undone
 tsk stats
 tsk export --json > tasks.json
 tsk export --format markdown # shareable markdown
+tsk archive --older-than 30d # tidy old completed tasks
 tsk # launch the TUI
 ```
+
+### Archiving and purging
+
+`tsk archive` moves completed tasks out of the active `.tsk.md` and into a
+sibling `.tsk.archive.md` in the same directory. The archive file is plain
+markdown, portable, and git-safe — commit it, share it, or grep it like
+any other tsk file.
+
+```
+tsk archive                       # default: done & completed >30 days ago
+tsk archive --older-than 7d       # tighter cutoff
+tsk archive --all                 # archive every Done task
+tsk archive --all --dry-run       # preview without writing
+```
+
+Archived tasks get fresh sequential IDs in the archive file (continuing
+from the archive's existing max), so the archive stays self-consistent.
+Active task IDs do **not** renumber after an archive run.
+
+`tsk purge` hard-deletes tasks. Unlike `archive`, it never moves anything
+elsewhere. It refuses to run without an explicit selection — you must pass
+`--done`, `--id`, or both — to keep "oops, I meant to archive" off the
+table.
+
+```
+tsk purge --done                  # all completed tasks
+tsk purge --done --older-than 90d # only old completed tasks
+tsk purge --id 17 --id 23         # specific tasks regardless of state
+tsk purge --done --dry-run        # preview
+```
+
+Duration strings accepted by `--older-than`: `Nd` days, `Nw` weeks, `Nm`
+months (~30d), `Ny` years (~365d). For sub-day windows pass a Go duration
+like `24h`.
+
+Writes are atomic (tempfile + fsync + rename). Both commands accept
+`--dry-run` to preview changes; `purge` additionally requires an explicit
+selection flag, refusing to delete-everything-by-accident.
 
 ### Dates
 
