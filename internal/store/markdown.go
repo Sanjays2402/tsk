@@ -25,7 +25,16 @@ const NotesIndent = 6
 const TimeLayout = time.RFC3339
 
 var (
-	taskLineRe = regexp.MustCompile(`^- \[( |x|X)\] (.*?)(?:\s*<!--\s*(.*?)\s*-->)?\s*$`)
+	// taskLineRe matches a markdown task line. It is intentionally lenient on
+	// inputs (humans edit .tsk.md by hand) but tsk's own writes always emit
+	// the canonical form: zero leading whitespace, "-" marker, single space
+	// inside brackets, single space after brackets.
+	//
+	// Accepts:
+	//   - up to 3 leading spaces OR a single tab (CommonMark list rule)
+	//   - "-", "*", or "+" as the bullet marker (CommonMark)
+	//   - " ", "x", or "X" inside the checkbox brackets
+	taskLineRe = regexp.MustCompile(`^(?:[ ]{0,3}|\t)[-*+] \[( |x|X)\] (.*?)(?:\s*<!--\s*(.*?)\s*-->)?\s*$`)
 	metaPairRe = regexp.MustCompile(`([a-zA-Z_][a-zA-Z0-9_]*):\s*([^\s]+)`)
 )
 
