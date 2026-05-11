@@ -286,7 +286,7 @@ func TestParseLenient(t *testing.T) {
 // space inside brackets is a malformed checkbox).
 func TestParseRejectsNonTasks(t *testing.T) {
 	cases := []string{
-		"    - [ ] code block indent\n",  // 4 spaces = code block
+		"    - [ ] code block indent\n",   // 4 spaces = code block
 		"- [] no space inside brackets\n", // empty brackets
 		"-[ ] no space after dash\n",      // no separator
 		"text - [ ] not at line start\n",  // mid-line
