@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"strings"
 
@@ -142,7 +141,7 @@ func printSearchResults(w io.Writer, hits []model.Task, query, format string) er
 			enc.SetIndent("", "  ")
 			return enc.Encode([]model.Task{})
 		}
-		fmt.Fprintf(w, "no matches for %q\n", query)
+		pf(w, "no matches for %q\n", query)
 		return nil
 	}
 	return printTasks(w, hits, format)
