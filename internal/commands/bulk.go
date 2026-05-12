@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -10,30 +11,33 @@ import (
 
 	"github.com/Sanjays2402/tsk/internal/dateparse"
 	"github.com/Sanjays2402/tsk/internal/model"
+	"github.com/Sanjays2402/tsk/internal/store"
 )
+
+// bulkOpts is the parsed/validated form of the flag values.
+type bulkOpts struct {
+	// selectors
+	filterTags     []string
+	filterPriority *model.Priority
+	filterDone     *bool
+	filterIDs      []int
+
+	// mutations
+	setPriority *model.Priority
+	addTags     []string
+	removeTags  []string
+	setDue      *time.Time
+	clearDue    bool
+
+	// behavior
+	apply bool
+}
 
 // newBulkCmd creates the `tsk bulk` command. Bulk applies edits to many tasks
 // at once, selected via filter flags (--tag, --priority, --status, --id).
 // By default it runs in dry-run mode; --apply commits the changes.
 func newBulkCmd() *cobra.Command {
-	var (
-		// selectors
-		filterTags     []string
-		filterPriority string
-		filterStatus   string
-		filterIDs      []int
-
-		// mutations
-		setPriority string
-		addTags     []string
-		removeTags  []string
-		setDue      string
-		clearDue    bool
-
-		// behavior
-		apply bool
-	)
-
+	var raw bulkRawFlags
 	cmd := &cobra.Command{
 		Use:   "bulk",
 		Short: "Bulk edit tasks matched by filter (dry-run by default; use --apply to commit)",
@@ -58,177 +62,266 @@ Examples:
   tsk bulk --id 3 --id 7 --set-due tomorrow --apply
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			// Validate at least one selector and one mutation
-			if len(filterTags) == 0 && filterPriority == "" && filterStatus == "" && len(filterIDs) == 0 {
-				return usageErrorf("at least one selector required (--tag, --priority, --status, or --id)")
+			opts, err := raw.toOpts()
+			if err != nil {
+				return err
 			}
-			if setPriority == "" && len(addTags) == 0 && len(removeTags) == 0 && setDue == "" && !clearDue {
-				return usageErrorf("at least one mutation required (--set-priority, --add-tag, --remove-tag, --set-due, --clear-due)")
-			}
-			if setDue != "" && clearDue {
-				return usageErrorf("--set-due and --clear-due are mutually exclusive")
-			}
-
-			// Parse filter priority
-			var wantPrio model.Priority
-			var hasWantPrio bool
-			if filterPriority != "" {
-				p, err := model.ParsePriority(filterPriority)
-				if err != nil {
-					return usageErrorf("invalid --priority: %s", err.Error())
-				}
-				wantPrio = p
-				hasWantPrio = true
-			}
-
-			// Parse filter status
-			var wantDone bool
-			var hasWantStatus bool
-			if filterStatus != "" {
-				switch strings.ToLower(filterStatus) {
-				case "open", "todo", "pending":
-					wantDone = false
-					hasWantStatus = true
-				case "done", "complete", "completed":
-					wantDone = true
-					hasWantStatus = true
-				default:
-					return usageErrorf("invalid --status %q (use open or done)", filterStatus)
-				}
-			}
-
-			// Parse mutation priority
-			var newPrio model.Priority
-			var hasNewPrio bool
-			if setPriority != "" {
-				p, err := model.ParsePriority(setPriority)
-				if err != nil {
-					return usageErrorf("invalid --set-priority: %s", err.Error())
-				}
-				newPrio = p
-				hasNewPrio = true
-			}
-
-			// Parse mutation due
-			var newDue *time.Time
-			if setDue != "" {
-				loc := PacificLoc()
-				t, err := dateparse.Parse(setDue, time.Now().In(loc), loc)
-				if err != nil {
-					return usageErrorf("invalid --set-due: %s", err.Error())
-				}
-				newDue = &t
-			}
-
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
 			}
-
-			// ID set for quick lookup
-			idSet := map[int]bool{}
-			for _, id := range filterIDs {
-				idSet[id] = true
-			}
-
-			// Match predicate
-			match := func(t model.Task) bool {
-				if len(idSet) > 0 && !idSet[t.ID] {
-					return false
-				}
-				if hasWantPrio && t.Priority != wantPrio {
-					return false
-				}
-				if hasWantStatus && t.Done != wantDone {
-					return false
-				}
-				if len(filterTags) > 0 {
-					if !anyTagMatch(t.Tags, filterTags) {
-						return false
-					}
-				}
-				return true
-			}
-
-			// Gather matches
-			matched := make([]int, 0)
-			for _, t := range s.Tasks {
-				if match(t) {
-					matched = append(matched, t.ID)
-				}
-			}
-			sort.Ints(matched)
-
-			out := cmd.OutOrStdout()
-			if len(matched) == 0 {
-				pf(out, "no tasks matched\n")
-				return nil
-			}
-
-			// Build mutation summary line
-			mods := bulkMutationSummary(hasNewPrio, newPrio, addTags, removeTags, newDue, clearDue)
-
-			if !apply {
-				pf(out, "DRY RUN — %d task(s) would be changed (%s):\n", len(matched), mods)
-				for _, id := range matched {
-					t := s.ByID(id)
-					if t == nil {
-						continue
-					}
-					pf(out, "  #%-3d  %s\n", t.ID, t.Title)
-				}
-				pf(out, "\nre-run with --apply to commit.\n")
-				return nil
-			}
-
-			// Apply mutations
-			for _, id := range matched {
-				t := s.ByID(id)
-				if t == nil {
-					continue
-				}
-				if hasNewPrio {
-					t.Priority = newPrio
-				}
-				if len(addTags) > 0 {
-					t.Tags = addUniqueTags(t.Tags, addTags)
-				}
-				if len(removeTags) > 0 {
-					t.Tags = removeTagsFrom(t.Tags, removeTags)
-				}
-				if newDue != nil {
-					d := *newDue
-					t.Due = &d
-				}
-				if clearDue {
-					t.Due = nil
-				}
-			}
-
-			if err := s.Save(); err != nil {
-				return err
-			}
-			pf(out, "updated %d task(s): %s\n", len(matched), mods)
-			return nil
+			return runBulk(cmd.OutOrStdout(), s, opts)
 		},
 	}
-
-	cmd.Flags().StringArrayVar(&filterTags, "tag", nil, "filter: tasks with this tag (repeatable)")
-	cmd.Flags().StringVar(&filterPriority, "priority", "", "filter: tasks with this priority")
-	cmd.Flags().StringVar(&filterStatus, "status", "", "filter: open|done")
-	cmd.Flags().IntSliceVar(&filterIDs, "id", nil, "filter: specific task id (repeatable)")
-
-	cmd.Flags().StringVar(&setPriority, "set-priority", "", "set priority on matched tasks")
-	cmd.Flags().StringArrayVar(&addTags, "add-tag", nil, "add a tag (repeatable)")
-	cmd.Flags().StringArrayVar(&removeTags, "remove-tag", nil, "remove a tag (repeatable)")
-	cmd.Flags().StringVar(&setDue, "set-due", "", "set due date (parsed like tsk add --due)")
-	cmd.Flags().BoolVar(&clearDue, "clear-due", false, "clear the due date")
-
-	cmd.Flags().BoolVar(&apply, "apply", false, "commit changes (default is dry run)")
+	raw.bind(cmd)
 	return cmd
 }
 
-// anyTagMatch returns true if any of want is present in have.
+// bulkRawFlags is the raw string-form of the flags before parsing.
+type bulkRawFlags struct {
+	filterTags     []string
+	filterPriority string
+	filterStatus   string
+	filterIDs      []int
+
+	setPriority string
+	addTags     []string
+	removeTags  []string
+	setDue      string
+	clearDue    bool
+
+	apply bool
+}
+
+// bind registers the flag definitions on cmd.
+func (r *bulkRawFlags) bind(cmd *cobra.Command) {
+	cmd.Flags().StringArrayVar(&r.filterTags, "tag", nil, "filter: tasks with this tag (repeatable)")
+	cmd.Flags().StringVar(&r.filterPriority, "priority", "", "filter: tasks with this priority")
+	cmd.Flags().StringVar(&r.filterStatus, "status", "", "filter: open|done")
+	cmd.Flags().IntSliceVar(&r.filterIDs, "id", nil, "filter: specific task id (repeatable)")
+
+	cmd.Flags().StringVar(&r.setPriority, "set-priority", "", "set priority on matched tasks")
+	cmd.Flags().StringArrayVar(&r.addTags, "add-tag", nil, "add a tag (repeatable)")
+	cmd.Flags().StringArrayVar(&r.removeTags, "remove-tag", nil, "remove a tag (repeatable)")
+	cmd.Flags().StringVar(&r.setDue, "set-due", "", "set due date (parsed like tsk add --due)")
+	cmd.Flags().BoolVar(&r.clearDue, "clear-due", false, "clear the due date")
+
+	cmd.Flags().BoolVar(&r.apply, "apply", false, "commit changes (default is dry run)")
+}
+
+// toOpts validates and parses the raw flags into a bulkOpts.
+func (r *bulkRawFlags) toOpts() (bulkOpts, error) {
+	var o bulkOpts
+	if !r.hasSelector() {
+		return o, usageErrorf("at least one selector required (--tag, --priority, --status, or --id)")
+	}
+	if !r.hasMutation() {
+		return o, usageErrorf("at least one mutation required (--set-priority, --add-tag, --remove-tag, --set-due, --clear-due)")
+	}
+	if r.setDue != "" && r.clearDue {
+		return o, usageErrorf("--set-due and --clear-due are mutually exclusive")
+	}
+
+	prio, err := parseOptionalPriority(r.filterPriority, "--priority")
+	if err != nil {
+		return o, err
+	}
+	done, err := parseOptionalStatus(r.filterStatus)
+	if err != nil {
+		return o, err
+	}
+	setPrio, err := parseOptionalPriority(r.setPriority, "--set-priority")
+	if err != nil {
+		return o, err
+	}
+	due, err := parseOptionalDue(r.setDue)
+	if err != nil {
+		return o, err
+	}
+
+	o.filterTags = r.filterTags
+	o.filterPriority = prio
+	o.filterDone = done
+	o.filterIDs = r.filterIDs
+	o.setPriority = setPrio
+	o.addTags = r.addTags
+	o.removeTags = r.removeTags
+	o.setDue = due
+	o.clearDue = r.clearDue
+	o.apply = r.apply
+	return o, nil
+}
+
+func (r *bulkRawFlags) hasSelector() bool {
+	return len(r.filterTags) > 0 || r.filterPriority != "" || r.filterStatus != "" || len(r.filterIDs) > 0
+}
+
+func (r *bulkRawFlags) hasMutation() bool {
+	return r.setPriority != "" || len(r.addTags) > 0 || len(r.removeTags) > 0 || r.setDue != "" || r.clearDue
+}
+
+// parseOptionalPriority returns nil if s is empty, else a parsed Priority pointer.
+func parseOptionalPriority(s, flagName string) (*model.Priority, error) {
+	if s == "" {
+		return nil, nil
+	}
+	p, err := model.ParsePriority(s)
+	if err != nil {
+		return nil, usageErrorf("invalid %s: %s", flagName, err.Error())
+	}
+	return &p, nil
+}
+
+// parseOptionalStatus returns nil if s is empty, else a pointer to whether
+// the status means "done".
+func parseOptionalStatus(s string) (*bool, error) {
+	if s == "" {
+		return nil, nil
+	}
+	switch strings.ToLower(s) {
+	case "open", "todo", "pending":
+		v := false
+		return &v, nil
+	case "done", "complete", "completed":
+		v := true
+		return &v, nil
+	}
+	return nil, usageErrorf("invalid --status %q (use open or done)", s)
+}
+
+// parseOptionalDue returns nil if s is empty, else the parsed time.
+func parseOptionalDue(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	loc := PacificLoc()
+	t, err := dateparse.Parse(s, time.Now().In(loc), loc)
+	if err != nil {
+		return nil, usageErrorf("invalid --set-due: %s", err.Error())
+	}
+	return &t, nil
+}
+
+// runBulk is the high-level orchestrator: select, then either preview or apply.
+func runBulk(out io.Writer, s *store.Store, opts bulkOpts) error {
+	matched := selectBulkMatches(s, opts)
+	if len(matched) == 0 {
+		pf(out, "no tasks matched\n")
+		return nil
+	}
+	summary := bulkSummary(opts)
+	if !opts.apply {
+		printBulkPreview(out, s, matched, summary)
+		return nil
+	}
+	applyBulkMutations(s, matched, opts)
+	if err := s.Save(); err != nil {
+		return err
+	}
+	pf(out, "updated %d task(s): %s\n", len(matched), summary)
+	return nil
+}
+
+// selectBulkMatches returns the sorted IDs of tasks that match opts.
+func selectBulkMatches(s *store.Store, opts bulkOpts) []int {
+	idSet := make(map[int]bool, len(opts.filterIDs))
+	for _, id := range opts.filterIDs {
+		idSet[id] = true
+	}
+	matched := make([]int, 0)
+	for _, t := range s.Tasks {
+		if !bulkMatches(t, opts, idSet) {
+			continue
+		}
+		matched = append(matched, t.ID)
+	}
+	sort.Ints(matched)
+	return matched
+}
+
+// bulkMatches returns true if task t passes every selector in opts.
+func bulkMatches(t model.Task, opts bulkOpts, idSet map[int]bool) bool {
+	if len(idSet) > 0 && !idSet[t.ID] {
+		return false
+	}
+	if opts.filterPriority != nil && t.Priority != *opts.filterPriority {
+		return false
+	}
+	if opts.filterDone != nil && t.Done != *opts.filterDone {
+		return false
+	}
+	if len(opts.filterTags) > 0 && !anyTagMatch(t.Tags, opts.filterTags) {
+		return false
+	}
+	return true
+}
+
+// applyBulkMutations mutates every task in matched according to opts.
+func applyBulkMutations(s *store.Store, matched []int, opts bulkOpts) {
+	for _, id := range matched {
+		t := s.ByID(id)
+		if t == nil {
+			continue
+		}
+		mutateTask(t, opts)
+	}
+}
+
+// mutateTask applies the mutation set in opts to a single task.
+func mutateTask(t *model.Task, opts bulkOpts) {
+	if opts.setPriority != nil {
+		t.Priority = *opts.setPriority
+	}
+	if len(opts.addTags) > 0 {
+		t.Tags = addUniqueTags(t.Tags, opts.addTags)
+	}
+	if len(opts.removeTags) > 0 {
+		t.Tags = removeTagsFrom(t.Tags, opts.removeTags)
+	}
+	if opts.setDue != nil {
+		d := *opts.setDue
+		t.Due = &d
+	}
+	if opts.clearDue {
+		t.Due = nil
+	}
+}
+
+// printBulkPreview prints the dry-run preview.
+func printBulkPreview(out io.Writer, s *store.Store, matched []int, summary string) {
+	pf(out, "DRY RUN — %d task(s) would be changed (%s):\n", len(matched), summary)
+	for _, id := range matched {
+		t := s.ByID(id)
+		if t == nil {
+			continue
+		}
+		pf(out, "  #%-3d  %s\n", t.ID, t.Title)
+	}
+	pf(out, "\nre-run with --apply to commit.\n")
+}
+
+// bulkSummary builds a compact human-readable summary of the mutations.
+func bulkSummary(opts bulkOpts) string {
+	var parts []string
+	if opts.setPriority != nil {
+		parts = append(parts, fmt.Sprintf("priority=%s", *opts.setPriority))
+	}
+	if len(opts.addTags) > 0 {
+		parts = append(parts, fmt.Sprintf("+tags[%s]", strings.Join(opts.addTags, ",")))
+	}
+	if len(opts.removeTags) > 0 {
+		parts = append(parts, fmt.Sprintf("-tags[%s]", strings.Join(opts.removeTags, ",")))
+	}
+	if opts.setDue != nil {
+		parts = append(parts, fmt.Sprintf("due=%s", opts.setDue.Format("2006-01-02")))
+	}
+	if opts.clearDue {
+		parts = append(parts, "clear-due")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// anyTagMatch returns true if any of want is present in have (case-insensitive).
 func anyTagMatch(have, want []string) bool {
 	if len(have) == 0 {
 		return false
@@ -279,25 +372,4 @@ func removeTagsFrom(existing, remove []string) []string {
 		}
 	}
 	return out
-}
-
-// bulkMutationSummary builds a compact human-readable summary of the mutations.
-func bulkMutationSummary(hasPrio bool, prio model.Priority, add, remove []string, due *time.Time, clearDue bool) string {
-	var parts []string
-	if hasPrio {
-		parts = append(parts, fmt.Sprintf("priority=%s", prio))
-	}
-	if len(add) > 0 {
-		parts = append(parts, fmt.Sprintf("+tags[%s]", strings.Join(add, ",")))
-	}
-	if len(remove) > 0 {
-		parts = append(parts, fmt.Sprintf("-tags[%s]", strings.Join(remove, ",")))
-	}
-	if due != nil {
-		parts = append(parts, fmt.Sprintf("due=%s", due.Format("2006-01-02")))
-	}
-	if clearDue {
-		parts = append(parts, "clear-due")
-	}
-	return strings.Join(parts, ", ")
 }
