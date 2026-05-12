@@ -65,10 +65,31 @@ func Load(path string) (*Store, error) {
 }
 
 // Save atomically writes the store back to disk.
+//
+// As a side effect, Save also snapshots the previous on-disk contents of the
+// file to "<Path>.bak", enabling single-step `tsk undo-last`. If the source
+// file does not yet exist, no snapshot is created. Snapshot failures are
+// logged-silent: they never abort a Save.
 func (s *Store) Save() error {
+	s.snapshotPrevious() // best-effort; never fatal
 	s.assignIDs()
 	data := s.render()
 	return AtomicWriteFile(s.Path, data, 0o644)
+}
+
+// snapshotPrevious copies the current on-disk file (if any) to "<Path>.bak"
+// for use by `tsk undo-last`. Errors are ignored — Save must remain robust
+// even on read-only or transient FS failures.
+func (s *Store) snapshotPrevious() {
+	if s.Path == "" {
+		return
+	}
+	cur, err := os.ReadFile(s.Path)
+	if err != nil {
+		return // file missing, unreadable — nothing to snapshot
+	}
+	bak := s.Path + ".bak"
+	_ = AtomicWriteFile(bak, cur, 0o644)
 }
 
 // Add appends a task to the store (without saving) and returns the assigned ID.
