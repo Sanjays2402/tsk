@@ -20,11 +20,18 @@ func main() {
 	commands.SetVersion(version, commit, date)
 	commands.SetTUI(tui.Run)
 	if err := commands.NewRoot().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
 		var ec commands.ExitCoder
 		if errors.As(err, &ec) {
+			// SilentExitCoder skips the "error: <msg>" prefix — used by
+			// commands like `doctor` that print their own structured output
+			// and only need the non-zero exit code.
+			var sec commands.SilentExitCoder
+			if !errors.As(err, &sec) {
+				fmt.Fprintln(os.Stderr, "error:", err)
+			}
 			os.Exit(ec.ExitCode())
 		}
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
