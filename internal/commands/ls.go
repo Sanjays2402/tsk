@@ -16,6 +16,7 @@ type lsFilters struct {
 	tag                                 string
 	priorityStr                         string
 	asJSON                              bool
+	format                              string
 }
 
 func newLsCmd() *cobra.Command {
@@ -33,7 +34,11 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return printTasks(cmd.OutOrStdout(), tasks, f.asJSON)
+			format, err := resolveLsFormat(f.format, f.asJSON)
+			if err != nil {
+				return err
+			}
+			return printTasks(cmd.OutOrStdout(), tasks, format)
 		},
 	}
 	cmd.Flags().BoolVar(&f.done, "done", false, "only show done tasks")
@@ -43,7 +48,8 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&f.upcoming, "upcoming", false, "only show tasks due in the future")
 	cmd.Flags().StringVar(&f.tag, "tag", "", "only show tasks with this tag")
 	cmd.Flags().StringVar(&f.priorityStr, "priority", "", "only show tasks with this priority")
-	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit JSON")
+	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit JSON (shortcut for --format=json)")
+	cmd.Flags().StringVar(&f.format, "format", "", "output format: plain, table, or json")
 	return cmd
 }
 
@@ -107,12 +113,42 @@ func passDueFilter(t model.Task, f lsFilters, now time.Time) bool {
 	return true
 }
 
-func printTasks(w io.Writer, tasks []model.Task, asJSON bool) error {
+// resolveLsFormat arbitrates between --format and the legacy --json shortcut.
+// Returns one of "plain", "table", "json". Empty --format with --json=false
+// defaults to "plain".
+func resolveLsFormat(format string, asJSON bool) (string, error) {
+	format = strings.ToLower(strings.TrimSpace(format))
+	if format != "" && asJSON {
+		return "", usageErrorf("--format and --json are mutually exclusive")
+	}
 	if asJSON {
+		return "json", nil
+	}
+	switch format {
+	case "", "plain":
+		return "plain", nil
+	case "table":
+		return "table", nil
+	case "json":
+		return "json", nil
+	}
+	return "", usageErrorf("unknown --format %q (want plain, table, or json)", format)
+}
+
+func printTasks(w io.Writer, tasks []model.Task, format string) error {
+	switch format {
+	case "json":
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(tasks)
+	case "table":
+		return printTasksTable(w, tasks)
+	default:
+		return printTasksPlain(w, tasks)
 	}
+}
+
+func printTasksPlain(w io.Writer, tasks []model.Task) error {
 	if len(tasks) == 0 {
 		pln(w, "no tasks")
 		return nil
@@ -132,4 +168,116 @@ func printTasks(w io.Writer, tasks []model.Task, asJSON bool) error {
 		pln(w, line)
 	}
 	return nil
+}
+
+// printTasksTable renders tasks as a fixed-column, left-aligned table.
+// Columns: ID, Done, Priority, Due, Title, Tags. Designed for terminal width
+// 80+; long titles are truncated with an ellipsis at column boundary.
+func printTasksTable(w io.Writer, tasks []model.Task) error {
+	if len(tasks) == 0 {
+		pln(w, "no tasks")
+		return nil
+	}
+	rows := make([]tableRow, 0, len(tasks))
+	for _, t := range tasks {
+		check := " "
+		if t.Done {
+			check = "x"
+		}
+		due := ""
+		if t.Due != nil {
+			due = t.Due.Format(model.DateLayout)
+		}
+		tags := ""
+		if len(t.Tags) > 0 {
+			tags = "#" + strings.Join(t.Tags, " #")
+		}
+		rows = append(rows, tableRow{
+			id:    fmt.Sprintf("#%d", t.ID),
+			done:  "[" + check + "]",
+			prio:  t.Priority.Short(),
+			due:   due,
+			title: t.Title,
+			tags:  tags,
+		})
+	}
+	headers := tableRow{id: "ID", done: "DONE", prio: "P", due: "DUE", title: "TITLE", tags: "TAGS"}
+	widths := computeColumnWidths(headers, rows)
+	// Cap title at 40 runes so wide terminals don't get wrapped lines.
+	const titleCap = 40
+	if widths.title > titleCap {
+		widths.title = titleCap
+	}
+	pln(w, formatTableRow(headers, widths))
+	for _, r := range rows {
+		pln(w, formatTableRow(r, widths))
+	}
+	return nil
+}
+
+// tableRow is the per-task column data used by the table formatter.
+type tableRow struct {
+	id, done, prio, due, title, tags string
+}
+
+// columnWidths holds the rune width of each column.
+type columnWidths struct {
+	id, done, prio, due, title, tags int
+}
+
+func computeColumnWidths(header tableRow, rows []tableRow) columnWidths {
+	w := columnWidths{
+		id:    runeLen(header.id),
+		done:  runeLen(header.done),
+		prio:  runeLen(header.prio),
+		due:   runeLen(header.due),
+		title: runeLen(header.title),
+		tags:  runeLen(header.tags),
+	}
+	for _, r := range rows {
+		if l := runeLen(r.id); l > w.id {
+			w.id = l
+		}
+		if l := runeLen(r.done); l > w.done {
+			w.done = l
+		}
+		if l := runeLen(r.prio); l > w.prio {
+			w.prio = l
+		}
+		if l := runeLen(r.due); l > w.due {
+			w.due = l
+		}
+		if l := runeLen(r.title); l > w.title {
+			w.title = l
+		}
+		if l := runeLen(r.tags); l > w.tags {
+			w.tags = l
+		}
+	}
+	return w
+}
+
+// runeLen returns rune count (handles unicode in titles/tags correctly).
+func runeLen(s string) int {
+	n := 0
+	for range s {
+		n++
+	}
+	return n
+}
+
+func formatTableRow(r tableRow, w columnWidths) string {
+	title := r.title
+	if runeLen(title) > w.title {
+		runes := []rune(title)
+		title = string(runes[:w.title-1]) + "…"
+	}
+	return fmt.Sprintf("%-*s  %-*s  %-*s  %-*s  %-*s  %s",
+		w.id, r.id,
+		w.done, r.done,
+		w.prio, r.prio,
+		w.due, r.due,
+		w.title, title,
+		r.tags,
+	)
 }
