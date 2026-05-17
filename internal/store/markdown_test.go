@@ -246,3 +246,60 @@ func TestReplaceTasks(t *testing.T) {
 		t.Errorf("replace with nil should clear, got %+v", s.Tasks)
 	}
 }
+
+// TestParseLenient verifies the parser accepts hand-edited markdown variants
+// that CommonMark allows: leading whitespace, alternate bullet markers, and
+// uppercase X. tsk's own writes always emit the canonical form (no leading
+// whitespace, "-" marker, lowercase "x"), so this only matters for inputs.
+func TestParseLenient(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain dash", "- [ ] hello\n", "hello"},
+		{"two-space indent", "  - [ ] indented\n", "indented"},
+		{"three-space indent", "   - [ ] indented3\n", "indented3"},
+		{"tab indent", "\t- [ ] tabbed\n", "tabbed"},
+		{"star bullet", "* [ ] starred\n", "starred"},
+		{"plus bullet", "+ [ ] plussed\n", "plussed"},
+		{"uppercase X", "- [X] done caps\n", "done caps"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := &Store{}
+			if err := s.parse([]byte(c.input)); err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(s.Tasks) != 1 {
+				t.Fatalf("got %d tasks, want 1 for input %q", len(s.Tasks), c.input)
+			}
+			if s.Tasks[0].Title != c.want {
+				t.Errorf("title = %q, want %q", s.Tasks[0].Title, c.want)
+			}
+		})
+	}
+}
+
+// TestParseRejectsNonTasks verifies the parser does not match lines that look
+// like tasks but aren't (4+ space indent is a code block in CommonMark; no
+// space inside brackets is a malformed checkbox).
+func TestParseRejectsNonTasks(t *testing.T) {
+	cases := []string{
+		"    - [ ] code block indent\n",   // 4 spaces = code block
+		"- [] no space inside brackets\n", // empty brackets
+		"-[ ] no space after dash\n",      // no separator
+		"text - [ ] not at line start\n",  // mid-line
+	}
+	for _, c := range cases {
+		t.Run(c, func(t *testing.T) {
+			s := &Store{}
+			if err := s.parse([]byte(c)); err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if len(s.Tasks) != 0 {
+				t.Errorf("expected 0 tasks for %q, got %d: %+v", c, len(s.Tasks), s.Tasks)
+			}
+		})
+	}
+}
