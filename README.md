@@ -43,6 +43,7 @@ tsk ls # undone by default
 tsk ls --all --tag errand
 tsk done 1
 tsk next # highest-priority undone
+tsk count --overdue # scriptable count for prompts/status bars
 tsk stats
 tsk export --json > tasks.json
 tsk export --format markdown # shareable markdown
