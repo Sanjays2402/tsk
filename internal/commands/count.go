@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +40,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), len(tasks))
+			pln(cmd.OutOrStdout(), len(tasks))
 			return nil
 		},
 	}
