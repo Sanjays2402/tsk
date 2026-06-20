@@ -26,6 +26,13 @@ func newNextCmd() *cobra.Command {
 					best = t
 					continue
 				}
+				// Pinned beats everything else, including higher priority.
+				if t.Pinned != best.Pinned {
+					if t.Pinned {
+						best = t
+					}
+					continue
+				}
 				if t.Priority > best.Priority {
 					best = t
 					continue
@@ -38,7 +45,11 @@ func newNextCmd() *cobra.Command {
 				pln(cmd.OutOrStdout(), "all caught up")
 				return nil
 			}
-			line := fmt.Sprintf("#%d [%s] %s", best.ID, best.Priority, best.Title)
+			pinMark := ""
+			if best.Pinned {
+				pinMark = "* "
+			}
+			line := fmt.Sprintf("%s#%d [%s] %s", pinMark, best.ID, best.Priority, best.Title)
 			if best.Due != nil {
 				line += "  due:" + best.Due.Format(model.DateLayout)
 			}

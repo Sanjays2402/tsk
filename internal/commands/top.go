@@ -137,12 +137,16 @@ func filterTopCandidates(in []model.Task, tag string, prio model.Priority, prioA
 	return out
 }
 
-// sortTopTasks applies the canonical ordering: higher priority first, then
-// tasks WITH a due date before those without, then earliest due first,
-// then lower ID. Matches `tsk next`'s tie-breaks so top[0] == next.
+// sortTopTasks applies the canonical ordering: pinned tasks first, then
+// higher priority first, then tasks WITH a due date before those without,
+// then earliest due first, then lower ID. Matches `tsk next`'s tie-breaks
+// so top[0] == next when no pins are in play.
 func sortTopTasks(tasks []model.Task) {
 	sort.SliceStable(tasks, func(i, j int) bool {
 		a, b := tasks[i], tasks[j]
+		if a.Pinned != b.Pinned {
+			return a.Pinned
+		}
 		if a.Priority != b.Priority {
 			return a.Priority > b.Priority
 		}
@@ -177,7 +181,9 @@ func emitTopResults(w io.Writer, tasks []model.Task, format string) error {
 }
 
 // printTopPlain renders a numbered list — rank in front so it's clear
-// which task is #1 even when titles vary in length.
+// which task is #1 even when titles vary in length. Pinned tasks get a
+// leading "*" marker so users can see why they're floating above
+// nominally higher-priority tasks.
 func printTopPlain(w io.Writer, tasks []model.Task) error {
 	if len(tasks) == 0 {
 		pln(w, "no tasks")
@@ -189,7 +195,11 @@ func printTopPlain(w io.Writer, tasks []model.Task) error {
 		if t.Done {
 			check = "x"
 		}
-		line := fmt.Sprintf("%*d. [%s] #%d [%s] %s", width, i+1, check, t.ID, t.Priority.Short(), t.Title)
+		pinMark := " "
+		if t.Pinned {
+			pinMark = "*"
+		}
+		line := fmt.Sprintf("%*d.%s [%s] #%d [%s] %s", width, i+1, pinMark, check, t.ID, t.Priority.Short(), t.Title)
 		if t.Due != nil {
 			line += "  due:" + t.Due.Format(model.DateLayout)
 		}

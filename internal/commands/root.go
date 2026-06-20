@@ -72,6 +72,8 @@ func NewRoot() *cobra.Command {
 		newDailyCmd(),
 		newDiffCmd(),
 		newEnvCmd(),
+		newPinCmd(),
+		newUnpinCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)

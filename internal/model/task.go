@@ -75,6 +75,7 @@ type Task struct {
 	ID        int
 	Title     string
 	Done      bool
+	Pinned    bool
 	Priority  Priority
 	Due       *time.Time
 	Tags      []string

@@ -73,6 +73,9 @@ func printTaskDetail(w io.Writer, t *model.Task) {
 	pf(w, "title:     %s\n", t.Title)
 	pf(w, "status:    %s\n", status)
 	pf(w, "priority:  %s\n", t.Priority)
+	if t.Pinned {
+		pf(w, "pinned:    yes\n")
+	}
 	if t.Due != nil {
 		pf(w, "due:       %s\n", t.Due.Format(model.DateLayout))
 	} else {

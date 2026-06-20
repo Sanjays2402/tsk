@@ -301,6 +301,14 @@ func applyMeta(t *model.Task, meta string) {
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Completed = &tm
 			}
+		case "pin", "pinned":
+			// Lenient: any truthy spelling (true/1/yes/on, case-insensitive)
+			// flips the flag on. Anything else leaves it false, so hand-
+			// edits like `pin:false` clear it as expected.
+			switch strings.ToLower(val) {
+			case "1", "true", "yes", "on":
+				t.Pinned = true
+			}
 		}
 	}
 }
@@ -357,6 +365,9 @@ func renderMeta(t model.Task) string {
 	}
 	if t.Completed != nil {
 		parts = append(parts, fmt.Sprintf("completed:%s", t.Completed.Format(TimeLayout)))
+	}
+	if t.Pinned {
+		parts = append(parts, "pin:true")
 	}
 	return strings.Join(parts, " ")
 }
