@@ -69,6 +69,7 @@ func NewRoot() *cobra.Command {
 		newLogCmd(),
 		newGrepCmd(),
 		newYesterdayCmd(),
+		newDailyCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
