@@ -60,6 +60,7 @@ func NewRoot() *cobra.Command {
 		newRenameCmd(),
 		newCloneCmd(),
 		newReopenCmd(),
+		newSnoozeCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
