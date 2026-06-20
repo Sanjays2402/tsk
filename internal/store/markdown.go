@@ -288,6 +288,10 @@ func applyMeta(t *model.Task, meta string) {
 			if tm, err := time.Parse(model.DateLayout, val); err == nil {
 				t.Due = &tm
 			}
+		case "wait", "wait_until", "waituntil":
+			if tm, err := time.Parse(model.DateLayout, val); err == nil {
+				t.WaitUntil = &tm
+			}
 		case "tags":
 			if val == "" {
 				continue
@@ -354,6 +358,9 @@ func renderMeta(t model.Task) string {
 	parts = append(parts, fmt.Sprintf("prio:%s", t.Priority))
 	if t.Due != nil {
 		parts = append(parts, fmt.Sprintf("due:%s", t.Due.Format(model.DateLayout)))
+	}
+	if t.WaitUntil != nil {
+		parts = append(parts, fmt.Sprintf("wait:%s", t.WaitUntil.Format(model.DateLayout)))
 	}
 	if len(t.Tags) > 0 {
 		tags := append([]string(nil), t.Tags...)

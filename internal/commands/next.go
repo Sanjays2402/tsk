@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/spf13/cobra"
@@ -16,10 +17,14 @@ func newNextCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			now := time.Now()
 			var best *model.Task
 			for i := range s.Tasks {
 				t := &s.Tasks[i]
 				if t.Done {
+					continue
+				}
+				if t.IsWaiting(now) {
 					continue
 				}
 				if best == nil {

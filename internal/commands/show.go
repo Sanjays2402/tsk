@@ -81,6 +81,9 @@ func printTaskDetail(w io.Writer, t *model.Task) {
 	} else {
 		pf(w, "due:       -\n")
 	}
+	if t.WaitUntil != nil {
+		pf(w, "wait:      %s\n", t.WaitUntil.Format(model.DateLayout))
+	}
 	if len(t.Tags) > 0 {
 		pf(w, "tags:      #%s\n", strings.Join(t.Tags, " #"))
 	} else {

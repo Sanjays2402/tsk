@@ -78,6 +78,7 @@ type Task struct {
 	Pinned    bool
 	Priority  Priority
 	Due       *time.Time
+	WaitUntil *time.Time
 	Tags      []string
 	Notes     string
 	Created   time.Time
@@ -139,6 +140,18 @@ func (t *Task) NormalizeTags() {
 	}
 	sort.Strings(out)
 	t.Tags = out
+}
+
+// IsWaiting reports whether the task has a wait-until date in the future
+// (relative to now). Tasks waiting in the future are hidden from default
+// views — they only surface explicitly via `tsk ls --all` / `tsk wait
+// --list` / direct `tsk show <id>` lookup, or once the wait-until date
+// has passed.
+func (t *Task) IsWaiting(now time.Time) bool {
+	if t.WaitUntil == nil {
+		return false
+	}
+	return t.WaitUntil.After(now)
 }
 
 func startOfDay(t time.Time) time.Time {

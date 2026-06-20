@@ -12,11 +12,11 @@ import (
 )
 
 type lsFilters struct {
-	done, all, today, overdue, upcoming bool
-	tag                                 string
-	priorityStr                         string
-	asJSON                              bool
-	format                              string
+	done, all, today, overdue, upcoming, includeWaiting bool
+	tag                                                 string
+	priorityStr                                         string
+	asJSON                                              bool
+	format                                              string
 }
 
 func newLsCmd() *cobra.Command {
@@ -42,10 +42,11 @@ func newLsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&f.done, "done", false, "only show done tasks")
-	cmd.Flags().BoolVar(&f.all, "all", false, "show all tasks (done + undone)")
+	cmd.Flags().BoolVar(&f.all, "all", false, "show all tasks (done + undone + waiting)")
 	cmd.Flags().BoolVar(&f.today, "today", false, "only show tasks due today")
 	cmd.Flags().BoolVar(&f.overdue, "overdue", false, "only show overdue tasks")
 	cmd.Flags().BoolVar(&f.upcoming, "upcoming", false, "only show tasks due in the future")
+	cmd.Flags().BoolVar(&f.includeWaiting, "include-waiting", false, "include tasks with wait:<future date> in output")
 	cmd.Flags().StringVar(&f.tag, "tag", "", "only show tasks with this tag")
 	cmd.Flags().StringVar(&f.priorityStr, "priority", "", "only show tasks with this priority")
 	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit JSON (shortcut for --format=json)")
@@ -65,6 +66,9 @@ func applyFilters(in []model.Task, f lsFilters) ([]model.Task, error) {
 			continue
 		}
 		if !passDueFilter(t, f, now) {
+			continue
+		}
+		if !passWaitFilter(t, f, now) {
 			continue
 		}
 		if f.tag != "" && !t.HasTag(f.tag) {
@@ -111,6 +115,21 @@ func passDueFilter(t model.Task, f lsFilters, now time.Time) bool {
 		return false
 	}
 	return true
+}
+
+// passWaitFilter hides waiting tasks from the default view. Explicit
+// --all, --include-waiting, or --done bypass the hide so users can
+// still find a waiting task when they're looking for it. The state
+// filter --done already implies "I know what I'm asking for" so we
+// don't filter waiting tasks out of it either.
+func passWaitFilter(t model.Task, f lsFilters, now time.Time) bool {
+	if !t.IsWaiting(now) {
+		return true
+	}
+	if f.all || f.includeWaiting || f.done {
+		return true
+	}
+	return false
 }
 
 // resolveLsFormat arbitrates between --format and the legacy --json shortcut.

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -118,12 +119,17 @@ func parseTopLimit(args []string) (int, error) {
 
 // filterTopCandidates narrows the task pool by done state and the optional
 // tag / priority filters. The returned slice is a fresh copy (safe to sort
-// without disturbing the store).
+// without disturbing the store). Waiting tasks (wait:<future date>) are
+// excluded unless includeDone is set — they're hidden in default views.
 func filterTopCandidates(in []model.Task, tag string, prio model.Priority, prioActive, includeDone bool) []model.Task {
 	out := make([]model.Task, 0, len(in))
 	tag = strings.TrimSpace(tag)
+	now := time.Now()
 	for _, t := range in {
 		if !includeDone && t.Done {
+			continue
+		}
+		if !includeDone && t.IsWaiting(now) {
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
