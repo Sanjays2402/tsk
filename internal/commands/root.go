@@ -56,6 +56,7 @@ func NewRoot() *cobra.Command {
 		newPriCmd(),
 		newDueCmd(),
 		newTagCmd(),
+		newWhereCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
