@@ -63,6 +63,8 @@ func NewRoot() *cobra.Command {
 		newSnoozeCmd(),
 		newNoteCmd(),
 		newTopCmd(),
+		newTodayCmd(),
+		newOverdueCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
