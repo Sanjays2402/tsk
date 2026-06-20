@@ -54,6 +54,7 @@ func NewRoot() *cobra.Command {
 		newCompletionCmd(),
 		newDoctorCmd(),
 		newPriCmd(),
+		newDueCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
