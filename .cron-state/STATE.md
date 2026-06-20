@@ -63,16 +63,29 @@ Pull the next 5 unstarted items per tick.
 
 ### Polish & DX (added 2026-06-20)
 
-- [ ] `tsk pin <id>` — sticky-flag a task so it appears first in `top`/`next` regardless of priority
+- [x] `tsk pin <id>` — sticky-flag a task so it appears first in `top`/`next` regardless of priority (tick 2026-06-20/0640)
 - [ ] `tsk depend <id> --on <other>` — track task dependencies; block `done` if unmet
-- [ ] `tsk wait <id> <until>` — hide a task from default views until a date (separate from due)
+- [x] `tsk wait <id> <until>` — hide a task from default views until a date (separate from due) (tick 2026-06-20/0640)
 - [ ] `tsk move-to <file>` — relocate a task between .tsk.md files (cross-store mover)
 - [ ] `tsk shell` — interactive REPL with command history, useful for batch sessions
 - [ ] `tsk view <id> --watch` — re-render every N seconds while iterating
-- [ ] `tsk last` — show the most recently mutated task (whatever the last edit was)
+- [x] `tsk last` — show the most recently mutated task (whatever the last edit was) (tick 2026-06-20/0640)
 - [ ] `tsk hist [id]` — list every save's diff against the previous from git-like backups (would need backup chain)
-- [ ] `tsk completion --install` — write the shell completion script directly into the right rc file
-- [ ] `tsk man` — generate a manpage from cobra's help tree
+- [x] `tsk completion --install` — write the shell completion script directly into the right rc file (tick 2026-06-20/0640)
+- [x] `tsk man` — generate a manpage from cobra's help tree (tick 2026-06-20/0640)
+
+### Polish & DX (added 2026-06-20 tick #6)
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress)
+- [ ] `tsk find <regex>` — `grep` over titles only (no notes scan, faster for big stores)
+- [ ] `tsk rebuild-ids` — densify ID space after lots of removes (1,5,7,12 -> 1,2,3,4)
+- [ ] `tsk recent` — alias for `last` with a window flag (`--since 1h`)
+- [ ] `tsk pri --up <id>` / `tsk pri --down <id>` — cycle priority without remembering the name
+- [ ] `tsk depends-on <id>` — set/list the prerequisite chain (lighter than full graph)
+- [ ] `tsk lint` — validate the file (orphan IDs, dangling notes, ungrouped block) and suggest fixes
+- [ ] `tsk swap <id> <id>` — exchange two tasks' positions in the file (manual reorder)
+- [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
+- [ ] `tsk bench` — print parser/save timings for the current file (useful when a store gets big)
 
 ## Known footguns the loop has run into
 
@@ -237,3 +250,63 @@ shipped. New views / scriptable surfaces section (9 items) is fully
 shipped. Storage/model/format section: 1/6 shipped (the easy one).
 Added a new "Polish & DX" roadmap section (10 items) so the next 3+
 ticks have fresh, sized work to draw from.
+
+### 2026-06-20 06:40 PT (tick #6)
+
+Shipped 5 features from the new "Polish & DX" backlog plus a wait-
+state model addition. All single-commit, all tests passing (96 new
+test cases across the 5 features), full gate green (gofmt + vet +
+build + go test ./...) before push. Pushed 865aefe..50e6aa6 to
+origin/feature/autoship; verified landed.
+
+- `pin/unpin`           — 31eaa5a feat(pin): sticky-flag tasks so they float to the top
+- `last`                — 6578af4 feat(last): show the most recently mutated task
+- `man`                 — cf87073 feat(man): generate manpages from the cobra command tree
+- `completion --install`— be6973d feat(completion): drop scripts into per-shell paths
+- `wait`                — 50e6aa6 feat(wait): hide tasks from default views until a date
+
+Notable choices:
+- `pin` is a storage format extension (new `pin:true` meta key), but
+  strictly additive — the key only renders when true, so old files
+  round-trip unchanged. Hand-edit `pin:false` (or delete the key)
+  to clear. `next` and `top` were updated to put pinned tasks first;
+  `next` also prefixes a `*` marker so users can see WHY a low-prio
+  task is winning.
+- `last` scores by max(Created, Completed) per task so an old task
+  just marked done floats above a freshly-added one. RFC3339 is
+  second-precision so the unit tests use synthetic timestamps
+  directly (mostRecentlyMutated() is exposed at the package level);
+  the CLI smoke test only needs a single task. Tasks with neither
+  timestamp (hand-edited entries) are skipped to avoid them ranking
+  at epoch zero.
+- `man` pulls in github.com/spf13/cobra/doc (already transitive of
+  cobra) and uses GenManTree — pages stay in sync with help text
+  automatically. --install requires --yes to prevent typo-installs
+  to /usr/local/share/man/man1. ./man is the default destination
+  so users can preview without elevated permissions.
+- `completion --install` had a special case for PowerShell: its
+  profile is a single .ps1 file the user already curates (custom
+  prompt, aliases, etc), so we cannot overwrite it. Instead the
+  install wraps the script in sentinel-guarded blocks (`# >>> tsk
+  completion >>>` / `# <<< tsk completion <<<`) and on re-run
+  replaces only the block between sentinels. Idempotent. Verified
+  by test that pre-seeds custom content, runs install twice, asserts
+  exactly one sentinel pair survives and custom content is intact.
+- `wait` is a NEW second-class date on the task (separate field
+  WaitUntil, separate `wait:` meta key). The whole point is it's
+  NOT the same as due — wait HIDES the task entirely until the
+  date passes, due just marks it overdue. Filter wiring updates:
+  ls/top/next default-hide waiting tasks; ls --all and the new
+  --include-waiting flag bring them back; `tsk show <id>` and
+  `tsk wait --list` always surface them. Past-dated wait is
+  treated as expired (visible) — the user wanted the task back
+  when that date arrived; forgetting to clear shouldn't hide
+  it forever.
+- The completion gofmt adjustment from tick #6 work was folded
+  into the completion commit via `git commit --fixup` + autosquash
+  to keep each feature one-commit.
+
+Roadmap status: "Polish & DX" section is 5/10 shipped (pin, wait,
+last, completion --install, man). Added a fresh "Polish & DX (added
+2026-06-20 tick #6)" subsection with 10 more sized items so future
+ticks never starve.
