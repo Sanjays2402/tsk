@@ -38,16 +38,16 @@ Pull the next 5 unstarted items per tick.
 - [x] `tsk today` / `tsk overdue` — convenience aliases for the common `ls --today` / `ls --overdue` invocations (tick 2026-06-19/2306)
 - [x] `tsk tags` — list all tags with usage counts (extended top-tags; supports `--json`) (tick 2026-06-19/2306)
 - [x] `tsk log` — show recently completed tasks (tail of completions, optional `--since`) (tick 2026-06-19/2306)
-- [ ] `tsk yesterday` — what was completed yesterday (standup-friendly summary)
-- [ ] `tsk daily` — synthesized morning plan: overdue + today + top 3 upcoming, in one screen
+- [x] `tsk yesterday` — what was completed yesterday (standup-friendly summary) (tick 2026-06-20/0312)
+- [x] `tsk daily` — synthesized morning plan: overdue + today + top 3 upcoming, in one screen (tick 2026-06-20/0312)
 - [x] `tsk grep <regex>` — exact regex search across title+notes (vs fuzzy `search`) (tick 2026-06-19/2306)
-- [ ] `tsk diff` — diff active `.tsk.md` vs `.bak` snapshot (what would `undo-last` undo)
-- [ ] `tsk env` — print effective env: TSK_TZ, EDITOR, NO_COLOR, paths
+- [x] `tsk diff` — diff active `.tsk.md` vs `.bak` snapshot (what would `undo-last` undo) (tick 2026-06-20/0312)
+- [x] `tsk env` — print effective env: TSK_TZ, EDITOR, NO_COLOR, paths (tick 2026-06-20/0312)
 
 ### Storage / model / format
 
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior `task export` JSON / Notion CSV
-- [ ] `tsk export --jsonl` — streaming JSON-lines for pipelines
+- [x] `tsk export --jsonl` — streaming JSON-lines for pipelines (tick 2026-06-20/0312)
 - [ ] Recurrence (`tsk add -r weekly`, recur-on-done): adopt from stale `feat-recur` branch carefully
 - [ ] Started/in-progress state with `tsk start <id>` / `tsk stop <id>` + `started:` timestamp
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
@@ -60,6 +60,19 @@ Pull the next 5 unstarted items per tick.
 - [ ] `g`/`G` top/bottom navigation (vim-style)
 - [ ] Pomodoro / focus timer overlay (`f` to start, status bar countdown)
 - [ ] Task creation form with priority/due/tag fields exposed (currently title-only)
+
+### Polish & DX (added 2026-06-20)
+
+- [ ] `tsk pin <id>` — sticky-flag a task so it appears first in `top`/`next` regardless of priority
+- [ ] `tsk depend <id> --on <other>` — track task dependencies; block `done` if unmet
+- [ ] `tsk wait <id> <until>` — hide a task from default views until a date (separate from due)
+- [ ] `tsk move-to <file>` — relocate a task between .tsk.md files (cross-store mover)
+- [ ] `tsk shell` — interactive REPL with command history, useful for batch sessions
+- [ ] `tsk view <id> --watch` — re-render every N seconds while iterating
+- [ ] `tsk last` — show the most recently mutated task (whatever the last edit was)
+- [ ] `tsk hist [id]` — list every save's diff against the previous from git-like backups (would need backup chain)
+- [ ] `tsk completion --install` — write the shell completion script directly into the right rc file
+- [ ] `tsk man` — generate a manpage from cobra's help tree
 
 ## Known footguns the loop has run into
 
@@ -171,3 +184,56 @@ Notable choices:
 
 Pushed e9f3b3f..45fae7e to origin/feature/autoship; verified via
 `git log origin/feature/autoship | head`.
+
+### 2026-06-20 03:12 PT (tick #5)
+
+Shipped 5 features covering the remaining "new views / scriptable
+surfaces" backlog plus one storage-format extension. All single-commit,
+all tests passing, full gate green (gofmt + vet + build + go test ./...)
+before push. Pushed e0875f9..e257d77 to origin/feature/autoship,
+verified landed.
+
+- `yesterday` — b73dc52 feat(yesterday): tsk yesterday standup summary of yesterday's completions
+- `daily`     — 0700c11 feat(daily): tsk daily synthesized morning briefing in one screen
+- `diff`      — 276f155 feat(diff): tsk diff show what undo-last would revert
+- `env`       — 06db477 feat(env): tsk env effective configuration dump for debug + scripts
+- `export --jsonl` — e257d77 feat(export): jsonl streaming format for pipelines
+
+Notable choices:
+- `yesterday` is anchored on calendar-day boundaries [yesterdayStart,
+  todayStart) in the active tz — NOT a rolling 24h window, which would
+  miss yesterday's late work and include this morning's. Boundary
+  tests cover 00:00 today (excluded), 00:00 yesterday (included), and
+  23:59:59 yesterday (included). JSON empty case emits `[]` not `null`.
+- `daily` groups into OVERDUE/TODAY/UPCOMING. Bucket assignment checks
+  IsDueToday BEFORE IsOverdue because the markdown store persists due
+  dates as UTC midnight — a same-day task can otherwise compare as
+  "before local startOfDay". Each section sorts by canonical tie-break
+  (priority desc, dated-first, earliest-due, lower ID) so it matches
+  `top`/`next`. Empty sections render as "(none)" so missing slots
+  are obvious. Tests use `dueDate(±2)` (not ±1) to avoid the same
+  UTC-midnight-vs-local boundary causing flakes; the singleton-day
+  +1d boundary IS broken in tsk's persist layer but is a pre-existing
+  bug, NOT introduced here. Documented in the commit body.
+- `diff` is a self-contained Myers-like LCS — no external `diff`
+  binary required, works on stripped containers. Exit codes mirror
+  `git diff --exit-code`: 0 clean, 1 changes (SilentExitCoder so
+  main.go skips "error:"), 2 no .bak snapshot. Pair with `undo-last`
+  for an inspect-before-revert workflow.
+- `env` is the canonical "why did tsk do that?" debug snapshot —
+  pairs with `tsk where`. Reports VISUAL > EDITOR resolution, NO_COLOR
+  semantics (empty doesn't disable, anything does, per no_color.org),
+  TSK_* prefixed env var enumeration. Unset vars render "(unset)"
+  so missing values are distinguishable from empty ones.
+- `export --jsonl` adds the third top-tier export format. Aliases
+  --format jsonl + --format ndjson. Per-line schema matches one
+  --json array element so consumers switching between the two don't
+  rename field accessors. Empty store = empty output (NOT `[]`, NOT
+  a blank line — jsonlines convention). Tests guard against embedded
+  newlines (would break streaming) and mutual-exclusion with --json.
+
+Roadmap status: per-task CLI shortcuts section (10 items) is fully
+shipped. New views / scriptable surfaces section (9 items) is fully
+shipped. Storage/model/format section: 1/6 shipped (the easy one).
+Added a new "Polish & DX" roadmap section (10 items) so the next 3+
+ticks have fresh, sized work to draw from.
