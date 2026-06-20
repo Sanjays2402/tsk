@@ -34,13 +34,13 @@ Pull the next 5 unstarted items per tick.
 
 ### New views / scriptable surfaces
 
-- [ ] `tsk top [N]` — show N highest-priority undone tasks (multi-task `next`)
-- [ ] `tsk today` / `tsk overdue` — convenience aliases for the common `ls --today` / `ls --overdue` invocations
-- [ ] `tsk tags` — list all tags with usage counts (extended top-tags; supports `--json`)
-- [ ] `tsk log` — show recently completed tasks (tail of completions, optional `--since`)
+- [x] `tsk top [N]` — show N highest-priority undone tasks (multi-task `next`) (tick 2026-06-19/2306)
+- [x] `tsk today` / `tsk overdue` — convenience aliases for the common `ls --today` / `ls --overdue` invocations (tick 2026-06-19/2306)
+- [x] `tsk tags` — list all tags with usage counts (extended top-tags; supports `--json`) (tick 2026-06-19/2306)
+- [x] `tsk log` — show recently completed tasks (tail of completions, optional `--since`) (tick 2026-06-19/2306)
 - [ ] `tsk yesterday` — what was completed yesterday (standup-friendly summary)
 - [ ] `tsk daily` — synthesized morning plan: overdue + today + top 3 upcoming, in one screen
-- [ ] `tsk grep <regex>` — exact regex search across title+notes (vs fuzzy `search`)
+- [x] `tsk grep <regex>` — exact regex search across title+notes (vs fuzzy `search`) (tick 2026-06-19/2306)
 - [ ] `tsk diff` — diff active `.tsk.md` vs `.bak` snapshot (what would `undo-last` undo)
 - [ ] `tsk env` — print effective env: TSK_TZ, EDITOR, NO_COLOR, paths
 
@@ -132,3 +132,42 @@ Notable choices:
 - `clone` deep-copies tags and due pointer so mutating the source can
   never bleed into the clone (or vice versa); a dedicated regression
   test guards that.
+
+### 2026-06-19 23:06 PT (tick #4)
+
+Shipped 5 new view / scriptable-surface commands. All single-commit,
+all tests passing, full gate green before push. (Three commits needed
+a `git commit --fixup` + autosquash pass to fold gofmt alignment fixes
+into the right feature commit — kept history clean.)
+
+- `top`              — 1c2cefd feat(top): tsk top [N] surface the N highest-priority undone tasks
+- `today` + `overdue`— a45077d feat(today,overdue): one-word verbs for the two most common ls slices
+- `tags`             — 7e98ce3 feat(tags): tsk tags full per-tag usage report
+- `log`              — e932f05 feat(log): tsk log chronological tail of recently completed tasks
+- `grep`             — 45fae7e feat(grep): tsk grep <regex> exact RE2 regex search across tasks
+
+Notable choices:
+- `top` matches `tsk next`'s tie-break exactly (priority desc, dated-
+  first, earliest-due, lower-id) so `top[0]` and `next` agree on the
+  same task. Regression test guards that.
+- `today`/`overdue` aren't thin aliases — they default to undone-only
+  (the only sensible default for a workday) and expose the same
+  --format/--json/--tag/--priority surface as `tsk ls`. Both route
+  through the shared applyFilters → single source of truth.
+- `tags` is the catalog cousin of `stats`'s top-5 block: full per-tag
+  count, with --all/--done scope, --min suppression for noisy stores,
+  --sort alpha for completion menus, JSON emits [] not null when empty.
+- `log` is the journal vs `ls --done`'s catalog: newest-first, capped
+  by --limit (default 10), trimmed by --since. Done tasks without a
+  Completed timestamp are excluded from rows but surfaced in a footer
+  line so the user can audit. JSON stays silent — contract is just the
+  task array.
+- `grep` is exact RE2 vs `search`'s fuzzy. Case-insensitive default
+  (POSIX-grep-shaped), undone-only default, prints field annotation
+  ("matched in: title") so you see WHY it matched. --files-only/-l
+  for xargs pipelines, --count, --json — all mutually exclusive and
+  guarded upfront. NOT using -v as a short for --invert to avoid the
+  `tsk version` collision.
+
+Pushed e9f3b3f..45fae7e to origin/feature/autoship; verified via
+`git log origin/feature/autoship | head`.
