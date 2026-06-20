@@ -80,6 +80,7 @@ func NewRoot() *cobra.Command {
 		newSwapCmd(),
 		newLintCmd(),
 		newRebuildIDsCmd(),
+		newBenchCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
