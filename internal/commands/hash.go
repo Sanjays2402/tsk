@@ -24,9 +24,10 @@ import (
 //     pre-commit checks.
 //   - semantic mode (--semantic / -s): SHA-256 of a canonical projection
 //     of the parsed task model — id, title, state, priority, due, wait,
-//     tags, pin, notes, created, completed — in id order. Stable across
-//     cosmetic edits (extra blank lines, bullet style, key order inside
-//     the meta comment). Use this for CI: "did any TASK actually change?"
+//     tags, pin, notes, created, started, completed — in id order.
+//     Stable across cosmetic edits (extra blank lines, bullet style,
+//     key order inside the meta comment). Use this for CI: "did any
+//     TASK actually change?"
 //
 // Output is the 64-char hex digest plus the file path (`<hash>  <path>`
 // shape, sha256sum-shaped so you can pipe it through `sha256sum -c`
@@ -57,9 +58,9 @@ Two modes:
               cosmetic edit (bullet style, whitespace, key order).
   --semantic  SHA-256 of a canonical projection of the parsed tasks (id,
               title, state, priority, due, wait, tags, pin, notes,
-              created, completed) in id order. Stable across cosmetic
-              edits — the right choice for CI "did anything actually
-              change?" checks.
+              created, started, completed) in id order. Stable across
+              cosmetic edits — the right choice for CI "did anything
+              actually change?" checks.
 
 Output:
   <64-char hex>  <path>            (default — sha256sum-shaped)
@@ -206,6 +207,10 @@ func canonicalTaskLine(t model.Task) string {
 		// reinterpretations of the same instant.
 		created = t.Created.UTC().Format(store.TimeLayout)
 	}
+	started := "-"
+	if t.Started != nil {
+		started = t.Started.UTC().Format(store.TimeLayout)
+	}
 	completed := "-"
 	if t.Completed != nil {
 		completed = t.Completed.UTC().Format(store.TimeLayout)
@@ -224,9 +229,9 @@ func canonicalTaskLine(t model.Task) string {
 	}
 	notes := escapeNotesForHash(t.Notes)
 	return fmt.Sprintf(
-		"id=%d\ttitle=%s\tdone=%s\tprio=%s\tdue=%s\twait=%s\tpin=%s\ttags=%s\tcreated=%s\tcompleted=%s\tnotes=%s",
+		"id=%d\ttitle=%s\tdone=%s\tprio=%s\tdue=%s\twait=%s\tpin=%s\ttags=%s\tcreated=%s\tstarted=%s\tcompleted=%s\tnotes=%s",
 		t.ID, t.Title, done, t.Priority.String(),
-		due, wait, pinned, tags, created, completed, notes,
+		due, wait, pinned, tags, created, started, completed, notes,
 	)
 }
 

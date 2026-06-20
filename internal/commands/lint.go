@@ -180,6 +180,7 @@ var knownMetaKeys = map[string]bool{
 	"waituntil":  true,
 	"tags":       true,
 	"created":    true,
+	"started":    true,
 	"completed":  true,
 	"pin":        true,
 	"pinned":     true,

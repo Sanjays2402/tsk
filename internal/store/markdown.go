@@ -149,6 +149,12 @@ func (s *Store) ReplaceTasks(tasks []model.Task) {
 }
 
 // SetDone toggles the completion state of the task with the given ID.
+//
+// As a side effect, transitioning to done CLEARS any in-progress
+// Started timestamp — once a task is complete, "started" is no
+// longer the most useful timestamp; Completed is. The flip leaves
+// Started untouched when transitioning back to undone (reopen)
+// because the user may want to resume tracking from where they were.
 func (s *Store) SetDone(id int, done bool) bool {
 	t := s.ByID(id)
 	if t == nil {
@@ -158,6 +164,7 @@ func (s *Store) SetDone(id int, done bool) bool {
 	if done {
 		now := time.Now()
 		t.Completed = &now
+		t.Started = nil
 	} else {
 		t.Completed = nil
 	}
@@ -301,6 +308,10 @@ func applyMeta(t *model.Task, meta string) {
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Created = tm
 			}
+		case "started":
+			if tm, err := time.Parse(TimeLayout, val); err == nil {
+				t.Started = &tm
+			}
 		case "completed":
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Completed = &tm
@@ -369,6 +380,9 @@ func renderMeta(t model.Task) string {
 	}
 	if !t.Created.IsZero() {
 		parts = append(parts, fmt.Sprintf("created:%s", t.Created.Format(TimeLayout)))
+	}
+	if t.Started != nil {
+		parts = append(parts, fmt.Sprintf("started:%s", t.Started.Format(TimeLayout)))
 	}
 	if t.Completed != nil {
 		parts = append(parts, fmt.Sprintf("completed:%s", t.Completed.Format(TimeLayout)))

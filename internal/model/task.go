@@ -82,6 +82,7 @@ type Task struct {
 	Tags      []string
 	Notes     string
 	Created   time.Time
+	Started   *time.Time
 	Completed *time.Time
 }
 
@@ -152,6 +153,15 @@ func (t *Task) IsWaiting(now time.Time) bool {
 		return false
 	}
 	return t.WaitUntil.After(now)
+}
+
+// IsInProgress reports whether the task is currently being worked on:
+// has a Started timestamp, is not yet Done. Cleared by `tsk done` (the
+// task moved past in-progress) and by `tsk stop` (the user actively
+// paused). Stays true if you stop and then `tsk start` it again — the
+// timestamp resets to the newer start.
+func (t *Task) IsInProgress() bool {
+	return t.Started != nil && !t.Done
 }
 
 func startOfDay(t time.Time) time.Time {

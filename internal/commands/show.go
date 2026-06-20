@@ -92,6 +92,9 @@ func printTaskDetail(w io.Writer, t *model.Task) {
 	if !t.Created.IsZero() {
 		pf(w, "created:   %s\n", t.Created.Format("2006-01-02 15:04:05 -0700"))
 	}
+	if t.Started != nil {
+		pf(w, "started:   %s\n", t.Started.Format("2006-01-02 15:04:05 -0700"))
+	}
 	if t.Completed != nil {
 		pf(w, "completed: %s\n", t.Completed.Format("2006-01-02 15:04:05 -0700"))
 	}
