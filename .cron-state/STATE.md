@@ -26,11 +26,11 @@ Pull the next 5 unstarted items per tick.
 - [x] `tsk due <id> <date>` — quick due setter; `--clear` to remove; natural language (tick 2026-06-19/2122)
 - [x] `tsk tag <id> +foo -bar` — add/remove tags on a single task in one shot (tick 2026-06-19/2122)
 - [x] `tsk where` — print resolved `.tsk.md` path + how it was resolved + tz; `--json` (tick 2026-06-19/2122)
-- [ ] `tsk rename <id> <new title>` — quick title change without dropping into TUI
-- [ ] `tsk note <id> [text]` — add/edit notes from CLI (opens $EDITOR with no text arg)
-- [ ] `tsk clone <id>` / `tsk dupe <id>` — duplicate a task with a fresh ID
-- [ ] `tsk reopen <id>` — alias for `undo` (more discoverable verb)
-- [ ] `tsk snooze <id> <date>` — bump due date forward; refuses if already further out (with --force override)
+- [x] `tsk rename <id> <new title>` — quick title change without dropping into TUI (tick 2026-06-19/2209)
+- [x] `tsk note <id> [text]` — add/edit notes from CLI (opens $EDITOR with no text arg) (tick 2026-06-19/2209)
+- [x] `tsk clone <id>` / `tsk dupe <id>` — duplicate a task with a fresh ID (tick 2026-06-19/2209)
+- [x] `tsk reopen <id>` — alias for `undo` (more discoverable verb) (tick 2026-06-19/2209)
+- [x] `tsk snooze <id> <date>` — bump due date forward; refuses if already further out (with --force override) (tick 2026-06-19/2209)
 
 ### New views / scriptable surfaces
 
@@ -103,3 +103,32 @@ build + go test ./...) green before push; landed on origin/feature/autoship.
 Notable: tag.go uses `DisableFlagParsing: true` + `extractFileFlag` helper
 so `-old`-style remove args don't trip cobra's flag parser; that helper
 is reusable for any future command needing the same trick.
+
+### 2026-06-19 22:09 PT (tick #3)
+
+Shipped the rest of the "per-task CLI shortcuts" section — all 5 picked
+items landed clean with passing tests, single-commit each, full gate
+green before push.
+
+- `rename` — a3a981b feat(rename): tsk rename <id> <new title> single-task title change
+- `clone`  — 0ef1391 feat(clone): tsk clone <id> duplicate a task with a fresh ID
+- `reopen` — a9ad18a feat(reopen): tsk reopen — discoverable undo with --last and --since
+- `snooze` — 9722016 feat(snooze): tsk snooze <id> <date> push due date forward only
+- `note`   — 607e94a feat(note): tsk note <id> [text] add/edit/clear notes from CLI
+
+Notable choices:
+- `reopen` is more than an undo alias — it adds --last (most recently
+  completed) and --since <duration> (everything in a window) for the
+  two common "wait, no" patterns. Local duration parser (NOT
+  store.ParseDuration), because the store helper treats `m` as months
+  — would silently make `--since 5m` mean 5 months ago.
+- `snooze` refuses backward moves by default (whole point: "deal with
+  this later"), with --force override. On an undated task it degrades
+  to a plain set with an "(initial)" marker.
+- `note` has three input modes (text args, editor, --stdin) plus
+  --append/--clear modifiers. Editor invocation indirected through a
+  package-level noteEditor var so tests can swap it for a shim — no
+  $EDITOR juggling, no subprocess fork.
+- `clone` deep-copies tags and due pointer so mutating the source can
+  never bleed into the clone (or vice versa); a dedicated regression
+  test guards that.
