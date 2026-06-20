@@ -78,14 +78,27 @@ Pull the next 5 unstarted items per tick.
 
 - [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress)
 - [ ] `tsk find <regex>` — `grep` over titles only (no notes scan, faster for big stores)
-- [ ] `tsk rebuild-ids` — densify ID space after lots of removes (1,5,7,12 -> 1,2,3,4)
-- [ ] `tsk recent` — alias for `last` with a window flag (`--since 1h`)
-- [ ] `tsk pri --up <id>` / `tsk pri --down <id>` — cycle priority without remembering the name
+- [x] `tsk rebuild-ids` — densify ID space after lots of removes (1,5,7,12 -> 1,2,3,4) (tick 2026-06-20/0948)
+- [ ] `tsk recent` — alias for `last` with a window flag (`--since 1h`) — NOTE: `recent` is already a `log` alias; consider a different verb
+- [x] `tsk pri --up <id>` / `tsk pri --down <id>` — cycle priority without remembering the name (tick 2026-06-20/0948)
 - [ ] `tsk depends-on <id>` — set/list the prerequisite chain (lighter than full graph)
-- [ ] `tsk lint` — validate the file (orphan IDs, dangling notes, ungrouped block) and suggest fixes
-- [ ] `tsk swap <id> <id>` — exchange two tasks' positions in the file (manual reorder)
+- [x] `tsk lint` — validate the file (orphan IDs, dangling notes, ungrouped block) and suggest fixes (tick 2026-06-20/0948)
+- [x] `tsk swap <id> <id>` — exchange two tasks' positions in the file (manual reorder) (tick 2026-06-20/0948)
 - [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
-- [ ] `tsk bench` — print parser/save timings for the current file (useful when a store gets big)
+- [x] `tsk bench` — print parser/save timings for the current file (useful when a store gets big) (tick 2026-06-20/0948)
+
+### Polish & DX (added 2026-06-20 tick #7)
+
+- [ ] `tsk start <id>` / `tsk stop <id>` — track in-progress state with `started:` meta key (also in storage backlog)
+- [ ] `tsk recur <id> <interval>` — convert a task to a recurring one (sister of stale `feat-recur`)
+- [ ] `tsk dedupe` — find tasks with identical or near-identical titles, surface for review
+- [ ] `tsk wrap <id> <text>` — wrap a long title with `>` continuation lines for readability
+- [ ] `tsk shuffle` — randomize task order for "what should I do next" decision paralysis
+- [ ] `tsk freeze <id>` — alias for `wait <id> 2099-01-01` (indefinite hide; surface only via `tsk wait --list`)
+- [ ] `tsk why <id>` — print the full history-ish trail (created, edited, dependencies, where it came from)
+- [ ] `tsk pri-stats` — distribution of priorities (how many low/med/high/urgent), `--by-tag` breakdown
+- [ ] `tsk lint --autofix-all` — combine multiple safe fixes (canonical bullet + drop unknown meta) without per-finding prompts (we have --fix; this would be the "just trust me" form)
+- [ ] `tsk hash` — print a stable content hash of the store (great for CI signals: "did anything change?")
 
 ## Known footguns the loop has run into
 
@@ -310,3 +323,65 @@ Roadmap status: "Polish & DX" section is 5/10 shipped (pin, wait,
 last, completion --install, man). Added a fresh "Polish & DX (added
 2026-06-20 tick #6)" subsection with 10 more sized items so future
 ticks never starve.
+
+### 2026-06-20 09:48 PT (tick #7)
+
+Shipped 5 features from the "Polish & DX (added tick #6)" backlog.
+All single-commit, all tests passing (52 new test cases across the
+5 features), full gate green (gofmt + vet + build + go test ./...)
+before push. Pushed 031154a..5880aee to origin/feature/autoship;
+verified landed.
+
+- `pri --up/--down/--cycle` — 031154a feat(pri): bump priority without naming it
+- `swap <id1> <id2>`        — 4d6bcaa feat(swap): exchange task positions in the file
+- `lint`                    — 1daa4f3 feat(lint): .tsk.md hygiene checker with safe --fix
+- `rebuild-ids`             — af9ea6d feat(rebuild-ids): densify sparse task IDs
+- `bench`                   — 5880aee feat(bench): parser + render timings for the active file
+
+Notable choices:
+- `pri` Args constraint relaxes from ExactArgs(2) to RangeArgs(1, 2).
+  The mode arbiter (validatePriModeFlags) enforces exactly one of
+  {positional <priority>, --up, --down, --cycle}. --up/--down clamp
+  at the extremes (urgent/low) and print "already at priority X"
+  instead of erroring — a no-op is the friendlier response when the
+  user holds the bump key. --cycle is the only mode that wraps
+  (urgent -> low); --cycle-down was considered and dropped because
+  upward-cycling matches the TUI's `p` key behavior.
+- `swap` ships a tiny findTaskIndex helper rather than reaching for
+  store.ByID — the swap needs the slice index (not a pointer) for
+  the actual exchange. Helper stays adjacent until a second caller
+  appears. Self-swap is a usage error so typos don't silently
+  no-op.
+- `lint` is the file-format sibling of `doctor` (which already
+  covers in-memory checks). Surfaces things the parser TOLERATES
+  on read but the writer drops on save: non-canonical bullets
+  (*/+), 'X' uppercase, unknown meta keys (silently lost on next
+  Save), missing created stamps, stray notes-shaped lines before
+  any task. --fix is a safe round-trip through store.Save: same
+  in-memory tasks, canonical bytes on disk, normal .bak chain so
+  undo-last reverts. The known-meta-keys set is intentionally
+  DUPLICATED locally rather than exported from store — keeps the
+  lint surface revertible without breaking store's public API.
+- `rebuild-ids` is destructive (every id mentioned anywhere
+  shifts), so safety is layered: dry-run default, --apply requires
+  --yes (defends against scripts), --since-id N preserves lower
+  ids (keeps bookmarked ids stable). The planRebuildIDs algorithm
+  has a tricky bit: when --since-id reserves some ids, the new
+  dense numbers must not collide with those reserved ones —
+  covered by a direct algorithm test (the CLI test alone would
+  miss subtle off-by-ones). Aliases: densify-ids, renumber.
+- `bench` measures the user's actual file (where the
+  bench_test.go microbenchmarks measure synthetic data). Reports
+  size, line count, task count, then load + render min/median/max
+  across N iterations. Does NOT measure Save (atomic tempfile +
+  fsync would dominate and pollute .bak chain). renderForBench
+  inlines its own near-identical serializer rather than reaching
+  into store.render (unexported) — keeps the command decoupled.
+  --iter is bounded [1, 1000]. Auto-unit formatter (us under 1ms,
+  ms above) keeps the numbers scannable.
+
+Roadmap status: tick #6 "Polish & DX" subsection 9/10 shipped
+(`recent` deferred: the verb already aliases `log`, needs a new
+name first). Added "Polish & DX (added tick #7)" subsection with
+10 more sized items so future ticks have room.
+
