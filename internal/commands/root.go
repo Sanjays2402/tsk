@@ -77,6 +77,7 @@ func NewRoot() *cobra.Command {
 		newLastCmd(),
 		newManCmd(),
 		newWaitCmd(),
+		newSwapCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
