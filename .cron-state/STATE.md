@@ -89,16 +89,29 @@ Pull the next 5 unstarted items per tick.
 
 ### Polish & DX (added 2026-06-20 tick #7)
 
-- [ ] `tsk start <id>` / `tsk stop <id>` — track in-progress state with `started:` meta key (also in storage backlog)
+- [ ] `tsk start <id>` / `tsk stop <id>` — track in-progress state with `started:` meta key (also in storage backlog) — SHIPPED in tick #8 (see tick #8 notes)
 - [ ] `tsk recur <id> <interval>` — convert a task to a recurring one (sister of stale `feat-recur`)
-- [ ] `tsk dedupe` — find tasks with identical or near-identical titles, surface for review
+- [x] `tsk dedupe` — find tasks with identical or near-identical titles, surface for review (tick 2026-06-20/1506)
 - [ ] `tsk wrap <id> <text>` — wrap a long title with `>` continuation lines for readability
 - [ ] `tsk shuffle` — randomize task order for "what should I do next" decision paralysis
-- [ ] `tsk freeze <id>` — alias for `wait <id> 2099-01-01` (indefinite hide; surface only via `tsk wait --list`)
+- [x] `tsk freeze <id>` — alias for `wait <id> 2099-01-01` (indefinite hide; surface only via `tsk wait --list`) (tick 2026-06-20/1506)
 - [ ] `tsk why <id>` — print the full history-ish trail (created, edited, dependencies, where it came from)
-- [ ] `tsk pri-stats` — distribution of priorities (how many low/med/high/urgent), `--by-tag` breakdown
+- [x] `tsk pri-stats` — distribution of priorities (how many low/med/high/urgent), `--by-tag` breakdown (tick 2026-06-20/1506)
 - [ ] `tsk lint --autofix-all` — combine multiple safe fixes (canonical bullet + drop unknown meta) without per-finding prompts (we have --fix; this would be the "just trust me" form)
-- [ ] `tsk hash` — print a stable content hash of the store (great for CI signals: "did anything change?")
+- [x] `tsk hash` — print a stable content hash of the store (great for CI signals: "did anything change?") (tick 2026-06-20/1506)
+
+### Polish & DX (added 2026-06-20 tick #8)
+
+- [x] `tsk start <id>` / `tsk stop <id>` / `tsk in-progress` — in-progress state with `started:` timestamp (tick 2026-06-20/1506)
+- [ ] `tsk elapsed <id>` — show "started Nm/h/d ago" for an in-progress task; --json for scripts
+- [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually (semantics: same)
+- [ ] `tsk recent` — rename of the would-be alias; show last-N edits with --since (the verb collision with `log` blocked this in tick #6)
+- [ ] `tsk why <id>` — print created/started/completed/wait/due/tags trail in one view (sister of `tsk show`)
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from the others, rm the rest (interactive)
+- [ ] `tsk shuffle` — random order of undone tasks (decision-paralysis breaker)
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation, mirror of `tsk note` for the title axis
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] `tsk lint --autofix-all` — non-interactive multi-fix
 
 ## Known footguns the loop has run into
 
@@ -385,3 +398,79 @@ Roadmap status: tick #6 "Polish & DX" subsection 9/10 shipped
 name first). Added "Polish & DX (added tick #7)" subsection with
 10 more sized items so future ticks have room.
 
+
+### 2026-06-20 15:06 PT (tick #8)
+
+Shipped 5 features from the "Polish & DX (added tick #7)" backlog,
+including the one storage-format extension. All single-commit, all
+tests passing (58 new test cases across the 5 features + every
+existing test still green), full gate green (gofmt + vet + build +
+go test ./...) before push. Pushed 905c7ca..2d211f3 to
+origin/feature/autoship; verified landed.
+
+- `hash`              — 905c7ca feat(hash): stable content hash (file + semantic modes)
+- `pri-stats`         — 8964226 feat(pri-stats): priority distribution with optional --by-tag
+- `freeze`/`thaw`     — 5112ca8 feat(freeze): indefinite-hide shorthand over wait
+- `dedupe`            — c6ab1e3 feat(dedupe): surface duplicate / near-duplicate tasks for review
+- `start`/`stop`/`wip`— 2d211f3 feat(start): in-progress state tracking with started: timestamp
+
+Notable choices:
+
+- `hash` has TWO modes for a real reason: file mode is the sha256sum-
+  shape sanity check ("did the bytes change?"), semantic mode is the
+  CI-grade "did any task content change?" check that survives a
+  `lint --fix` round-trip. The canonical projection uses UTC RFC3339
+  timestamps and ID-ordered emission so two stores describing the
+  same instants in different timezones hash identically. Notes are
+  escape-encoded with `\\` for `\` (lossless) so literal `\n` and a
+  real newline produce different digests — verified by a dedicated
+  test.
+
+- `pri-stats` deliberately renders ALL FOUR priority buckets even
+  when some are zero. The user wants to see WHERE the zeros are;
+  silent suppression makes their absence a footgun. The bar
+  rendering enforces a floor of one `█` for any non-zero count so
+  proportional rounding can't drop a real value to invisible.
+
+- `freeze`/`thaw` are pure SHIM commands on top of `wait`/`wait
+  --clear` — no new persisted state. The freeze sentinel is
+  2099-12-31 (parseable real date, lints clean, lets hand-editing
+  the meta silently un-freeze on that date). IsFrozen is exposed
+  for callers that want to render frozen vs ordinary-waiting
+  differently; currently only tests rely on it.
+
+- `dedupe` is a REVIEW tool, never destructive. Auto-removal would
+  too often clobber the wrong copy (the one with notes, the one
+  with a due date). The output is shaped for "review then maybe
+  rm" workflows: `--files-only` is group-aware (blank line between
+  groups). Levenshtein has EARLY TERMINATION (row min > cap bails)
+  which keeps `--near 2` linear-in-store rather than quadratic-in-
+  title-length on most inputs. Damerau (transpositions) intentionally
+  not added — regular edit distance at <= 2 catches typos fine, and
+  the extra row inflates code with little user-visible win. Title
+  normalization strips punctuation so "buy milk." / "buy milk"
+  collide in exact mode (a frequent class of accidental dupes).
+
+- `start`/`stop`/`in-progress` are the FIRST storage-format extension
+  this tick (Task.Started *time.Time, `started:` meta key). Strictly
+  additive: old files round-trip unchanged, NormalizeTags-style
+  defensive behavior, lint's knownMetaKeys updated, hash's canonical
+  projection extended in the documented order (between created and
+  completed). One real semantic decision is documented in store.SetDone:
+  marking done CLEARS Started (Completed is the more useful timestamp
+  at that point); reopen does NOT re-set Started (user must explicitly
+  start again — they may not actually be picking the work back up).
+  start is idempotent without --reset because "I forgot I had started
+  this an hour ago" shouldn't accidentally zero the elapsed time;
+  start on a done task is a usage error (forces explicit reopen
+  first — implicit transitions hide bugs).
+
+Roadmap status: tick #7 "Polish & DX" subsection is 5/10 shipped
+(hash, pri-stats, freeze, dedupe, start/stop). The remaining 5 are
+recur, wrap, shuffle, why, lint --autofix-all. Added "Polish & DX
+(added tick #8)" subsection with 10 fresh items so future ticks
+have room.
+
+Per-feature test counts: hash 9, pri-stats 13, freeze/thaw 10,
+dedupe 15, start/stop/in-progress + helpers 16. Total ~63 new test
+cases on top of the existing suite, all green.
