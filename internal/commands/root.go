@@ -85,6 +85,7 @@ func NewRoot() *cobra.Command {
 		newBenchCmd(),
 		newHashCmd(),
 		newPriStatsCmd(),
+		newDedupeCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)
