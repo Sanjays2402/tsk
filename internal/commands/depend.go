@@ -52,6 +52,7 @@ func newDependCmd() *cobra.Command {
 		clear     bool
 		list      bool
 		tree      bool
+		justify   bool
 		asJSON    bool
 	)
 	cmd := &cobra.Command{
@@ -67,6 +68,7 @@ Remove ids:     tsk depend <id> --remove 3
 Clear all:      tsk depend <id> --clear
 Inspect one:    tsk depend <id>
 Inspect tree:   tsk depend <id> --tree         (recursive prereq chain)
+Justify block:  tsk depend <id> --justify      (why is this blocked?)
 Inspect all:    tsk depend --list              (every blocked task at once)
 
 Self-dependencies and direct cycles (A↔B) are rejected. Bigger-than-
@@ -75,6 +77,13 @@ and the user would notice when both ends refuse to close. The --tree
 view DOES detect deeper cycles defensively (marks them "(cycle)") so
 a corrupt hand-edit can't put the renderer in an infinite loop.
 
+--justify walks the prereq chain and reports a chain of reasons:
+"#5 blocked by #3 (open) which is blocked by #7 (open)". Stops at
+the first OPEN-with-no-open-prereqs leaf — that's the actionable
+task. Tree (--tree) shows structure; justify shows the WHY chain
+in plain English, optimized for the "what do I do about this?"
+question.
+
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
   tsk depend 7 --add 9          # 7 also needs 9
@@ -82,11 +91,13 @@ Examples:
   tsk depend 7 --clear          # 7 is fully unblocked
   tsk depend 7                  # show the chain
   tsk depend 7 --tree           # recursive prereq chain, indented
+  tsk depend 7 --justify        # plain-English reason chain
+  tsk depend 7 --justify --json # structured reason chain for scripts
   tsk depend --list --json      # CI: what's stuck?
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree); err != nil {
+			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree, justify); err != nil {
 				return err
 			}
 			s, err := resolveStore(cmd, true)
@@ -107,6 +118,9 @@ Examples:
 			if tree {
 				return runDependTree(cmd.OutOrStdout(), s, t, asJSON)
 			}
+			if justify {
+				return runDependJustify(cmd.OutOrStdout(), s, t, asJSON)
+			}
 			// Inspect-mode: no mutation flags.
 			if onCSV == "" && addCSV == "" && removeCSV == "" && !clear {
 				return runDependInspect(cmd.OutOrStdout(), s, t, asJSON)
@@ -120,13 +134,14 @@ Examples:
 	cmd.Flags().BoolVar(&clear, "clear", false, "drop all dependencies")
 	cmd.Flags().BoolVar(&list, "list", false, "list every blocked task in the store")
 	cmd.Flags().BoolVar(&tree, "tree", false, "print the recursive prerequisite chain (depth-first, indented)")
+	cmd.Flags().BoolVar(&justify, "justify", false, "explain why a task is blocked via a chain of reasons")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }
 
 // validateDependFlags rejects nonsensical combinations up-front so the
 // user sees a precise error instead of weird half-applied state.
-func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree bool) error {
+func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree, justify bool) error {
 	mutexCount := 0
 	if onCSV != "" {
 		mutexCount++
@@ -150,10 +165,13 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 		if mutexCount > 0 {
 			return usageErrorf("--list can't be combined with mutation flags")
 		}
-		if tree {
-			return usageErrorf("--list and --tree are mutually exclusive (use `tsk depend --list` for the global view, `tsk depend <id> --tree` for one branch)")
+		if tree || justify {
+			return usageErrorf("--list is mutually exclusive with --tree and --justify (use --list for the global view, --tree/--justify for a single id)")
 		}
 		return nil
+	}
+	if tree && justify {
+		return usageErrorf("--tree and --justify are mutually exclusive (tree shows structure, justify shows the why-chain)")
 	}
 	if tree {
 		if mutexCount > 0 {
@@ -161,6 +179,15 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 		}
 		if len(args) == 0 {
 			return usageErrorf("--tree requires an <id> (e.g. `tsk depend 7 --tree`)")
+		}
+		return nil
+	}
+	if justify {
+		if mutexCount > 0 {
+			return usageErrorf("--justify is read-only — can't combine with mutation flags")
+		}
+		if len(args) == 0 {
+			return usageErrorf("--justify requires an <id> (e.g. `tsk depend 7 --justify`)")
 		}
 		return nil
 	}
