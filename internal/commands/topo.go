@@ -60,6 +60,7 @@ func newTopoCmd() *cobra.Command {
 		idsOnly     bool
 		format      string
 		includeDone bool
+		sinceID     int
 	)
 	cmd := &cobra.Command{
 		Use:   "topo",
@@ -77,11 +78,20 @@ are part of a dependency cycle. They're emitted at the tail with a
 "(cycle)" marker (or "cycle": true in JSON) so a corrupt hand-edit
 is visible rather than silently dropped.
 
+--since <id> drops every task that appears BEFORE <id> in the
+emitted sequence (inclusive of <id> as the new head). Treat <id>
+as a checkpoint: "I've already done everything up through #N,
+what's the topological tail?" The skipped prereqs are excluded
+even if they're still open — the user has asserted they're not
+part of the current plan. Cycle-tail rows are always preserved
+(corruption visibility wins over the slicing window).
+
 Examples:
   tsk topo                            # ordered list, human-readable
   tsk topo --all                      # include done tasks (historical first)
   tsk topo --json                     # array of objects
   tsk topo --ids                      # comma-separated ids
+  tsk topo --since 7                  # start the list at #7 (or just after, if #7 is a prereq)
   tsk topo --ids | xargs -n1 tsk show # walk the chain interactively
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -105,6 +115,15 @@ Examples:
 				return err
 			}
 			ordered, cycle := topoOrder(s, includeDone)
+			if sinceID > 0 {
+				if s.ByID(sinceID) == nil {
+					return usageErrorf("--since #%d: no task with that id in %s", sinceID, s.Path)
+				}
+				ordered = sliceTopoSince(ordered, sinceID)
+				if len(ordered) == 0 {
+					return usageErrorf("--since #%d: id is not in the current topological output (try --all to include done tasks)", sinceID)
+				}
+			}
 			return emitTopo(cmd.OutOrStdout(), ordered, cycle, asJSON, idsOnly, format)
 		},
 	}
@@ -112,6 +131,7 @@ Examples:
 	cmd.Flags().BoolVar(&idsOnly, "ids", false, "emit just the ids, comma-separated")
 	cmd.Flags().StringVar(&format, "format", "", "alternate format: dot (GraphViz with rank=topo order)")
 	cmd.Flags().BoolVar(&includeDone, "all", false, "include done tasks (default: open only)")
+	cmd.Flags().IntVar(&sinceID, "since", 0, "drop tasks that appear before this id in the sequence (id becomes the head)")
 	return cmd
 }
 
@@ -222,6 +242,67 @@ func topoOrder(s *store.Store, includeDone bool) ([]topoTask, bool) {
 		out = append(out, topoTask{Task: byID[id], InCycle: true})
 	}
 	return out, cycleDetected
+}
+
+// sliceTopoSince trims the ordered topological sequence so that the
+// task with the given id is the new head. Tasks that appeared before
+// it are dropped — the caller has asserted they're not part of the
+// current plan (a "I've already done up through this point" anchor).
+//
+// Cycle-tail rows (InCycle=true) are always preserved at the end so
+// corruption visibility wins over the slicing window — silently
+// hiding a corrupt edge is worse than including it in a "do these
+// next" list because the user can see it's flagged.
+//
+// Returns the empty slice if the id doesn't appear in `ordered` —
+// the caller surfaces that as a usage error (the id either doesn't
+// exist or is excluded by another filter like --all=false).
+func sliceTopoSince(ordered []topoTask, id int) []topoTask {
+	startIdx := -1
+	for i, row := range ordered {
+		if row.Task.ID == id && !row.InCycle {
+			startIdx = i
+			break
+		}
+	}
+	if startIdx < 0 {
+		// Try the cycle tail too — a checkpoint inside a cycle should
+		// still anchor the user (they presumably know about the
+		// corruption and want to scope around it).
+		for i, row := range ordered {
+			if row.Task.ID == id {
+				startIdx = i
+				break
+			}
+		}
+	}
+	if startIdx < 0 {
+		return nil
+	}
+	kept := make([]topoTask, 0, len(ordered)-startIdx)
+	// Linear-pass kept set: everything from startIdx onward.
+	for i := startIdx; i < len(ordered); i++ {
+		kept = append(kept, ordered[i])
+	}
+	// Preserve any cycle-tail rows that lived BEFORE startIdx — they
+	// were positioned at the tail by topoOrder, but if startIdx
+	// happens to fall inside the cycle bucket itself the slicing
+	// already covers them. The case to handle is the unusual one
+	// where a cycle row had a smaller in-pool id than the checkpoint
+	// (won't happen given topoOrder's tail-append semantics, but
+	// defensive). We re-scan for InCycle=true rows from [0..startIdx).
+	cyclePrefix := make([]topoTask, 0)
+	for i := 0; i < startIdx; i++ {
+		if ordered[i].InCycle {
+			cyclePrefix = append(cyclePrefix, ordered[i])
+		}
+	}
+	if len(cyclePrefix) > 0 {
+		// Append at tail (they're cycle rows, they belong after the
+		// linear plan).
+		kept = append(kept, cyclePrefix...)
+	}
+	return kept
 }
 
 // filterTopoCandidates applies the include-done / hide-waiting
