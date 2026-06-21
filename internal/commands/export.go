@@ -13,31 +13,49 @@ import (
 )
 
 func newExportCmd() *cobra.Command {
-	var asJSON, asCSV, asJSONL bool
+	var asJSON, asCSV, asJSONL, asGraphDot bool
 	var format string
+	var graphReachable int
+	var graphOpen bool
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export tasks as JSON, JSONL, CSV, or Markdown",
+		Short: "Export tasks as JSON, JSONL, CSV, Markdown, or GraphViz DOT",
 		Long: `Export tasks in a shareable format.
 
 Formats:
-  json      Pretty-printed JSON array of task objects
-  jsonl     Streaming JSON-lines (one task per line, no array wrapper) —
-            ideal for pipelines: each line is independently parsable so
-            jq/mlr/awk can process them without buffering the whole set.
-  csv       CSV with header row (id, done, priority, title, due, ...)
-  markdown  Human-readable Markdown grouped by section
+  json       Pretty-printed JSON array of task objects
+  jsonl      Streaming JSON-lines (one task per line, no array wrapper) —
+             ideal for pipelines: each line is independently parsable so
+             jq/mlr/awk can process them without buffering the whole set.
+  csv        CSV with header row (id, done, priority, title, due, ...)
+  markdown   Human-readable Markdown grouped by section
+  graph-dot  GraphViz DOT source of the dependency graph — same shape as
+             ` + "`tsk graph --format dot`" + ` but lives under the central
+             export verb. Pairs with --reachable <id> and --open to scope
+             the graph; pipe into ` + "`dot -Tpng > deps.png`" + ` for a
+             real visual.
 
 Use --format to pick a format explicitly, or the legacy --json / --jsonl /
---csv shortcuts.
+--csv / --graph-dot shortcuts.
 
 JSONL pipeline example:
   tsk export --jsonl | jq -c 'select(.Done == false) | {ID, Title}'
+
+Graph examples:
+  tsk export --graph-dot | dot -Tpng > deps.png
+  tsk export --graph-dot --open                       # only currently-blocking edges
+  tsk export --graph-dot --reachable 7                # subgraph rooted at #7
+  tsk export --graph-dot --reachable 7 --open | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			chosen, err := resolveExportFormat(format, asJSON, asCSV, asJSONL)
+			chosen, err := resolveExportFormat(format, asJSON, asCSV, asJSONL, asGraphDot)
 			if err != nil {
 				return err
+			}
+			// Graph-shaping flags are only meaningful for graph-dot.
+			// Surface the misuse loudly rather than silently ignoring.
+			if (graphReachable > 0 || graphOpen) && chosen != "graph-dot" {
+				return fmt.Errorf("--reachable / --open only apply to --graph-dot (got format %q)", chosen)
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -53,21 +71,26 @@ JSONL pipeline example:
 				return exportCSV(out, s.Tasks)
 			case "markdown":
 				return exportMarkdown(out, s.Tasks)
+			case "graph-dot":
+				return exportGraphDOT(out, s, graphOpen, graphReachable)
 			}
 			return fmt.Errorf("unreachable: unknown format %q", chosen)
 		},
 	}
-	cmd.Flags().StringVarP(&format, "format", "f", "", "output format: json, jsonl, csv, or markdown")
+	cmd.Flags().StringVarP(&format, "format", "f", "", "output format: json, jsonl, csv, markdown, or graph-dot")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
 	cmd.Flags().BoolVar(&asJSONL, "jsonl", false, "emit JSON-lines (shortcut for --format=jsonl)")
 	cmd.Flags().BoolVar(&asCSV, "csv", false, "emit CSV (shortcut for --format=csv)")
+	cmd.Flags().BoolVar(&asGraphDot, "graph-dot", false, "emit GraphViz DOT of the dependency graph (shortcut for --format=graph-dot)")
+	cmd.Flags().IntVar(&graphReachable, "reachable", 0, "for --graph-dot: restrict to the subgraph reachable from this task id")
+	cmd.Flags().BoolVar(&graphOpen, "open", false, "for --graph-dot: only include open tasks and the open deps that block them")
 	return cmd
 }
 
 // resolveExportFormat arbitrates between --format and the legacy boolean
 // shortcuts. Supplying more than one wins with a useful error rather than a
 // silent priority rule.
-func resolveExportFormat(format string, asJSON, asCSV, asJSONL bool) (string, error) {
+func resolveExportFormat(format string, asJSON, asCSV, asJSONL, asGraphDot bool) (string, error) {
 	chosen := ""
 	count := 0
 	if asJSON {
@@ -82,15 +105,19 @@ func resolveExportFormat(format string, asJSON, asCSV, asJSONL bool) (string, er
 		chosen = "csv"
 		count++
 	}
+	if asGraphDot {
+		chosen = "graph-dot"
+		count++
+	}
 	if format != "" {
 		chosen = strings.ToLower(strings.TrimSpace(format))
 		count++
 	}
 	if count == 0 {
-		return "", fmt.Errorf("specify --format=<json|jsonl|csv|markdown> (or --json / --jsonl / --csv)")
+		return "", fmt.Errorf("specify --format=<json|jsonl|csv|markdown|graph-dot> (or --json / --jsonl / --csv / --graph-dot)")
 	}
 	if count > 1 {
-		return "", fmt.Errorf("specify exactly one of --format, --json, --jsonl, --csv")
+		return "", fmt.Errorf("specify exactly one of --format, --json, --jsonl, --csv, --graph-dot")
 	}
 	switch chosen {
 	case "json", "csv", "markdown", "md":
@@ -102,8 +129,13 @@ func resolveExportFormat(format string, asJSON, asCSV, asJSONL bool) (string, er
 		// ndjson is the same wire format under a different name —
 		// accept it as an alias because half the world calls it that.
 		return "jsonl", nil
+	case "graph-dot", "graphdot", "dot":
+		// "dot" is the short alias users coming from `tsk graph
+		// --format dot` will reach for. graphdot is the no-dash
+		// form some shells/scripts prefer.
+		return "graph-dot", nil
 	}
-	return "", fmt.Errorf("unknown --format %q: expected json, jsonl, csv, or markdown", chosen)
+	return "", fmt.Errorf("unknown --format %q: expected json, jsonl, csv, markdown, or graph-dot", chosen)
 }
 
 func exportJSON(w io.Writer, tasks []model.Task) error {
