@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -24,8 +25,14 @@ import (
 // with a "(blocked)" annotation rather than going silent — the user
 // likely wants to know "everything's stuck on X" instead of
 // "all caught up" (which would be a lie).
+//
+// --json emits a structured object so pipelines can branch on
+// fields without parsing the human-readable line. Empty-store /
+// all-caught-up renders as {"empty": true} so consumers reliably
+// detect "no task" via `jq '.empty'` without sentinel string match.
 func newNextCmd() *cobra.Command {
 	var respectDeps bool
+	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Show the highest-priority undone task",
@@ -39,9 +46,16 @@ the suggested "next thing". When every candidate is blocked, the
 command falls back to the highest-priority blocked task with a
 "(blocked by #X, #Y)" annotation so you know what's gating progress.
 
+--json emits a structured object with id/title/priority/due/pinned/
+blocked_by/blocked (the all-blocked fallback flag). Empty store or
+caught-up status renders {"empty": true} so scripts can detect it
+without sentinel string matching.
+
 Examples:
   tsk next                       # legacy: priority-only
   tsk next --respect-deps        # skip tasks with unmet prereqs
+  tsk next --json                # script-friendly object
+  tsk next --json | jq -r '.id'  # bare id for the next pipeline stage
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			s, err := resolveStore(cmd, true)
@@ -74,6 +88,9 @@ Examples:
 					best = t
 				}
 			}
+			if asJSON {
+				return emitNextJSON(cmd, best, bestBlocked, bestBlockers)
+			}
 			if best == nil && bestBlocked != nil {
 				// All candidates blocked — surface the best blocked one
 				// with annotation so the user knows what's stuck.
@@ -89,6 +106,7 @@ Examples:
 		},
 	}
 	cmd.Flags().BoolVar(&respectDeps, "respect-deps", false, "skip tasks with unmet prerequisites")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit structured JSON")
 	return cmd
 }
 
@@ -136,4 +154,53 @@ func printNextLine(cmd *cobra.Command, t *model.Task, blockers []int) {
 		line += "  (blocked by " + formatBlockerIDs(blockers) + ")"
 	}
 	pln(cmd.OutOrStdout(), line)
+}
+
+// nextJSON is the structured shape returned by `tsk next --json`.
+// Empty/all-caught-up encodes as {"empty": true} so consumers can
+// branch on a real boolean instead of pattern-matching the text
+// "all caught up". When the all-blocked fallback fires, the Blocked
+// boolean flips true and BlockedBy lists the open prereqs that
+// gated the suggestion — matching the "(blocked by …)" annotation
+// that the human-readable path appends.
+type nextJSON struct {
+	Empty     bool     `json:"empty,omitempty"`
+	ID        int      `json:"id,omitempty"`
+	Title     string   `json:"title,omitempty"`
+	Priority  string   `json:"priority,omitempty"`
+	Due       string   `json:"due,omitempty"`
+	Pinned    bool     `json:"pinned,omitempty"`
+	Tags      []string `json:"tags,omitempty"`
+	Blocked   bool     `json:"blocked,omitempty"`
+	BlockedBy []int    `json:"blocked_by,omitempty"`
+}
+
+// emitNextJSON writes the nextJSON document. We deliberately keep a
+// stable schema (every field present in the type, omitempty for
+// optional ones) so downstream `jq` calls are predictable.
+func emitNextJSON(cmd *cobra.Command, best, bestBlocked *model.Task, blockers []int) error {
+	doc := nextJSON{}
+	t := best
+	if t == nil && bestBlocked != nil {
+		t = bestBlocked
+		doc.Blocked = true
+		doc.BlockedBy = blockers
+	}
+	if t == nil {
+		doc.Empty = true
+	} else {
+		doc.ID = t.ID
+		doc.Title = t.Title
+		doc.Priority = t.Priority.String()
+		if t.Due != nil {
+			doc.Due = t.Due.Format(model.DateLayout)
+		}
+		doc.Pinned = t.Pinned
+		if len(t.Tags) > 0 {
+			doc.Tags = append([]string(nil), t.Tags...)
+		}
+	}
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
