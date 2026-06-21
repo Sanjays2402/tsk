@@ -21,18 +21,31 @@ import (
 // it emits the same task object `tsk export --json` does, but for a
 // single id, so scripts can pluck one field without piping through jq.
 //
-// `--tree` is the "context" companion: it prints the standard snapshot
-// AND appends the recursive prerequisite chain rooted at <id>. Saves
-// users from running `tsk show 7 && tsk depend 7 --tree` back-to-back
+// `--tree` is the "downstream context" companion: it prints the standard
+// snapshot AND appends the recursive prerequisite chain rooted at <id>.
+// Saves users from running `tsk show 7 && tsk depend 7 --tree` back-to-back
 // when triaging a blocked task. The tree section is suppressed entirely
 // when the task has no dependencies (skip the empty "dependencies:" header
 // so the output for a leaf task stays identical to a plain `tsk show`).
 // In JSON mode, --tree adds a `dependency_tree` field containing the
 // same nested shape `tsk depend <id> --tree --json` emits.
+//
+// `--upstream` is the inverse-direction companion: appends the list of
+// tasks that depend on <id>, with the same "(unblocks)/(blocked)/(done)"
+// annotations `tsk depend --upstream` uses. Saves users running
+// `tsk show 7 && tsk depend 7 --upstream` back-to-back when deciding
+// "if I close this, what becomes actionable?". Section is suppressed
+// when nothing depends on the task — same idempotency contract as --tree.
+// In JSON mode, --upstream adds an `upstream` array.
+//
+// --tree and --upstream are mutually exclusive — they each render a
+// different relationship and combining them would muddle the snapshot's
+// layout. Pick one per call.
 func newShowCmd() *cobra.Command {
 	var (
-		asJSON bool
-		tree   bool
+		asJSON   bool
+		tree     bool
+		upstream bool
 	)
 	cmd := &cobra.Command{
 		Use:   "show <id>",
@@ -48,15 +61,28 @@ object as 'tsk export --json' but scoped to one id.
 follow-up command when triaging a blocked task. Suppressed when the
 task has no dependencies.
 
+--upstream appends the list of tasks that depend on this one (the
+same view 'tsk depend <id> --upstream' renders), with state
+annotations. Saves a follow-up when deciding "if I close this, what
+becomes actionable?". Suppressed when nothing depends on the task.
+
+--tree and --upstream are mutually exclusive — each shows a
+different relationship.
+
 Examples:
   tsk show 3
   tsk show 3 --json
-  tsk show 3 --tree            # snapshot + dep tree
+  tsk show 3 --tree            # snapshot + dep tree (downstream prereqs)
+  tsk show 3 --upstream        # snapshot + dependents (upstream)
   tsk show 3 --tree --json     # JSON snapshot + nested dep tree
+  tsk show 3 --upstream --json # JSON snapshot + upstream array
   tsk show 3 --json | jq -r '.Notes'
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tree && upstream {
+				return usageErrorf("--tree and --upstream are mutually exclusive (each shows a different relationship)")
+			}
 			id, err := parseSingleID(args[0])
 			if err != nil {
 				return err
@@ -70,8 +96,11 @@ Examples:
 				return fmt.Errorf("no task with id %d in %s", id, s.Path)
 			}
 			if asJSON {
-				if tree {
+				switch {
+				case tree:
 					return emitShowJSONWithTree(cmd.OutOrStdout(), s, t)
+				case upstream:
+					return emitShowJSONWithUpstream(cmd.OutOrStdout(), s, t)
 				}
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -83,11 +112,22 @@ Examples:
 				pln(cmd.OutOrStdout(), "dependencies:")
 				printDependTreeText(cmd.OutOrStdout(), s, t, 0, make(map[int]bool))
 			}
+			if upstream {
+				rows := collectUpstreamDependents(s, t)
+				if len(rows) > 0 {
+					pln(cmd.OutOrStdout())
+					pln(cmd.OutOrStdout(), "upstream:")
+					for _, r := range rows {
+						pf(cmd.OutOrStdout(), "  #%d  %s  (%s)\n", r.ID, r.Title, r.Status)
+					}
+				}
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (single task object)")
 	cmd.Flags().BoolVar(&tree, "tree", false, "append the recursive prerequisite chain below the snapshot")
+	cmd.Flags().BoolVar(&upstream, "upstream", false, "append the list of tasks that depend on this one")
 	return cmd
 }
 
@@ -116,6 +156,36 @@ func emitShowJSONWithTree(w io.Writer, s *store.Store, t *model.Task) error {
 	}
 	if t.HasDependencies() {
 		doc["dependency_tree"] = buildDependTreeNode(s, t, make(map[int]bool))
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
+}
+
+// emitShowJSONWithUpstream is the mirror of emitShowJSONWithTree for
+// the inverse direction. Same round-trip-and-splice technique so the
+// existing task field set is preserved exactly: callers that already
+// parse `tsk show --json` keep their schema, plus a new top-level
+// `upstream` array when there are dependents.
+//
+// The upstream key is OMITTED entirely when nothing depends on the
+// task — schema parity with the --tree variant on a leaf task. A
+// dependent-less task and a dependent-having task should be
+// distinguishable by key presence (`.upstream | length` works only
+// because we set [] when there ARE upstream rows, never omit them
+// in that case; absence means "no dependents at all").
+func emitShowJSONWithUpstream(w io.Writer, s *store.Store, t *model.Task) error {
+	raw, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return err
+	}
+	rows := collectUpstreamDependents(s, t)
+	if len(rows) > 0 {
+		doc["upstream"] = rows
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
