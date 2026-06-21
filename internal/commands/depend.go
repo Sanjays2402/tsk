@@ -56,6 +56,7 @@ func newDependCmd() *cobra.Command {
 		upstream     bool
 		pending      bool
 		pendingSince string
+		pendingTag   string
 		asJSON       bool
 	)
 	cmd := &cobra.Command{
@@ -103,6 +104,9 @@ dependencies was recently completed (default: last 24h). It's the
 ("which tasks got unblocked overnight?") or after closing a batch
 of prereqs ("what's freshly free?"). Tasks unblocked long ago are
 excluded; pass --since to widen the window (1h, 7d, 30d, etc).
+Pair with --tag to narrow the feed to one project's tag (e.g.
+` + "`tsk depend --pending --tag work --since 7d`" + ` for "what's freshly
+unblocked on work this week, leaving home stuff out").
 
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
@@ -118,6 +122,7 @@ Examples:
   tsk depend --list --json      # CI: what's stuck?
   tsk depend --pending          # what just became actionable?
   tsk depend --pending --since 7d
+  tsk depend --pending --tag work --since 7d  # narrow by tag
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -132,7 +137,7 @@ Examples:
 				return runDependList(cmd.OutOrStdout(), s, asJSON)
 			}
 			if pending {
-				return runDependPending(cmd.OutOrStdout(), s, pendingSince, asJSON)
+				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, asJSON)
 			}
 			id, err := parseSingleID(args[0])
 			if err != nil {
@@ -168,6 +173,7 @@ Examples:
 	cmd.Flags().BoolVar(&upstream, "upstream", false, "list tasks that depend on this one (reverse of --tree)")
 	cmd.Flags().BoolVar(&pending, "pending", false, "list open tasks whose prereqs were recently completed")
 	cmd.Flags().StringVar(&pendingSince, "since", "24h", "for --pending: how recent the unblocking completion must be (e.g. 1h, 7d)")
+	cmd.Flags().StringVar(&pendingTag, "tag", "", "for --pending: restrict to tasks carrying this tag")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }

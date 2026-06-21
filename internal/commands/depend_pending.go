@@ -42,6 +42,11 @@ import (
 //     as deps won't appear unless some OTHER dep was recently closed.
 //     This is conservative: better to under-report than incorrectly
 //     flag stale unblocks as new.
+//   - --tag narrows the pending queue to tasks carrying the named
+//     tag (case-insensitive, single tag — same shape as
+//     `tsk ls --tag`). Useful for "what unblocked overnight on my
+//     work projects?" without seeing personal tasks in the same
+//     feed. Empty value = no tag filter.
 //
 // Sort order: most-recent unblocking completion FIRST. That mirrors
 // `tsk log`'s newest-first ordering — the freshest unblocks at the
@@ -50,17 +55,17 @@ import (
 // Each row annotates which prereq's completion was the unblocking
 // trigger (the most-recent done dep's id + when), so the user
 // understands the "why now?" without a follow-up.
-func runDependPending(w io.Writer, s *store.Store, sinceRaw string, asJSON bool) error {
+func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag string, asJSON bool) error {
 	sinceDur, err := parsePendingSince(sinceRaw)
 	if err != nil {
 		return err
 	}
 	now := time.Now()
-	rows := collectPendingRows(s, now, sinceDur)
+	rows := collectPendingRows(s, now, sinceDur, tag)
 	if asJSON {
 		return emitPendingJSON(w, rows)
 	}
-	return emitPendingPlain(w, rows, sinceDur)
+	return emitPendingPlain(w, rows, sinceDur, tag)
 }
 
 // parsePendingSince validates and parses the --since flag value.
@@ -103,9 +108,12 @@ type pendingRow struct {
 }
 
 // collectPendingRows scans the store and returns every task that
-// matches the pending criteria, sorted newest trigger first.
-func collectPendingRows(s *store.Store, now time.Time, since time.Duration) []pendingRow {
+// matches the pending criteria, sorted newest trigger first. When
+// tag is non-empty, results are restricted to tasks carrying that
+// tag (case-insensitive via Task.HasTag).
+func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag string) []pendingRow {
 	cutoff := now.Add(-since)
+	tag = strings.TrimSpace(tag)
 	out := make([]pendingRow, 0)
 	for _, t := range s.Tasks {
 		if t.Done {
@@ -115,6 +123,9 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration) []pe
 			continue
 		}
 		if t.IsWaiting(now) {
+			continue
+		}
+		if tag != "" && !t.HasTag(tag) {
 			continue
 		}
 		t := t
@@ -174,13 +185,22 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration) []pe
 //
 // Empty result gets an explicit message — silent output would be
 // ambiguous for a "what's new?" query.
-func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration) error {
+func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag string) error {
+	tag = strings.TrimSpace(tag)
 	if len(rows) == 0 {
-		pf(w, "no tasks freshly unblocked in the last %s\n", humanizeDuration(since))
+		if tag != "" {
+			pf(w, "no tasks freshly unblocked in the last %s (tag=%s)\n", humanizeDuration(since), tag)
+		} else {
+			pf(w, "no tasks freshly unblocked in the last %s\n", humanizeDuration(since))
+		}
 		return nil
 	}
 	loc := PacificLoc()
-	pf(w, "freshly unblocked (last %s): %d task(s)\n", humanizeDuration(since), len(rows))
+	if tag != "" {
+		pf(w, "freshly unblocked (last %s, tag=%s): %d task(s)\n", humanizeDuration(since), tag, len(rows))
+	} else {
+		pf(w, "freshly unblocked (last %s): %d task(s)\n", humanizeDuration(since), len(rows))
+	}
 	for _, r := range rows {
 		when := r.TriggerCompleted.In(loc).Format("2006-01-02 15:04")
 		pf(w, "  #%d  %s  (unblocked by #%d at %s)\n", r.ID, r.Title, r.TriggerID, when)
