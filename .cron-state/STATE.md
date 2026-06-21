@@ -134,15 +134,32 @@ Fresh ideas so future ticks have ample sized work — focus on what
 the dep system makes newly possible plus a few cross-cuts:
 
 - [ ] `tsk depend --add-bidir <a> <b>` — symmetric "these two relate" not strictly prerequisite (info-only depends?). Probably not — that's a new field, not a dep.
-- [ ] `tsk graph --reachable <id>` — only emit the subgraph reachable from one root (filter `graph` by transitive deps)
+- [x] `tsk graph --reachable <id>` — only emit the subgraph reachable from one root (filter `graph` by transitive deps) (tick 2026-06-20/2318)
 - [ ] `tsk depend --pending` — list tasks whose prereqs were recently completed, so you can pull them up (the "now-unblocked" view)
-- [ ] `tsk path <a> <b>` — find the dep path between two tasks (BFS over the graph)
-- [ ] `tsk topo` — emit tasks in topological order (dep-respecting linearization for "do these in this order")
-- [ ] `tsk depend <id> --justify` — print the reason chain ("blocked because #3 (which is blocked because #7 (which is not done))")
-- [ ] `tsk next --json` — JSON output for `next` so it composes with scripts (currently only plain text)
+- [x] `tsk path <a> <b>` — find the dep path between two tasks (BFS over the graph) (tick 2026-06-20/2318)
+- [x] `tsk topo` — emit tasks in topological order (dep-respecting linearization for "do these in this order") (tick 2026-06-20/2318)
+- [x] `tsk depend <id> --justify` — print the reason chain ("blocked because #3 (which is blocked because #7 (which is not done))") (tick 2026-06-20/2318)
+- [x] `tsk next --json` — JSON output for `next` so it composes with scripts (currently only plain text) (tick 2026-06-20/2318)
 - [ ] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view)
 - [ ] `tsk show <id> --tree` — combine show snapshot with the dep tree below it
 - [ ] `tsk merge --interactive` — pick conflict resolution per-field via prompts (when `--prefer` is too coarse)
+
+### Polish & DX (added 2026-06-20 tick #11)
+
+Fresh ideas so future ticks have ample sized work — many are
+follow-ons to the dep-debugging cluster (justify/path/topo/reachable)
+plus some long-tail polish:
+
+- [ ] `tsk justify --all` — emit a justify chain for every blocked task in one screen (review tool: "what's gating everything?")
+- [ ] `tsk path <a> <b> --any-direction` — BFS in both directions (handles "are these two related at all?")
+- [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
+- [ ] `tsk depend --pending` — tasks whose prereqs were recently completed (the "now-unblocked" notification queue)
+- [ ] `tsk depend <id> --upstream` — reverse view of --tree (what depends on me?)
+- [ ] `tsk reachable <id>` — top-level alias for `graph --reachable` (discoverable verb)
+- [ ] `tsk lint --dep-cycles` — detect 3+ node cycles the writer doesn't catch; suggest fixes
+- [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
+- [ ] `tsk next --skip <id1,id2,...>` — exclude specific tasks from the next-pick pool (temporary hold without freeze)
+- [ ] `tsk add --depends <ids>` — set DependsOn at creation time (saves a follow-up `tsk depend` call)
 
 ## Known footguns the loop has run into
 
@@ -699,3 +716,95 @@ existing suite, all green. (Existing test suite ~530 cases also
 still green after the next.go rewrite + the new shared
 filterBlockedTasks helper — verified via full repo gate before
 push.)
+
+### 2026-06-20 23:18 PT (tick #11)
+
+Shipped 5 features — all from the "Polish & DX (added tick #10)"
+subsection, forming a tight cohesive cluster: deep dependency
+debugging tooling. Together they answer five distinct questions
+about a dep graph that the previous cluster (blocked/graph/tree/
+respect-deps/merge) opened up: "in what order?" (topo), "from
+where to where?" (path), "just this subgraph?" (graph
+--reachable), "why is it stuck?" (depend --justify), and "what's
+the next pick programmatically?" (next --json). All single-commit,
+all tests passing, full gate green (gofmt + vet + build + go test
+./...) before push. Pushed 334163e..d981978 to
+origin/feature/autoship; verified landed.
+
+- `next --json`        — 78bd57e feat(next): script-friendly structured output
+- `topo`               — 6117667 feat(topo): dep-respecting linearization
+- `path <a> <b>`       — 4b40cce feat(path): shortest dependency path via BFS
+- `graph --reachable`  — 451f3e7 feat(graph): subgraph filter
+- `depend --justify`   — d981978 feat(depend): plain-English why-chain
+
+Notable choices:
+
+- `next --json` keeps a stable schema: {id, title, priority, due,
+  pinned, tags, blocked?, blocked_by?} for found, {empty: true}
+  for caught-up. The omitempty contract is documented (empty key
+  NEVER appears on a successful pick) so `jq '.empty'` reliably
+  branches. blocked + blocked_by encode the "(blocked by …)"
+  annotation the human-readable path appends under --respect-deps
+  fallback — same semantic, structured form.
+
+- `topo` uses Kahn's algorithm with an inside-layer tie-break
+  identical to `tsk top`/`next` (pin > priority desc > earliest-
+  due > lower id), so the head of `topo` is what `next
+  --respect-deps` would return. Cycle handling: any task left
+  after the drain has non-zero in-degree → emitted at the tail
+  with "(cycle)" annotation in plain text or `"cycle": true` in
+  JSON. Never silently dropped — the user needs to know the file
+  is broken. Plain-text footer points at `tsk lint`. Four output
+  formats (default plain / --json / --ids / --format dot), all
+  mutually exclusive (validated up-front).
+
+- `path` BFS uses parent-map reconstruction (O(V) memory) not
+  queue-stored-paths (O(V²) worst case). Strictly a → b
+  direction; reverse is `tsk graph --reachable` territory.
+  silentExit (exit 1 with no "error:" prefix) so the human-
+  readable "no dependency path" line stands alone — the message
+  IS the signal. JSON variant always emits the full shape with
+  found=false on no-match, but still exits 1 for script
+  `tsk path A B || …` patterns.
+
+- `graph --reachable` is the "subgraph rooted at one task" filter.
+  BFS over source→target edges from the root; drop edges whose
+  source isn't in the reachable set. Empty-from-root gets a
+  specific message ("no dependencies reachable from #N") vs the
+  whole-store empty text. Stacks cleanly with --open (regression-
+  tested). The fan-in test guards an important semantic: sibling
+  tasks that ALSO depend on the same prereq are NOT pulled in —
+  only the ancestors of the queried root.
+
+- `depend --justify` is the bottleneck-finder. Walks lowest-id
+  open prereq at each step (deterministic; the "best pick"
+  question is `tsk next`'s job — justify is for tracing one
+  chain to its actionable leaf). The status state-machine is
+  encoded explicitly in the JSON: done / no-deps / open-leaf /
+  blocked / cycle / missing. Root-vs-mid context switches the
+  classification: a root with no DependsOn entries gets "no-deps"
+  (distinct message: "did you forget to set deps?"), while a
+  mid-chain leaf with no DependsOn gets "open-leaf" with the
+  "START HERE" marker. buildJustifyChain tracks isRoot so this
+  is one bool, not a position-arithmetic dance for the renderer.
+  Cycle-safe (visit-set guard), mutually exclusive with --tree
+  (different intents — tree=structure, justify=why-chain), and
+  the depend.go flag validator gains a 4th read-only mode without
+  breaking the existing 3.
+
+Roadmap status: "Polish & DX (added tick #10)" subsection 0/10 →
+5/10 (next --json, topo, path, graph --reachable, depend
+--justify). The remaining 5 are show --tree, top --pinned-only,
+merge --interactive, depend --add-bidir, depend --pending. Added
+"Polish & DX (added tick #11)" subsection with 10 fresh items —
+many are follow-ons to the new debugging cluster (justify --all,
+path --any-direction, topo --since, depend --upstream/--pending,
+reachable as top-level verb).
+
+Per-feature test counts: next --json 5, topo 14, path 11, graph
+--reachable 7, depend --justify 11. Total 48 new test cases on
+top of the existing suite, all green. (Existing test suite ~570
+cases also still green after the depend flag-validator signature
+change and the graph emitGraph signature change — verified via
+full repo gate before push.)
+
