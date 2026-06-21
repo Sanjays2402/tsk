@@ -141,7 +141,7 @@ the dep system makes newly possible plus a few cross-cuts:
 - [x] `tsk depend <id> --justify` — print the reason chain ("blocked because #3 (which is blocked because #7 (which is not done))") (tick 2026-06-20/2318)
 - [x] `tsk next --json` — JSON output for `next` so it composes with scripts (currently only plain text) (tick 2026-06-20/2318)
 - [ ] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view)
-- [ ] `tsk show <id> --tree` — combine show snapshot with the dep tree below it
+- [x] `tsk show <id> --tree` — combine show snapshot with the dep tree below it (tick 2026-06-21/0234)
 - [ ] `tsk merge --interactive` — pick conflict resolution per-field via prompts (when `--prefer` is too coarse)
 
 ### Polish & DX (added 2026-06-20 tick #11)
@@ -154,12 +154,35 @@ plus some long-tail polish:
 - [ ] `tsk path <a> <b> --any-direction` — BFS in both directions (handles "are these two related at all?")
 - [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
 - [ ] `tsk depend --pending` — tasks whose prereqs were recently completed (the "now-unblocked" notification queue)
-- [ ] `tsk depend <id> --upstream` — reverse view of --tree (what depends on me?)
-- [ ] `tsk reachable <id>` — top-level alias for `graph --reachable` (discoverable verb)
+- [x] `tsk depend <id> --upstream` — reverse view of --tree (what depends on me?) (tick 2026-06-21/0234)
+- [x] `tsk reachable <id>` — top-level alias for `graph --reachable` (discoverable verb) (tick 2026-06-21/0234)
 - [ ] `tsk lint --dep-cycles` — detect 3+ node cycles the writer doesn't catch; suggest fixes
 - [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
-- [ ] `tsk next --skip <id1,id2,...>` — exclude specific tasks from the next-pick pool (temporary hold without freeze)
-- [ ] `tsk add --depends <ids>` — set DependsOn at creation time (saves a follow-up `tsk depend` call)
+- [x] `tsk next --skip <id1,id2,...>` — exclude specific tasks from the next-pick pool (temporary hold without freeze) (tick 2026-06-21/0234)
+- [x] `tsk add --depends <ids>` — set DependsOn at creation time (saves a follow-up `tsk depend` call) (tick 2026-06-21/0234)
+
+### Polish & DX (added 2026-06-21 tick #12)
+
+Fresh ideas so future ticks have ample sized work. The dependency
+cluster is well-mined now; this batch leans into TUI polish, the
+storage/import-export backlog, and a few cross-cuts the loop hasn't
+touched in a while.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
+- [ ] `tsk lint --dep-cycles` — detect 3+ node cycles via Tarjan/Kosaraju; suggest break-points
+- [ ] `tsk depend --pending` — list tasks whose prereqs were recently completed ("now-unblocked" notification queue)
+- [ ] `tsk justify --all` — emit a justify chain for every blocked task in one screen
+- [ ] `tsk path <a> <b> --any-direction` — BFS in both directions (handles "are these two related at all?")
+- [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
+- [ ] `tsk depend --add-bidir <a> <b>` — symmetric "these relate" (probably a new "related:" field; design first)
+- [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
+- [ ] `tsk show <id> --upstream` — combine snapshot + upstream view (sister of --tree)
+- [ ] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view)
+- [ ] `tsk recent --since 1h` — last-N edits with a window flag (recent verb still collides with log alias)
+- [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
 
 ## Known footguns the loop has run into
 
@@ -807,4 +830,101 @@ top of the existing suite, all green. (Existing test suite ~570
 cases also still green after the depend flag-validator signature
 change and the graph emitGraph signature change — verified via
 full repo gate before push.)
+
+### 2026-06-21 02:34 PT (tick #12)
+
+First tick on the new commit-direct-to-main loop (chore commit
+5ba7c8b switched STATE.md and the cron prompt from
+feature/autoship to main in the prior pass). 5 features picked
+from the "Polish & DX (added tick #11)" backlog forming a
+discoverability + entry-point cluster: extending the dep-debugging
+tooling with the reverse view (`--upstream`), surfacing the
+reachable subgraph as a top-level verb, folding the dep tree into
+`tsk show`, gating the `next` picker via `--skip`, and removing
+the "add-then-depend" two-step at task creation.
+
+All single-commit, all tests passing, full gate green (gofmt + vet
++ build + go test ./...) before push. Pushed 038cdf3..02906ea to
+origin/main; verified landed.
+
+- `show --tree`       — 038cdf3 feat(show): tsk show <id> --tree
+- `depend --upstream` — 4483efa feat(depend): tsk depend --upstream
+- `reachable`         — db26cea feat(reachable): top-level discoverable verb
+- `next --skip`       — 53f407f feat(next): tsk next --skip <ids>
+- `add --depends`     — 02906ea feat(add): tsk add --depends <ids>
+
+Notable choices:
+
+- `show --tree` reuses printDependTreeText + buildDependTreeNode
+  from depend_tree.go so the plain/JSON tree rendering can't drift
+  from `tsk depend --tree`. The "no deps" path makes output BYTE-
+  IDENTICAL to plain `tsk show` (no dangling empty section header)
+  so callers with fixed expectations don't see drift. JSON
+  embedding uses a marshal→unmarshal→re-marshal round-trip to
+  splice `dependency_tree` onto the task object without changing
+  the existing field set; the key is omitted entirely on leaf
+  tasks, so the JSON schema for `tsk show --json` callers stays
+  stable.
+
+- `depend --upstream` answers the inverse-of-tree question with
+  per-row state annotation: "(unblocks)" / "(blocked)" / "(done)".
+  "Unblocks" is the headline signal — it tells the user which
+  downstream tasks the next close would actually activate. The
+  classifier looks at OTHER blockers (deps minus the queried task)
+  to decide; if all of them are done (or missing — same policy as
+  unmetBlockers), the queried task IS the gating edge.
+  validateDependFlags grew a `readOnlyCount` arbiter so
+  --tree/--justify/--upstream are mutually exclusive (each is a
+  different view; combining muddles the output shape).
+
+- `tsk reachable <id>` follows the same pattern as tick #10's
+  `tsk blocked` — a top-level discoverable verb that delegates
+  to an existing flag (`graph --reachable`). Aliases would bury
+  the command under `graph` in help/man output; top-level entries
+  show up in `tsk --help` and get shell-completion. The forwarder
+  is a one-liner so the two surfaces literally cannot drift, and
+  TestReachableMatchesGraphReachable asserts byte-identical
+  output between them.
+
+- `next --skip` is the right shape for the "no thanks, runner-up"
+  moment. Pin/freeze would persist state for a transient choice;
+  `--skip` is a one-call filter that vanishes after the command
+  returns. The CSV parser silently drops missing ids (the
+  semantic is "do not consider these"; bouncing on a stale id
+  would make it brittle in scripts) but DOES reject non-numeric
+  tokens up-front with usage exit code 2 so typos surface.
+  Composes with --respect-deps so users can ask "give me the
+  next unblocked task that isn't one of these".
+
+- `add --depends` is the same shape as `tag <id> +foo -bar`'s "do
+  it all in one call" ergonomic. The dep parser is `parseDependCSV`
+  (shared with `tsk depend --on`) so id syntax — including `#7`
+  prefix and dedup — can't drift between creation and post-
+  creation. Validation is two-pass: existence check BEFORE s.Add
+  so a typo never lands a half-formed task; then
+  `validateProposedDeps` AFTER id allocation with `s.Remove`
+  rollback on failure, sharing the SAME cycle/self-dep validator
+  `tsk depend --on` uses. Success line annotates the wiring:
+  "added #4: report (depends on #1, #3)".
+
+Roadmap status: "Polish & DX (added tick #11)" subsection 0/10 →
+4/10 (depend --upstream, reachable, next --skip, add --depends).
+"Polish & DX (added 2026-06-20 tick #10)" subsection 5/10 → 6/10
+(show --tree added). Added "Polish & DX (added 2026-06-21 tick
+#12)" subsection with 15 fresh items — leans into TUI polish,
+storage/import backlog, and cross-cuts the loop hasn't visited
+in a while (config, multi-file, archive).
+
+Per-feature test counts: show --tree 5, depend --upstream 8,
+reachable 6, next --skip 7, add --depends 7. Total 33 new test
+cases on top of the existing suite, all green. (Existing test
+suite ~615 cases also still green after the depend validator
+signature change and the show JSON marshalling change — verified
+via full repo gate before push.)
+
+This is the first batch shipped DIRECTLY ON MAIN (no
+feature/autoship branch), so every commit immediately shows on
+GitHub's contribution graph. The quality gate (gofmt + vet +
+build + full test suite) is the only thing protecting main —
+ran clean before push.
 
