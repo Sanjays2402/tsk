@@ -43,13 +43,14 @@ import (
 //	2 bad invocation / IO failure
 func newLintCmd() *cobra.Command {
 	var (
-		asJSON    bool
-		fix       bool
-		depCycles bool
+		asJSON     bool
+		fix        bool
+		autofixAll bool
+		depCycles  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "lint",
-		Short: "Validate .tsk.md storage-format hygiene (--fix to canonicalize)",
+		Short: "Validate .tsk.md storage-format hygiene (--fix to canonicalize, --autofix-all for multi-step safe fixes)",
 		Long: `Validate the active .tsk.md against tsk's storage-format conventions.
 
 This is the file-format sibling of 'tsk doctor': doctor checks the
@@ -59,7 +60,21 @@ keys, missing created stamps, stray notes-shaped lines).
 
 Pass --fix to re-render the file through tsk's canonical writer.
 That's a safe round-trip: the in-memory tasks are unchanged; only
-their byte representation is normalized.
+their byte representation is normalized. This catches:
+  - non-canonical bullets ('*' or '+' instead of '-')
+  - non-canonical checkbox ('X' instead of 'x')
+  - leading whitespace before task lines
+  - unknown meta keys (silently dropped on save)
+  - stray notes-indented lines before any task
+
+Pass --autofix-all to ALSO repair findings the round-trip alone
+can't fix — currently:
+  - missing_created_timestamp: backfill 'created:<now>' so
+    time-bucketed views (last, log, yesterday) include the task.
+The mode is non-interactive ("just trust me") — every fix it
+applies is conservative and reversible via 'tsk undo-last' (a
+.bak snapshot is taken before writing). --autofix-all implies
+--fix, so both kinds of repair happen in one pass.
 
 Pass --json for a stable machine-readable report (CI / pre-commit
 hook friendly).
@@ -71,9 +86,10 @@ cycles (A->B->C->A) are tolerated at write time and surfaced here.
 Each detected cycle is reported with its full id chain plus a
 suggested edge to break, so the user can ` + "`tsk depend <id> --remove`" + `
 their way out. --dep-cycles is a READ-ONLY scan; it does not
-trigger --fix (cycles need human judgement to resolve).
+trigger --fix or --autofix-all (cycles need human judgement).
 
-Exit codes: 0 clean, 1 findings present, 2 bad invocation.
+Exit codes: 0 clean (or fixes applied), 1 findings present and
+not fixed, 2 bad invocation.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			path, err := resolveLintPath(cmd)
@@ -96,6 +112,14 @@ Exit codes: 0 clean, 1 findings present, 2 bad invocation.
 			} else {
 				printLintReport(cmd.OutOrStdout(), report)
 			}
+			if autofixAll && len(report.Findings) > 0 {
+				applied, err := applyLintAutofixAll(path, report)
+				if err != nil {
+					return err
+				}
+				pf(cmd.OutOrStdout(), "autofixed: %s (%d repair(s) applied)\n", path, applied)
+				return nil
+			}
 			if fix && len(report.Findings) > 0 {
 				if err := applyLintFix(path); err != nil {
 					return err
@@ -111,6 +135,7 @@ Exit codes: 0 clean, 1 findings present, 2 bad invocation.
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "re-render the file in canonical form (safe round-trip)")
+	cmd.Flags().BoolVar(&autofixAll, "autofix-all", false, "apply --fix PLUS semantic repairs (currently: backfill missing created: stamps)")
 	cmd.Flags().BoolVar(&depCycles, "dep-cycles", false, "scan the DependsOn graph for 3+ node cycles (Tarjan SCC)")
 	return cmd
 }
