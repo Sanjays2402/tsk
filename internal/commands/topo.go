@@ -56,11 +56,12 @@ import (
 //     visual layout matches the textual one
 func newTopoCmd() *cobra.Command {
 	var (
-		asJSON      bool
-		idsOnly     bool
-		format      string
-		includeDone bool
-		sinceID     int
+		asJSON       bool
+		idsOnly      bool
+		format       string
+		includeDone  bool
+		sinceID      int
+		sinceReverse bool
 	)
 	cmd := &cobra.Command{
 		Use:   "topo",
@@ -86,12 +87,22 @@ even if they're still open — the user has asserted they're not
 part of the current plan. Cycle-tail rows are always preserved
 (corruption visibility wins over the slicing window).
 
+--since <id> --reverse FLIPS the slice: emit every task that comes
+BEFORE <id> in the topological sequence (exclusive of <id>). This
+is the "what gates this milestone?" view — given a future task you
+want to land, what's the full chain of work that has to happen
+first? Combine with --ids to feed the prereq chain into a script
+(e.g. ` + "`tsk topo --since 7 --reverse --ids | xargs tsk show`" + `).
+Without --since, --reverse is a usage error (there's no anchor to
+reverse from).
+
 Examples:
   tsk topo                            # ordered list, human-readable
   tsk topo --all                      # include done tasks (historical first)
   tsk topo --json                     # array of objects
   tsk topo --ids                      # comma-separated ids
   tsk topo --since 7                  # start the list at #7 (or just after, if #7 is a prereq)
+  tsk topo --since 7 --reverse        # show the prereq chain that leads up to #7
   tsk topo --ids | xargs -n1 tsk show # walk the chain interactively
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -110,6 +121,9 @@ Examples:
 			if modes > 1 {
 				return usageErrorf("--json, --ids, --format are mutually exclusive")
 			}
+			if sinceReverse && sinceID == 0 {
+				return usageErrorf("--reverse requires --since <id> as the anchor to reverse from")
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -119,9 +133,16 @@ Examples:
 				if s.ByID(sinceID) == nil {
 					return usageErrorf("--since #%d: no task with that id in %s", sinceID, s.Path)
 				}
-				ordered = sliceTopoSince(ordered, sinceID)
-				if len(ordered) == 0 {
-					return usageErrorf("--since #%d: id is not in the current topological output (try --all to include done tasks)", sinceID)
+				if sinceReverse {
+					ordered = sliceTopoBefore(ordered, sinceID)
+					if len(ordered) == 0 {
+						return usageErrorf("--since #%d --reverse: no prereqs come before #%d in the topological output (it's already at the head, or not in the output — try --all)", sinceID, sinceID)
+					}
+				} else {
+					ordered = sliceTopoSince(ordered, sinceID)
+					if len(ordered) == 0 {
+						return usageErrorf("--since #%d: id is not in the current topological output (try --all to include done tasks)", sinceID)
+					}
 				}
 			}
 			return emitTopo(cmd.OutOrStdout(), ordered, cycle, asJSON, idsOnly, format)
@@ -132,6 +153,7 @@ Examples:
 	cmd.Flags().StringVar(&format, "format", "", "alternate format: dot (GraphViz with rank=topo order)")
 	cmd.Flags().BoolVar(&includeDone, "all", false, "include done tasks (default: open only)")
 	cmd.Flags().IntVar(&sinceID, "since", 0, "drop tasks that appear before this id in the sequence (id becomes the head)")
+	cmd.Flags().BoolVar(&sinceReverse, "reverse", false, "with --since: emit the prereq tail BEFORE the checkpoint instead of after")
 	return cmd
 }
 
@@ -301,6 +323,103 @@ func sliceTopoSince(ordered []topoTask, id int) []topoTask {
 		// Append at tail (they're cycle rows, they belong after the
 		// linear plan).
 		kept = append(kept, cyclePrefix...)
+	}
+	return kept
+}
+
+// sliceTopoBefore is the mirror of sliceTopoSince: keep the rows
+// that are TRANSITIVE PREREQS of the given id, in topological
+// order. This is the "what gates this milestone?" view — given a
+// future task you want to land, what's the full chain of work that
+// has to land first?
+//
+// Why transitive prereqs and not "everything before id in linear
+// order"? Linear-position slicing pulls in unrelated tasks that
+// happen to share a priority tier with real prereqs (Kahn's
+// algorithm sorts the ready set by priority, so isolated tasks
+// drain in lock-step with the chain). The user asked for the chain
+// LEADING TO id, not "everything that happened earlier in topo
+// emission". This implementation walks DependsOn edges forward
+// from the anchor (forward through "I depend on this" arrows is
+// the direction of the prereq chain) and keeps only tasks
+// reachable from id, then preserves their topological order from
+// the original sequence so the user can work them straight through.
+//
+// Cycle-tail rows are preserved at the end so corruption visibility
+// stays consistent with sliceTopoSince. The id itself does NOT
+// appear in the output (the user asked for prereqs, not the
+// milestone). If id has no prereqs in the slice, returns nil — the
+// caller surfaces that as a usage error (the id is already at the
+// head, or has only dangling deps).
+//
+// Returns nil when id doesn't appear anywhere in `ordered` —
+// the caller treats nil the same as empty for the usage error.
+func sliceTopoBefore(ordered []topoTask, id int) []topoTask {
+	// Anchor must exist in `ordered` — preserves the same "find
+	// the id first" contract as sliceTopoSince.
+	anchorFound := false
+	for _, row := range ordered {
+		if row.Task.ID == id {
+			anchorFound = true
+			break
+		}
+	}
+	if !anchorFound {
+		return nil
+	}
+	// Reverse BFS through DependsOn: starting at the anchor, walk
+	// every transitively-prereqed id. Build a quick id→DependsOn
+	// lookup from the slice so we can compute reachability without
+	// the store.
+	depsByID := make(map[int][]int, len(ordered))
+	for _, row := range ordered {
+		depsByID[row.Task.ID] = row.Task.DependsOn
+	}
+	prereqSet := make(map[int]bool, len(ordered))
+	stack := []int{id}
+	for len(stack) > 0 {
+		curr := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, dep := range depsByID[curr] {
+			if dep == id {
+				// Skip a dep that points to the anchor itself —
+				// would otherwise be included as its own prereq
+				// via a malformed self-edge. (Self-deps are
+				// rejected at write time but defensive here.)
+				continue
+			}
+			if prereqSet[dep] {
+				continue
+			}
+			prereqSet[dep] = true
+			stack = append(stack, dep)
+		}
+	}
+	if len(prereqSet) == 0 {
+		// No prereqs reachable — anchor is already at the head, or
+		// has only dangling deps not present in `ordered` (a done-
+		// excluded prereq with --all=false would be missing).
+		return nil
+	}
+	// Keep `ordered` entries whose id is in prereqSet. This
+	// preserves the topological order from the original sequence
+	// and the cycle/done flags on each row.
+	kept := make([]topoTask, 0, len(prereqSet))
+	for _, row := range ordered {
+		if prereqSet[row.Task.ID] && !row.InCycle {
+			kept = append(kept, row)
+		}
+	}
+	// Append cycle-tail rows that are themselves prereqs (so the
+	// user sees a corrupt edge that gates the milestone) — same
+	// "corruption visibility wins" policy as sliceTopoSince.
+	for _, row := range ordered {
+		if prereqSet[row.Task.ID] && row.InCycle {
+			kept = append(kept, row)
+		}
+	}
+	if len(kept) == 0 {
+		return nil
 	}
 	return kept
 }
