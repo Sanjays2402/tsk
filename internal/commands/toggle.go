@@ -124,6 +124,33 @@ func formatBlockerIDs(ids []int) string {
 	return strings.Join(parts, ", ")
 }
 
+// filterBlockedTasks drops any task that has at least one unmet
+// prerequisite. Used by --respect-deps in next/top/ls so users
+// planning the next batch of work don't see tasks they can't
+// actually close.
+//
+// Operates on the value-typed []model.Task slice that the view
+// commands already work with — no shared mutable state, the filter
+// returns a fresh slice. Dangling deps are tolerated (matching
+// unmetBlockers' policy — a missing id is treated as satisfied).
+func filterBlockedTasks(s *store.Store, in []model.Task) []model.Task {
+	out := make([]model.Task, 0, len(in))
+	for _, t := range in {
+		if !t.HasDependencies() {
+			out = append(out, t)
+			continue
+		}
+		// unmetBlockers takes *model.Task and uses store.ByID, so we
+		// can pass the loop value's address — no aliasing issue
+		// because we're done with t before the next iteration.
+		t := t
+		if len(unmetBlockers(s, &t, nil)) == 0 {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
 func newRmCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "rm <id>...",

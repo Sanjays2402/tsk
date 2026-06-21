@@ -28,9 +28,10 @@ import (
 //
 // Filters mirror `tsk ls` where useful:
 //
-//	--tag <t>       only consider tasks with this tag
-//	--priority <p>  only consider tasks at this exact priority
-//	--all           include done tasks (default: undone only)
+//	--tag <t>         only consider tasks with this tag
+//	--priority <p>    only consider tasks at this exact priority
+//	--all             include done tasks (default: undone only)
+//	--respect-deps    skip tasks with at least one unmet prerequisite
 //
 // Output formats match `tsk ls`: plain (default), table, json.
 func newTopCmd() *cobra.Command {
@@ -38,6 +39,7 @@ func newTopCmd() *cobra.Command {
 		tagFilter   string
 		prioFilter  string
 		includeDone bool
+		respectDeps bool
 		asJSON      bool
 		format      string
 	)
@@ -49,15 +51,18 @@ func newTopCmd() *cobra.Command {
 Same ordering as 'tsk next' (priority desc, then earliest due, then ID),
 just multi-task. N defaults to 5; pass 0 or 'all' to show every match.
 
-Filters mirror 'tsk ls' for the common slices.
+Filters mirror 'tsk ls' for the common slices. --respect-deps skips
+tasks that are blocked by at least one open prerequisite — usually
+what you want when planning the next batch of work.
 
 Examples:
-  tsk top              # top 5
-  tsk top 10           # top 10
-  tsk top all          # everything matching, sorted
-  tsk top --tag work   # top 5 #work tasks
+  tsk top                      # top 5
+  tsk top 10                   # top 10
+  tsk top all                  # everything matching, sorted
+  tsk top --tag work           # top 5 #work tasks
   tsk top --priority high
-  tsk top --all 3      # top 3 across done + undone
+  tsk top --all 3              # top 3 across done + undone
+  tsk top --respect-deps       # top 5 unblocked tasks
   tsk top --json | jq '.[].Title'
 `,
 		Args: cobra.MaximumNArgs(1),
@@ -79,6 +84,9 @@ Examples:
 				return err
 			}
 			pool := filterTopCandidates(s.Tasks, tagFilter, prio, prioActive, includeDone)
+			if respectDeps {
+				pool = filterBlockedTasks(s, pool)
+			}
 			sortTopTasks(pool)
 			if limit > 0 && len(pool) > limit {
 				pool = pool[:limit]
@@ -89,6 +97,7 @@ Examples:
 	cmd.Flags().StringVar(&tagFilter, "tag", "", "only consider tasks with this tag")
 	cmd.Flags().StringVar(&prioFilter, "priority", "", "only consider tasks with this priority")
 	cmd.Flags().BoolVar(&includeDone, "all", false, "include done tasks in the candidate pool")
+	cmd.Flags().BoolVar(&respectDeps, "respect-deps", false, "skip tasks with unmet prerequisites")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: plain, table, or json")
 	return cmd

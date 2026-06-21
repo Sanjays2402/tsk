@@ -12,11 +12,11 @@ import (
 )
 
 type lsFilters struct {
-	done, all, today, overdue, upcoming, includeWaiting bool
-	tag                                                 string
-	priorityStr                                         string
-	asJSON                                              bool
-	format                                              string
+	done, all, today, overdue, upcoming, includeWaiting, respectDeps bool
+	tag                                                              string
+	priorityStr                                                      string
+	asJSON                                                           bool
+	format                                                           string
 }
 
 func newLsCmd() *cobra.Command {
@@ -34,6 +34,9 @@ func newLsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if f.respectDeps {
+				tasks = filterBlockedTasks(s, tasks)
+			}
 			format, err := resolveLsFormat(f.format, f.asJSON)
 			if err != nil {
 				return err
@@ -47,6 +50,7 @@ func newLsCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&f.overdue, "overdue", false, "only show overdue tasks")
 	cmd.Flags().BoolVar(&f.upcoming, "upcoming", false, "only show tasks due in the future")
 	cmd.Flags().BoolVar(&f.includeWaiting, "include-waiting", false, "include tasks with wait:<future date> in output")
+	cmd.Flags().BoolVar(&f.respectDeps, "respect-deps", false, "skip tasks blocked by an open prerequisite")
 	cmd.Flags().StringVar(&f.tag, "tag", "", "only show tasks with this tag")
 	cmd.Flags().StringVar(&f.priorityStr, "priority", "", "only show tasks with this priority")
 	cmd.Flags().BoolVar(&f.asJSON, "json", false, "emit JSON (shortcut for --format=json)")
