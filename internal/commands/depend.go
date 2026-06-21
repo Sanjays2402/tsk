@@ -46,15 +46,17 @@ import (
 // `toggle.go` via unmetBlockers — depend just curates the list.
 func newDependCmd() *cobra.Command {
 	var (
-		onCSV     string
-		addCSV    string
-		removeCSV string
-		clear     bool
-		list      bool
-		tree      bool
-		justify   bool
-		upstream  bool
-		asJSON    bool
+		onCSV        string
+		addCSV       string
+		removeCSV    string
+		clear        bool
+		list         bool
+		tree         bool
+		justify      bool
+		upstream     bool
+		pending      bool
+		pendingSince string
+		asJSON       bool
 	)
 	cmd := &cobra.Command{
 		Use:   "depend [<id>]",
@@ -72,6 +74,7 @@ Inspect tree:   tsk depend <id> --tree         (recursive prereq chain)
 Justify block:  tsk depend <id> --justify      (why is this blocked?)
 Upstream view:  tsk depend <id> --upstream     (what depends on me?)
 Inspect all:    tsk depend --list              (every blocked task at once)
+Now-unblocked:  tsk depend --pending           (tasks whose prereqs JUST closed)
 
 Self-dependencies and direct cycles (A↔B) are rejected. Bigger-than-
 two cycles are intentionally NOT detected — they're rare in practice
@@ -93,6 +96,14 @@ By default emits the DIRECT dependents (tasks listing this id in
 their DependsOn) sorted by id. Pass --json for the same set in
 structured form.
 
+--pending is the "now-unblocked notification queue": open tasks
+whose every dependency is satisfied AND at least one of those
+dependencies was recently completed (default: last 24h). It's the
+"what just became actionable?" view — perfect for morning standup
+("which tasks got unblocked overnight?") or after closing a batch
+of prereqs ("what's freshly free?"). Tasks unblocked long ago are
+excluded; pass --since to widen the window (1h, 7d, 30d, etc).
+
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
   tsk depend 7 --add 9          # 7 also needs 9
@@ -105,10 +116,12 @@ Examples:
   tsk depend 7 --upstream       # what depends on #7?
   tsk depend 7 --upstream --json
   tsk depend --list --json      # CI: what's stuck?
+  tsk depend --pending          # what just became actionable?
+  tsk depend --pending --since 7d
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree, justify, upstream); err != nil {
+			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree, justify, upstream, pending); err != nil {
 				return err
 			}
 			s, err := resolveStore(cmd, true)
@@ -117,6 +130,9 @@ Examples:
 			}
 			if list {
 				return runDependList(cmd.OutOrStdout(), s, asJSON)
+			}
+			if pending {
+				return runDependPending(cmd.OutOrStdout(), s, pendingSince, asJSON)
 			}
 			id, err := parseSingleID(args[0])
 			if err != nil {
@@ -150,13 +166,15 @@ Examples:
 	cmd.Flags().BoolVar(&tree, "tree", false, "print the recursive prerequisite chain (depth-first, indented)")
 	cmd.Flags().BoolVar(&justify, "justify", false, "explain why a task is blocked via a chain of reasons")
 	cmd.Flags().BoolVar(&upstream, "upstream", false, "list tasks that depend on this one (reverse of --tree)")
+	cmd.Flags().BoolVar(&pending, "pending", false, "list open tasks whose prereqs were recently completed")
+	cmd.Flags().StringVar(&pendingSince, "since", "24h", "for --pending: how recent the unblocking completion must be (e.g. 1h, 7d)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }
 
 // validateDependFlags rejects nonsensical combinations up-front so the
 // user sees a precise error instead of weird half-applied state.
-func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree, justify, upstream bool) error {
+func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree, justify, upstream, pending bool) error {
 	mutexCount := 0
 	if onCSV != "" {
 		mutexCount++
@@ -198,6 +216,21 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 		if readOnlyCount > 0 {
 			return usageErrorf("--list is mutually exclusive with --tree, --justify, --upstream (use --list for the global view)")
 		}
+		if pending {
+			return usageErrorf("--list and --pending are mutually exclusive (each is a different global view)")
+		}
+		return nil
+	}
+	if pending {
+		if len(args) > 0 {
+			return usageErrorf("--pending takes no positional id (it covers every freshly-unblocked task)")
+		}
+		if mutexCount > 0 {
+			return usageErrorf("--pending can't be combined with mutation flags")
+		}
+		if readOnlyCount > 0 {
+			return usageErrorf("--pending is mutually exclusive with --tree, --justify, --upstream (each is a per-id view)")
+		}
 		return nil
 	}
 	if tree {
@@ -228,7 +261,7 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 		return nil
 	}
 	if len(args) == 0 {
-		return usageErrorf("missing <id> (or pass --list)")
+		return usageErrorf("missing <id> (or pass --list / --pending)")
 	}
 	return nil
 }
