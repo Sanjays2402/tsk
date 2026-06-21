@@ -223,26 +223,57 @@ feat-recur branch is a known parking lot), and the TUI gaps.
 - [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
-- [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` respecting --file scoping
+- [x] `tsk export --graph-dot` — shortcut for `graph --format dot` respecting --file scoping (tick 2026-06-21/1153)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
 - [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
 - [ ] `tsk wrap <id>` — split a long title with `>` continuation
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
 - [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually
-- [ ] `tsk lint --autofix-all` — non-interactive multi-fix combining safe round-trips
+- [x] `tsk lint --autofix-all` — non-interactive multi-fix combining safe round-trips (tick 2026-06-21/1153)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
-- [ ] `tsk archive --strategy monthly` — sibling of --strategy weekly (same scaffolding)
+- [x] `tsk archive --strategy monthly` — sibling of --strategy weekly (same scaffolding) (tick 2026-06-21/1153)
 - [ ] `tsk archive --merge-into <file>` — write to a non-default sibling archive (useful for project rollups)
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
 - [ ] `tsk lint --dep-cycles --json | jq -r` recipe doc — one-pager showing how to feed the cycle output back into `tsk depend --remove` automation
 - [ ] `tsk topo --since <id> --depth N` — limit how many layers past the checkpoint to emit (for huge graphs)
-- [ ] `tsk depend --pending --priority urgent` — narrow the queue by priority (sister of --tag)
+- [x] `tsk depend --pending --priority urgent` — narrow the queue by priority (sister of --tag) (tick 2026-06-21/1153)
 - [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
-- [ ] `tsk topo --since <id> --reverse` — emit tasks BEFORE the checkpoint in topo order (the "what's left to do BEFORE I can hit this milestone?" view)
+- [x] `tsk topo --since <id> --reverse` — emit tasks BEFORE the checkpoint in topo order (the "what's left to do BEFORE I can hit this milestone?" view) (tick 2026-06-21/1153)
 - [ ] `tsk archive --strategy daily` — finer-grained sibling of weekly
+
+### Polish & DX (added 2026-06-21 tick #15)
+
+Fresh ideas so future ticks have ample sized work. With archive
+strategies (flat/weekly/monthly), pending filters (tag+priority),
+topo slicing (forward+reverse), the central data-out verb
+(`tsk export --graph-dot`), and lint's autofix-all all shipped,
+this batch leans into the still-unstarted long-tail: TUI gaps,
+recurring tasks (parking lot), config/multi-file, plus a few
+new follow-ons that this tick's features make sensible.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk archive --merge-into <file>` — write to a non-default sibling archive (useful for project rollups)
+- [ ] `tsk archive --strategy daily` — finer-grained sibling of weekly/monthly (same bucketFn scaffolding)
+- [ ] `tsk archive --strategy quarterly` — coarse-grained sibling (Q1/Q2/Q3/Q4 buckets)
+- [ ] `tsk topo --since <id> --depth N` — limit topological emission depth from the checkpoint
+- [ ] `tsk export --graph-dot --highlight <id>` — wrap the focus task in a distinct color to draw the eye on a complex graph
+- [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
+- [ ] `tsk depend --pending --since <dur> --priority <p> --tag <t> | jq` recipe doc — one-pager on composing the freshly-unblocked feed for standup automation
+- [ ] `tsk show <id> --upstream --tree` — combine both views in one snapshot (currently mutually exclusive; would need a sibling format)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
 
 ## Known footguns the loop has run into
 
@@ -1229,4 +1260,155 @@ export — verified via full repo gate before push.)
 This is the second batch (after tick #13) shipped DIRECTLY ON
 MAIN. The quality gate ran clean before push; every feature is a
 single revertible commit (no fixups needed this tick).
+
+### 2026-06-21 11:53 PT (tick #15)
+
+Shipped 5 features from the tick #13/#14 backlog — a sweep of the
+"clear-shape" remaining items: monthly archive (sister of weekly),
+pending priority filter (sister of pending --tag), reverse topo
+slice (mirror of --since), the central data-out verb for the
+graph (`tsk export --graph-dot`), and lint's non-interactive
+autofix-all combining the round-trip + semantic backfill paths.
+
+All single-commit, all tests passing (36 new test cases across
+the 5 features), full gate green (gofmt + vet + build + go test
+./...) before push. Pushed 41909e5..cf0b8af to origin/main;
+verified landed.
+
+- `archive --strategy monthly`  — 41909e5 feat(archive): YYYY-MM bucketed sections
+- `depend --pending --priority` — b015f30 feat(depend): narrow freshly-unblocked queue by priority
+- `topo --since --reverse`      — 8bec6b5 feat(topo): emit prereq chain leading up to milestone
+- `export --graph-dot`          — 276edf8 feat(export): graph DOT under the central data-out verb
+- `lint --autofix-all`          — cf0b8af feat(lint): multi-step safe repairs (canonicalize + backfill)
+
+Notable choices:
+
+- `archive --strategy monthly`: refactored `writeWeeklyArchive`
+  into a generic `writeBucketedArchive(path, arch, batch, bucketFn)`
+  that takes a `bucketFn func(model.Task) (key string, sortKey int)`.
+  Two shipped implementations: `bucketByISOWeek` (existing) and
+  `bucketByMonth` (new — uses `t.Completed.Date()` for year/month
+  in the task's recorded time zone). All other archive policies
+  unchanged: existing content is preserved verbatim (no
+  re-bucketing); "undated" goes to the tail; per-bucket
+  id-ascending order; .bak snapshot via store.AtomicWriteFile;
+  archive ids continue from the file's max+1. Sortkey scheme
+  year*100+month is lexicographic-safe (Dec 2025 = 202512,
+  Jan 2026 = 202601, sorts correctly). The error message for an
+  unknown --strategy was updated to name all three valid values
+  ("flat, weekly, or monthly") so users discover monthly from a
+  typo on quarterly.
+
+- `depend --pending --priority`: intersects with --tag (not
+  unions). The user story is "what's freshly unblocked AND on
+  fire?" — both filters tightening the feed. parsePendingPriority
+  uses the canonical model.ParsePriority (same parser ls/top/add
+  use) so short forms ("u" / "h" / "m" / "l") work. Empty value
+  mirrors --tag's defensive policy: no filter, no header
+  annotation. Invalid values are exit-2 with the bad value
+  quoted (silent fallback to "no filter" would confuse —
+  the user clearly meant something). buildPendingFilterSummary
+  helper centralizes the "tag=X, priority=Y" trailer used in
+  both the header and the empty-state message so the rendering
+  rule (deterministic comma-separated ordering) is in one place.
+
+- `topo --since --reverse`: FIRST implementation sliced by linear
+  position in the topo sequence — caught by a cycle-visibility
+  test that surfaced the semantic bug. Kahn's algorithm sorts
+  the ready set by priority, so isolated tasks drain in
+  lock-step with real prereqs; positional slicing pulls in
+  unrelated work. The correct semantics: walk the DependsOn
+  graph FORWARD from the anchor (forward through "I depend on"
+  arrows IS the prereq direction), build the transitive prereq
+  set, then intersect with the original topo order so emission
+  stays dependency-respecting. Cycle-tail rows that are
+  themselves prereqs of the anchor are preserved at the end
+  (corruption visibility wins, same policy as sliceTopoSince).
+  Cycle rows that are NOT prereqs are dropped (they don't gate
+  this particular milestone). --reverse without --since is a
+  usage error; the at-head case (anchor has no prereqs) is a
+  separate error that names "head" so the user understands.
+  Existing unit test on sliceTopoBefore had to update its
+  synthetic data to set explicit DependsOn slices (since the
+  helper now needs them) — folded back into the feature commit
+  via git commit --fixup + autosquash so the per-feature
+  one-commit revertibility contract stayed intact.
+
+- `export --graph-dot`: routes through the existing
+  emitGraph(w, s, edges, "dot", reachable) helper from graph.go
+  so the "no dependencies" / "no dependencies reachable from #N"
+  empty-state messages are byte-for-byte identical to
+  `tsk graph --format dot`. A regression test asserts the two
+  surfaces stay in lockstep. --reachable and --open are added
+  to export and rejected up-front with a clear error when paired
+  with a non-graph format ("--reachable / --open only apply to
+  --graph-dot, got format X") — silently ignoring would be
+  confusing. Format aliases accepted: "graph-dot", "graphdot"
+  (no-dash for some shells), and "dot" (the short form users
+  coming from `tsk graph` will reach for).
+
+- `lint --autofix-all`: builds on --fix by ALSO repairing the
+  semantic finding the round-trip can't address —
+  missing_created_timestamp. The repair stamps now() into
+  every flagged task's Created field, then saves through the
+  canonical writer (which also fixes the round-trippable
+  findings in the same pass). Idempotent: re-running on a clean
+  file emits "all checks passed" without writing. Repair
+  count credits ONE for the entire round-trippable bucket
+  (a single save fixes them all) and ONE per semantic backfill
+  (distinct fixes). Why now() and not file mtime? Because the
+  very next thing we do is save, which overwrites mtime to
+  now() anyway — they converge on the same outcome. Cycle
+  resolution stays human-only (no safe automatic break-edge).
+  --autofix-all + --json prints the JSON report FIRST then the
+  "autofixed:" summary, so consumers can capture pre-fix state.
+
+Roadmap status:
+- "Polish & DX (added tick #13)" subsection: 5/20 → 6/20
+  (lint --autofix-all shipped).
+- "Polish & DX (added tick #14)" subsection: 0/23 → 3/23
+  (archive monthly, export --graph-dot, lint --autofix-all
+  shipped — autofix-all spanned both subsections).
+- Added "Polish & DX (added 2026-06-21 tick #15)" subsection
+  with 19 fresh items — leans into still-unstarted TUI, recurring
+  tasks (parking lot), config + multi-file (long-unstarted
+  storage backlog), and a few new follow-ons opened by this
+  tick's features (archive daily/quarterly, topo --since
+  --depth, export --graph-dot --highlight, lint --autofix-all
+  --backup, --pending recipe doc).
+
+Per-feature test counts: archive monthly 6, pending --priority 7,
+topo --since --reverse 8, export --graph-dot 9, lint --autofix-all 7.
+Total 36 new test cases on top of the existing suite, all green.
+(Existing suite ~710 cases also still green after the archive
+strategy refactor, the depend pending signature change, the
+sliceTopoBefore implementation rewrite, the export resolveFormat
+signature change, and the lint --autofix-all addition — verified
+via full repo gate before push.)
+
+Process notes:
+- The cycle-visibility test for `topo --since --reverse` caught a
+  real semantic bug (linear positional slicing was wrong for
+  "what gates this milestone?"). Rewriting sliceTopoBefore as
+  reverse BFS through DependsOn edges fixed it. The lesson:
+  "before in topo position" is NOT the same as "transitive
+  prereq" when Kahn's tie-break uses priority — isolated tasks
+  drain alongside real prereqs.
+- Folding the unit-test fix into the topo commit via
+  `git commit --fixup` + `GIT_SEQUENCE_EDITOR=: git rebase -i
+  --autosquash` kept per-feature one-commit revertibility. Had
+  to stash the work-in-progress lint files first (`git stash
+  push -u -m feature5-lint-autofix-all -- ...`) so the rebase
+  could proceed with a clean working tree, then pop them back.
+- Used `time.Now()` for lint's autofix backfill (not file
+  mtime) because saving the file overwrites mtime to now()
+  anyway — both converge. Documented as best-effort
+  placeholders, not real creation times.
+
+This is the third batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; one feature (`topo --since
+--reverse`) needed a git commit --fixup + autosquash to fold
+in a test fix on top of the reverse BFS algorithm rewrite.
+Every commit on origin/main remains a single revertible feature
+slice.
 
