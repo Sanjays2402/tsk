@@ -89,6 +89,7 @@ func NewRoot() *cobra.Command {
 		newDependCmd(),
 		newBlockedCmd(),
 		newGraphCmd(),
+		newMergeCmd(),
 		newSwapCmd(),
 		newLintCmd(),
 		newRebuildIDsCmd(),
