@@ -101,6 +101,7 @@ func NewRoot() *cobra.Command {
 		newHashCmd(),
 		newPriStatsCmd(),
 		newDedupeCmd(),
+		newPreviewCmd(),
 		newVersionCmd(),
 		newTUICmd(),
 	)

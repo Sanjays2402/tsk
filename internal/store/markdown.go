@@ -64,6 +64,23 @@ func Load(path string) (*Store, error) {
 	return s, nil
 }
 
+// LoadBytes parses an in-memory .tsk.md payload into a Store without
+// touching the filesystem. The returned Store has an empty Path —
+// callers must NOT call Save on it (Save with an empty path is a
+// programming error and would write to the working directory).
+//
+// Intended for pipeline-style consumers that want to render or query
+// task content without going through disk and without polluting the
+// .bak snapshot chain on the active file. Mirrors the behavior of
+// Load(path) once the bytes have been read; no other semantics differ.
+func LoadBytes(data []byte) (*Store, error) {
+	s := &Store{}
+	if err := s.parse(data); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 // Save atomically writes the store back to disk.
 //
 // As a side effect, Save also snapshots the previous on-disk contents of the
