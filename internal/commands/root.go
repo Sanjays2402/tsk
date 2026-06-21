@@ -85,6 +85,7 @@ func NewRoot() *cobra.Command {
 		newElapsedCmd(),
 		newWhyCmd(),
 		newShuffleCmd(),
+		newFindCmd(),
 		newSwapCmd(),
 		newLintCmd(),
 		newRebuildIDsCmd(),
