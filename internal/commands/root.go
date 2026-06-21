@@ -88,6 +88,7 @@ func NewRoot() *cobra.Command {
 		newFindCmd(),
 		newDependCmd(),
 		newBlockedCmd(),
+		newJustifyCmd(),
 		newGraphCmd(),
 		newReachableCmd(),
 		newTopoCmd(),
