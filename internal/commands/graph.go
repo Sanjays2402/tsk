@@ -44,6 +44,12 @@ import (
 //	                     `tsk depend <id> --tree`: tree shows one chain
 //	                     in depth-first form, --reachable shows the full
 //	                     fan-in/out subgraph in DOT layout.
+//	--highlight <id>     (DOT only) wrap one node in a distinct gold
+//	                     fill + bold border so the focus task stands
+//	                     out on a complex graph. Useful when you're
+//	                     pasting the graph into a review and want to
+//	                     draw the eye to the milestone or chokepoint
+//	                     under discussion.
 //
 // Empty graphs (no deps anywhere) print "no dependencies" rather than
 // emitting a blank DOT skeleton — both shapes are still parseable but
@@ -53,6 +59,7 @@ func newGraphCmd() *cobra.Command {
 		format    string
 		open      bool
 		reachable int
+		highlight int
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -67,6 +74,8 @@ Filters:
   --open             skip done tasks and edges to done prereqs
   --reachable <id>   restrict to the subgraph reachable from <id>
                      via DependsOn (transitive prereqs + root)
+  --highlight <id>   (DOT only) wrap one node in a distinct gold fill
+                     + bold border so the focus task stands out
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
@@ -79,6 +88,7 @@ Examples:
   tsk graph --reachable 7                # the subgraph rooted at #7
   tsk graph --reachable 7 --open         # …filtered to active work
   tsk graph --format dot | dot -Tpng -o deps.png
+  tsk graph --format dot --highlight 7   # draw the eye to #7
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -86,9 +96,15 @@ Examples:
 			if err != nil {
 				return err
 			}
+			if highlight != 0 && fmtChoice != "dot" {
+				return usageErrorf("--highlight only applies to --format dot (got %s)", fmtChoice)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
+			}
+			if highlight > 0 && s.ByID(highlight) == nil {
+				return fmt.Errorf("--highlight: no task with id %d in %s", highlight, s.Path)
 			}
 			edges := collectGraphEdges(s, open)
 			if reachable > 0 {
@@ -97,12 +113,13 @@ Examples:
 				}
 				edges = filterReachableEdges(s, edges, reachable)
 			}
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable)
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlight)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
+	cmd.Flags().IntVar(&highlight, "highlight", 0, "(DOT only) draw one node with a distinct fill+border so it stands out")
 	return cmd
 }
 
@@ -219,8 +236,9 @@ func resolveGraphFormat(raw string) (string, error) {
 // emitGraph dispatches based on the resolved format. When reachable
 // is set (>0) and the filter produced zero edges, the message is
 // more specific so the user understands "the root has no prereqs"
-// vs the whole store being empty.
-func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int) error {
+// vs the whole store being empty. highlight is the optional focus
+// id (only meaningful for DOT format); 0 means no highlight.
+func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable, highlight int) error {
 	if len(edges) == 0 {
 		if reachable > 0 {
 			pf(w, "no dependencies reachable from #%d\n", reachable)
@@ -230,7 +248,7 @@ func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, re
 		return nil
 	}
 	if format == "dot" {
-		return printGraphDOT(w, s, edges)
+		return printGraphDOT(w, s, edges, highlight)
 	}
 	return printGraphASCII(w, s, edges)
 }
@@ -309,10 +327,24 @@ func printGraphRow(w io.Writer, s *store.Store, from int, deps []int) {
 //   - done tasks: filled gray (the dep is satisfied)
 //   - open with at least one open prereq (blocked): red outline
 //   - open with no open prereqs (actionable): default outline
+//   - highlight target (when highlight > 0): gold fill + bold black
+//     border, OVERRIDES every other style. Picked because gold/amber
+//     reads as the "this one's important" color in DOT renders
+//     without colliding with the red "blocked" outline. The bold
+//     border keeps it readable even if the renderer ignores fill
+//     (some SVG viewers downsample colors aggressively).
 //
 // Long titles are truncated to 40 chars at the node level so the
 // rendered graph stays readable.
-func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge) error {
+//
+// highlight=0 means no highlight; any positive id wraps that node
+// (whether it's a source, target, or both) in the focus style. The
+// id is silently ignored if it's not actually in the rendered
+// graph — at the command-flag layer we already validated it exists
+// in the store and printed an error if it didn't, so a missing
+// match here means the user filtered it out (e.g. --reachable
+// rooted elsewhere). The graph still renders cleanly in that case.
+func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlight int) error {
 	pln(w, "digraph tsk {")
 	pln(w, "  rankdir=LR;")
 	pln(w, `  node [shape=box, fontname="Helvetica", fontsize=10];`)
@@ -354,6 +386,14 @@ func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge) error {
 			case blocked[id]:
 				style = ` color="red"`
 			}
+		}
+		// Highlight overrides every other style so the focus task
+		// always reads as the focus regardless of done/blocked
+		// state. Gold/amber + bold border picks the "look here"
+		// signal cleanly without clashing with the red blocked
+		// outline.
+		if highlight > 0 && id == highlight {
+			style = ` style="filled,bold", fillcolor="gold", color="black", penwidth=2`
 		}
 		pf(w, "  %d [label=%q%s];\n", id, label, style)
 	}

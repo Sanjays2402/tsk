@@ -17,6 +17,7 @@ func newExportCmd() *cobra.Command {
 	var format string
 	var graphReachable int
 	var graphOpen bool
+	var graphHighlight int
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export tasks as JSON, JSONL, CSV, Markdown, or GraphViz DOT",
@@ -31,9 +32,9 @@ Formats:
   markdown   Human-readable Markdown grouped by section
   graph-dot  GraphViz DOT source of the dependency graph — same shape as
              ` + "`tsk graph --format dot`" + ` but lives under the central
-             export verb. Pairs with --reachable <id> and --open to scope
-             the graph; pipe into ` + "`dot -Tpng > deps.png`" + ` for a
-             real visual.
+             export verb. Pairs with --reachable <id>, --open, and
+             --highlight <id> to scope and decorate the graph; pipe into
+             ` + "`dot -Tpng > deps.png`" + ` for a real visual.
 
 Use --format to pick a format explicitly, or the legacy --json / --jsonl /
 --csv / --graph-dot shortcuts.
@@ -45,6 +46,8 @@ Graph examples:
   tsk export --graph-dot | dot -Tpng > deps.png
   tsk export --graph-dot --open                       # only currently-blocking edges
   tsk export --graph-dot --reachable 7                # subgraph rooted at #7
+  tsk export --graph-dot --highlight 7                # draw the eye to #7
+  tsk export --graph-dot --reachable 7 --highlight 7  # subgraph + spotlight
   tsk export --graph-dot --reachable 7 --open | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -56,6 +59,9 @@ Graph examples:
 			// Surface the misuse loudly rather than silently ignoring.
 			if (graphReachable > 0 || graphOpen) && chosen != "graph-dot" {
 				return fmt.Errorf("--reachable / --open only apply to --graph-dot (got format %q)", chosen)
+			}
+			if graphHighlight > 0 && chosen != "graph-dot" {
+				return fmt.Errorf("--highlight only applies to --graph-dot (got format %q)", chosen)
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -72,7 +78,7 @@ Graph examples:
 			case "markdown":
 				return exportMarkdown(out, s.Tasks)
 			case "graph-dot":
-				return exportGraphDOT(out, s, graphOpen, graphReachable)
+				return exportGraphDOT(out, s, graphOpen, graphReachable, graphHighlight)
 			}
 			return fmt.Errorf("unreachable: unknown format %q", chosen)
 		},
@@ -84,6 +90,7 @@ Graph examples:
 	cmd.Flags().BoolVar(&asGraphDot, "graph-dot", false, "emit GraphViz DOT of the dependency graph (shortcut for --format=graph-dot)")
 	cmd.Flags().IntVar(&graphReachable, "reachable", 0, "for --graph-dot: restrict to the subgraph reachable from this task id")
 	cmd.Flags().BoolVar(&graphOpen, "open", false, "for --graph-dot: only include open tasks and the open deps that block them")
+	cmd.Flags().IntVar(&graphHighlight, "highlight", 0, "for --graph-dot: draw one node with a distinct fill+border so it stands out")
 	return cmd
 }
 

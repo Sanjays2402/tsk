@@ -11,8 +11,8 @@ import (
 // DOT source. It's the export-verb sibling of `tsk graph --format dot`:
 // same wire format, same node styling (filled-gray for done,
 // red-bordered for blocked, default for actionable, dashed-gray for
-// dangling), but routed through `tsk export` so callers have ONE
-// stable verb to pipeline data out of tsk.
+// dangling, gold-bold for highlight), but routed through `tsk export`
+// so callers have ONE stable verb to pipeline data out of tsk.
 //
 // Why expose it twice? The two surfaces serve different mental
 // models:
@@ -36,14 +36,21 @@ import (
 //
 // Reachable validation: if --reachable points at an id with no task
 // in the store, surface the same "no task with id X" error
-// `tsk graph` does. Empty graphs (no deps anywhere, or the
-// reachable filter excluded everything) emit the same "no
-// dependencies" / "no dependencies reachable from #N" markers as
-// `tsk graph` — keeps the calling experience identical regardless
-// of which verb the user reached for.
-func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int) error {
+// `tsk graph` does. Highlight validation: same shape, with the
+// "--highlight: no task with id X" prefix so the user knows which
+// flag was at fault when they pass both.
+//
+// Empty graphs (no deps anywhere, or the reachable filter excluded
+// everything) emit the same "no dependencies" / "no dependencies
+// reachable from #N" markers as `tsk graph` — keeps the calling
+// experience identical regardless of which verb the user reached
+// for.
+func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable, highlight int) error {
 	if reachable > 0 && s.ByID(reachable) == nil {
 		return fmt.Errorf("no task with id %d in %s", reachable, s.Path)
+	}
+	if highlight > 0 && s.ByID(highlight) == nil {
+		return fmt.Errorf("--highlight: no task with id %d in %s", highlight, s.Path)
 	}
 	edges := collectGraphEdges(s, openOnly)
 	if reachable > 0 {
@@ -53,5 +60,5 @@ func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int) e
 	// reachable from #N" empty-state messages match `tsk graph`
 	// byte-for-byte. emitGraph dispatches based on the format
 	// string; pass "dot" to get DOT output.
-	return emitGraph(w, s, edges, "dot", reachable)
+	return emitGraph(w, s, edges, "dot", reachable, highlight)
 }
