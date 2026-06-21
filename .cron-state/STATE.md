@@ -117,16 +117,32 @@ Pull the next 5 unstarted items per tick.
 
 Fresh ideas so future ticks have ample sized work:
 
-- [ ] `tsk blocked` — alias for `depend --list` (more discoverable verb for "what's stuck on what?")
-- [ ] `tsk graph` — DOT/ASCII rendering of the dependency graph; pipe to graphviz for a visual
-- [ ] `tsk depend <id> --tree` — print the recursive prerequisite chain (depth-first, indented)
-- [ ] `tsk next --respect-deps` — skip blocked tasks in `next` (already done? validate; not yet wired)
-- [ ] `tsk merge <a> <b>` — merge task b into task a (concatenate notes, union tags, remove b)
+- [x] `tsk blocked` — alias for `depend --list` (more discoverable verb for "what's stuck on what?") (tick 2026-06-20/2046)
+- [x] `tsk graph` — DOT/ASCII rendering of the dependency graph; pipe to graphviz for a visual (tick 2026-06-20/2046)
+- [x] `tsk depend <id> --tree` — print the recursive prerequisite chain (depth-first, indented) (tick 2026-06-20/2046)
+- [x] `tsk next --respect-deps` — skip blocked tasks in `next` (also in `top`, `ls`) (tick 2026-06-20/2046)
+- [x] `tsk merge <a> <b>` — merge task b into task a (concatenate notes, union tags, redirect deps; back-refs rewritten; undo-able) (tick 2026-06-20/2046)
 - [ ] `tsk split <id>` — open editor with a one-task-per-line list to split a parent task into N subtasks
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk export --opml` — outline import format for note-takers (Roam, Logseq, OmniOutliner)
 - [ ] `tsk preview` — stdout-only `ls` that doesn't read .tsk.md (uses a snapshot pipe; useful in pipelines without side effects on the .bak chain)
+
+### Polish & DX (added 2026-06-20 tick #10)
+
+Fresh ideas so future ticks have ample sized work — focus on what
+the dep system makes newly possible plus a few cross-cuts:
+
+- [ ] `tsk depend --add-bidir <a> <b>` — symmetric "these two relate" not strictly prerequisite (info-only depends?). Probably not — that's a new field, not a dep.
+- [ ] `tsk graph --reachable <id>` — only emit the subgraph reachable from one root (filter `graph` by transitive deps)
+- [ ] `tsk depend --pending` — list tasks whose prereqs were recently completed, so you can pull them up (the "now-unblocked" view)
+- [ ] `tsk path <a> <b>` — find the dep path between two tasks (BFS over the graph)
+- [ ] `tsk topo` — emit tasks in topological order (dep-respecting linearization for "do these in this order")
+- [ ] `tsk depend <id> --justify` — print the reason chain ("blocked because #3 (which is blocked because #7 (which is not done))")
+- [ ] `tsk next --json` — JSON output for `next` so it composes with scripts (currently only plain text)
+- [ ] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view)
+- [ ] `tsk show <id> --tree` — combine show snapshot with the dep tree below it
+- [ ] `tsk merge --interactive` — pick conflict resolution per-field via prompts (when `--prefer` is too coarse)
 
 ## Known footguns the loop has run into
 
@@ -592,3 +608,94 @@ One small post-commit fix: the depend commit landed with a typo'd
 author email (`51058514+Sanjays2402+@...` — extra `+`), corrected
 via `git commit --amend --reset-author --no-edit` BEFORE push, so
 origin only ever saw the canonical email.
+
+### 2026-06-20 20:46 PT (tick #10)
+
+Shipped 5 features — all five from the "Polish & DX (added tick
+#9)" subsection plus extensions to `top` and `ls` baked into the
+`--respect-deps` slice. Together they form a cohesive
+"dependency-aware workflow" cluster: discover blockers (blocked),
+visualize the graph (graph), drill into one chain (depend --tree),
+plan around it (next/top/ls --respect-deps), and clean it up by
+merging duplicates (merge with back-ref rewrite). All single-commit,
+all tests passing, full gate green (gofmt + vet + build + go test
+./...) before push. Pushed da61ded..c695fe7 to origin/feature/autoship;
+verified landed.
+
+- `blocked`           — 714e4d8 feat(blocked): discoverable verb for stuck tasks
+- `depend --tree`     — 3c5eed7 feat(depend): recursive prerequisite chain
+- `graph`             — 607c42b feat(graph): whole-store dependency graph (ascii + DOT)
+- `--respect-deps`    — 7ad2561 feat(deps): for next, top, ls
+- `merge`             — c695fe7 feat(merge): fold two tasks into one
+
+Notable choices:
+
+- `blocked` is a TOP-LEVEL command, not a cobra alias on `depend`.
+  An alias would surface as `tsk depend blocked` in help/man output,
+  burying it. A dedicated command shows up in `tsk --help` and gets
+  its own tab-completion entry. The `stuck` synonym was added for
+  muscle-memory typists. Runtime is a one-line delegate to
+  runDependList so the two surfaces literally cannot drift.
+
+- `depend --tree` adds defensive cycle protection that the writer
+  intentionally omits. tick #9 documented that `depend --on` only
+  rejects self-deps and direct 2-cycles; 3+ node cycles are
+  tolerated (rare, expensive to detect). The tree renderer would
+  loop forever on those, so it uses a visit-set guarded recursion
+  — re-entering an already-descending node marks it "(cycle)" and
+  short-circuits. Set is mutated on entry and rolled back on exit
+  so the same id under two ancestors in a fan-in graph renders
+  fully under each.
+
+- `graph` is the bird's-eye complement. ASCII format groups
+  sources into open then "(done):" sections so historical noise
+  doesn't bury active work. DOT format styles nodes: done = filled
+  lightgray (satisfied), open-blocked = red outline (chokepoint),
+  open-actionable = default. Arrow convention "A -> B means A
+  depends on B" matches `depend --on`'s English reading so users
+  don't context-switch. Edge sort is fully deterministic so shell
+  diffs across time work.
+
+- `--respect-deps` is the killer feature. Without it, `tsk next`
+  happily returns an urgent task that can't actually be done. With
+  it, the selector skips blocked tasks and falls back to "best
+  blocked + (blocked by #X) annotation" when EVERY open task is
+  blocked — refuses to lie with "all caught up" in that case.
+  Default is OFF so legacy scripts piping `tsk next` keep their
+  exact priority-only behavior; opt in per call (or future config
+  knob). The shared filter helper (filterBlockedTasks in
+  toggle.go) lives next to its sister unmetBlockers so the
+  semantics can't drift between done-time enforcement and view-
+  time filtering.
+
+- `merge` is the most complex of the five and was sized for it.
+  Notes concatenate with a "--- merged from #N ---" provenance
+  separator (dropped when either side is empty). Tags union (case-
+  insensitive, dedup). Deps union. The hardest part: BACK-REF
+  REWRITE — every DependsOn list elsewhere in the store that
+  pointed at the victim is rewritten to point at the survivor,
+  with DEDUP so a third task that depended on BOTH ends up with
+  the survivor exactly once. Scalar conflicts (priority, due, etc.)
+  resolve via --prefer {survivor, victim, newer}; --note-only
+  skips them entirely. --dry-run previews without writing.
+  Mutual-dep refusal forces the user to clear the relationship
+  before merging — implicit handling would hide the relationship
+  in unexpected ways. The whole thing goes through store.Save so
+  `undo-last --yes` reverts the entire merge in one step
+  (regression-tested).
+
+Roadmap status: tick #9 "Polish & DX" subsection 0/10 → 5/10
+(blocked, graph, depend --tree, --respect-deps, merge — the
+dependency-tooling cluster). The remaining 5 in that subsection
+are split, timer, rules, export --opml, preview. Added "Polish &
+DX (added tick #10)" subsection with 10 fresh items — many are
+follow-ons to the dep cluster (`graph --reachable`, `path <a> <b>`,
+`topo`, `depend --justify`, `next --json`, `show <id> --tree`,
+`merge --interactive`).
+
+Per-feature test counts: blocked 4, depend --tree 9, graph 8,
+--respect-deps 7, merge 12. Total ~40 new test cases on top of the
+existing suite, all green. (Existing test suite ~530 cases also
+still green after the next.go rewrite + the new shared
+filterBlockedTasks helper — verified via full repo gate before
+push.)
