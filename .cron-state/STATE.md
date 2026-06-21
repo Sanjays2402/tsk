@@ -262,18 +262,51 @@ new follow-ons that this tick's features make sensible.
 - [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
 - [ ] `tsk wrap <id>` — split a long title with `>` continuation
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
-- [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually
+- [x] `tsk pause <id>` — alias for `stop` that pairs with start visually (tick 2026-06-21/1532)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
-- [ ] `tsk archive --merge-into <file>` — write to a non-default sibling archive (useful for project rollups)
-- [ ] `tsk archive --strategy daily` — finer-grained sibling of weekly/monthly (same bucketFn scaffolding)
+- [x] `tsk archive --merge-into <file>` — write to a non-default sibling archive (useful for project rollups) (tick 2026-06-21/1532)
+- [x] `tsk archive --strategy daily` — finer-grained sibling of weekly/monthly (same bucketFn scaffolding) (tick 2026-06-21/1532)
 - [ ] `tsk archive --strategy quarterly` — coarse-grained sibling (Q1/Q2/Q3/Q4 buckets)
-- [ ] `tsk topo --since <id> --depth N` — limit topological emission depth from the checkpoint
-- [ ] `tsk export --graph-dot --highlight <id>` — wrap the focus task in a distinct color to draw the eye on a complex graph
+- [x] `tsk topo --since <id> --depth N` — limit topological emission depth from the checkpoint (tick 2026-06-21/1532)
+- [x] `tsk export --graph-dot --highlight <id>` — wrap the focus task in a distinct color to draw the eye on a complex graph (tick 2026-06-21/1532)
 - [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
 - [ ] `tsk depend --pending --since <dur> --priority <p> --tag <t> | jq` recipe doc — one-pager on composing the freshly-unblocked feed for standup automation
 - [ ] `tsk show <id> --upstream --tree` — combine both views in one snapshot (currently mutually exclusive; would need a sibling format)
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+
+### Polish & DX (added 2026-06-21 tick #16)
+
+Fresh ideas so future ticks have ample sized work. With the
+clear-shape archive/topo/export follow-ons from tick #15 now
+shipped (daily strategy, merge-into, topo depth, graph highlight,
+pause alias), this batch leans into the still-unstarted long-
+tail: TUI work, recurring tasks (parking lot), config + multi-file,
+plus a few new follow-ons sensible after this tick's work.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk archive --strategy quarterly` — coarse-grained sibling (Q1/Q2/Q3/Q4 buckets)
+- [ ] `tsk archive --strategy yearly` — coarsest-grained sibling (one section per year)
+- [ ] `tsk archive --merge-into ~/work.archive.md --strategy daily` recipe doc — one-pager on shared project rollups
+- [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
+- [ ] `tsk topo --since <id> --depth N --json` recipe doc — composing depth-limited slices for review automation
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (would need a tiny embedded renderer)
+- [ ] `tsk graph --format dot --highlight <id1,id2,...>` — multi-id highlight for "show me this whole subset"
+- [ ] `tsk pause --all` — pause every in-progress task at once (end-of-day clear)
+- [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
+- [ ] `tsk archive --since <id>` — archive every Done task with id < N (alongside --older-than for the time axis)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI 'g'/'G' top/bottom navigation (vim-style)
+- [ ] `tsk depend --remove-all <id>` — clear an id from every other task's DependsOn (useful for "this is gone now, unblock everyone")
 
 ## Known footguns the loop has run into
 
@@ -1411,4 +1444,127 @@ gate ran clean before push; one feature (`topo --since
 in a test fix on top of the reverse BFS algorithm rewrite.
 Every commit on origin/main remains a single revertible feature
 slice.
+
+### 2026-06-21 15:32 PT (tick #16)
+
+Shipped 5 features from the "Polish & DX (added tick #15)" backlog
+plus one carryover from tick #14 — a sweep of the clear-shape
+follow-ons opened up by previous ticks: the start/stop verbal
+sibling (pause), the bucketed-archive trio's missing daily
+sibling, topo's per-checkpoint depth limit, the graph spotlight
+flag, and the cross-project archive merge target.
+
+All single-commit, all tests passing (35 new test cases across
+the 5 features), full gate green (gofmt + vet + build + go test
+./...) before push. Pushed 02eb18b..d5b956a to origin/main;
+verified landed.
+
+- `pause`                          — 02eb18b feat(pause): tsk pause <id> alias for stop, pairs visually with start
+- `archive --strategy daily`       — a53fa95 feat(archive): YYYY-MM-DD section grouping
+- `topo --since --depth N`         — 0b453be feat(topo): limit dependency layers from the checkpoint
+- `export --graph-dot --highlight` — b7caf46 feat(export): spotlight a focus node in gold
+- `archive --merge-into <file>`    — d5b956a feat(archive): non-default sibling archive
+
+Notable choices:
+
+- `pause` is a TOP-LEVEL command, not a cobra Alias on stop, for
+  the same reason `blocked`/`reachable`/`justify` got top-level
+  commands earlier: a cobra Alias surfaces as "tsk stop pause"
+  in help/man output, burying the verb. A top-level entry shows
+  up in `tsk --help` directly and gets shell-completion. The
+  runtime is a one-line forwarder into runStartStop(false, nil)
+  so semantics cannot drift between pause and stop; a regression
+  test (TestPauseStopProduceSameOutput) asserts byte-identical
+  output for the same input. Aliased `hold` for users coming
+  from time-tracker apps that use "hold" instead of "pause".
+
+- `archive --strategy daily` re-uses the writeBucketedArchive +
+  bucketFn scaffolding from tick #14's monthly addition. The
+  new bucketByDay function mirrors bucketByMonth's shape with
+  day added; sortKey is year*10000+month*100+day, lexicographic-
+  safe across year boundaries (verified by TestBucketByDayKey).
+  Section header format "YYYY-MM-DD" matches model.DateLayout
+  so the archive is consistent with the rest of tsk's date
+  rendering. Other archive policies unchanged: existing content
+  preserved verbatim (no re-bucketing), undated bucket at the
+  tail, per-bucket id-ascending order, .bak chain intact.
+
+- `topo --since --depth N` introduces a new limitTopoDepth helper
+  that lives next to sliceTopoSince/Before so the trio reads as
+  one slicing family. BFS from the anchor through either reverse
+  DependsOn edges (forward mode — tasks that depend on anchor) or
+  forward DependsOn edges (reverse mode — anchor's prereqs),
+  tracking each visited node's layer. Walks store.Tasks for
+  adjacency (not the already-filtered `ordered` slice) so dangling
+  deps and done-but-excluded prereqs don't skew the math. --depth 0
+  (default) means "no limit" — byte-identical to omitting the flag,
+  verified by TestTopoSinceDepthZeroNoLimit. Validates up-front:
+  --depth without --since errors, negatives error, post-filter
+  empty surfaces a usage error naming the hop count.
+
+- `export --graph-dot --highlight <id>` adds a gold/bold focus
+  style on top of the existing done/blocked/missing palette,
+  threaded through both `tsk graph --format dot` and `tsk export
+  --graph-dot` in lockstep. emitGraph's signature grew a
+  highlight int parameter (0 = no highlight); three callers
+  (graph, reachable, export-graphdot) updated together.
+  Highlight OVERRIDES every other node style so the focus signal
+  can't be buried by red-blocked or gray-done — a regression
+  test guards the switch order. Highlight=0 keeps output byte-
+  identical to the previous default (TestExportGraphDotNoHighlight-
+  DoesNotAddStyle). The two surfaces stay in lockstep: TestExport-
+  GraphDotHighlightOnTSKGraph asserts byte-identical output.
+
+- `archive --merge-into <file>` introduces resolveArchivePath(s,
+  mergeInto) that handles three input shapes: empty (= default
+  sibling .tsk.archive.md, the long-standing behavior), absolute
+  (pass through), relative or ~-prefixed (expand and resolve
+  against the ACTIVE STORE'S directory, not CWD — users typing
+  "team.archive.md" almost always mean "next to my .tsk.md").
+  Critical validation: target must not resolve to the active
+  store (would corrupt the file via read-then-overwrite); the
+  check compares filepath.Abs canonicalized paths. The bucketed
+  strategies layer cleanly on top of --merge-into (the existing
+  writeBucketedArchive opens by path, so no code changes — just
+  a test in TestArchiveMergeIntoWithStrategyWeekly confirming).
+  Cross-project test (TestArchiveMergeIntoSecondBatchAppends)
+  shows two distinct .tsk.md stores can roll into the same
+  shared archive with id-continuation working correctly.
+
+Roadmap status:
+- "Polish & DX (added tick #15)" subsection: 0/19 → 5/19
+  (pause, archive --merge-into, archive --strategy daily, topo
+  --since --depth N, export --graph-dot --highlight).
+- The lint --autofix-all --backup, archive --strategy quarterly,
+  recipe-doc items, and TUI work remain as future material.
+- Added "Polish & DX (added 2026-06-21 tick #16)" subsection with
+  24 fresh items — leans into the still-unstarted TUI work,
+  recurring tasks (parking lot), config/multi-file (long-
+  unstarted), plus new follow-ons sensible from this tick's
+  features (archive yearly/quarterly, multi-id highlight, graph
+  --format svg, recipe docs, pause --all, etc).
+
+Per-feature test counts: pause 6, archive daily 6, topo depth 9,
+export-graph-dot highlight 8, archive merge-into 7. Total 36 new
+test cases on top of the existing suite, all green. (Existing
+suite ~745 cases also still green after the emitGraph signature
+change, the printGraphDOT signature change, the exportGraphDOT
+signature change, the archive strategy switch addition, and the
+new resolveArchivePath helper — verified via full repo gate
+before push.)
+
+Process notes:
+- No fixups or amends needed this tick; each feature landed as a
+  single clean commit on the first pass. The discipline of
+  writing the tests against the public CLI surface first (and
+  letting the implementation evolve to satisfy them) kept the
+  iteration loops tight.
+- The topo --depth implementation initially had a `currLayer = layer[curr]` line conditionally re-evaluated based on
+  the reverse flag — a leftover scaffold from an earlier design.
+  Simplified to one unconditional lookup before commit (no
+  behavior change, cleaner code).
+
+This is the fourth batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice.
 
