@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Sanjays2402/tsk/internal/model"
@@ -26,6 +27,15 @@ import (
 // likely wants to know "everything's stuck on X" instead of
 // "all caught up" (which would be a lie).
 //
+// --skip <ids> excludes specific tasks from the candidate pool
+// without persistently mutating them. The use case is "I know about
+// these, give me the NEXT next" — e.g. you just rejected the
+// suggestion and want the runner-up without making a wait/freeze
+// commitment. Comma-separated, accepts `#7` and `7` forms. Unknown
+// ids are silently ignored (the whole point is "do not consider
+// these"; erroring would make the flag harder to use from scripts
+// that already may have stale ids).
+//
 // --json emits a structured object so pipelines can branch on
 // fields without parsing the human-readable line. Empty-store /
 // all-caught-up renders as {"empty": true} so consumers reliably
@@ -33,6 +43,7 @@ import (
 func newNextCmd() *cobra.Command {
 	var respectDeps bool
 	var asJSON bool
+	var skipCSV string
 	cmd := &cobra.Command{
 		Use:   "next",
 		Short: "Show the highest-priority undone task",
@@ -46,6 +57,13 @@ the suggested "next thing". When every candidate is blocked, the
 command falls back to the highest-priority blocked task with a
 "(blocked by #X, #Y)" annotation so you know what's gating progress.
 
+--skip <ids> excludes the named tasks from the candidate pool
+without mutating them. Useful when you've already rejected a
+suggestion ("I know about #3, give me the NEXT next") without
+needing to wait/freeze the task. Comma-separated; ` + "`#7`" + ` and
+` + "`7`" + ` both work. Stacks with --respect-deps so you can
+combine "skip these AND skip the blocked ones".
+
 --json emits a structured object with id/title/priority/due/pinned/
 blocked_by/blocked (the all-blocked fallback flag). Empty store or
 caught-up status renders {"empty": true} so scripts can detect it
@@ -54,10 +72,17 @@ without sentinel string matching.
 Examples:
   tsk next                       # legacy: priority-only
   tsk next --respect-deps        # skip tasks with unmet prereqs
+  tsk next --skip 3              # ignore #3 — give me runner-up
+  tsk next --skip 3,5,7          # ignore several at once
+  tsk next --respect-deps --skip 3
   tsk next --json                # script-friendly object
   tsk next --json | jq -r '.id'  # bare id for the next pipeline stage
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			skipSet, err := parseSkipIDs(skipCSV)
+			if err != nil {
+				return err
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -71,6 +96,9 @@ Examples:
 					continue
 				}
 				if t.IsWaiting(now) {
+					continue
+				}
+				if skipSet[t.ID] {
 					continue
 				}
 				if respectDeps {
@@ -107,7 +135,37 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&respectDeps, "respect-deps", false, "skip tasks with unmet prerequisites")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit structured JSON")
+	cmd.Flags().StringVar(&skipCSV, "skip", "", "comma-separated task ids to exclude from selection")
 	return cmd
+}
+
+// parseSkipIDs converts the --skip CSV into a lookup set. Tolerates
+// "#N" / "N" notation, dedupes, and silently drops empty tokens (so
+// trailing/leading commas don't error). An empty or whitespace-only
+// flag value returns an empty set without error — equivalent to
+// "no skips", which the user opts into by setting the flag at all.
+//
+// Returns a usage-coded error on non-numeric tokens so main.go exits
+// with code 2 and the user sees the typo before any store work
+// happens.
+func parseSkipIDs(raw string) (map[int]bool, error) {
+	out := make(map[int]bool)
+	if strings.TrimSpace(raw) == "" {
+		return out, nil
+	}
+	for _, tok := range strings.Split(raw, ",") {
+		tok = strings.TrimSpace(tok)
+		tok = strings.TrimPrefix(tok, "#")
+		if tok == "" {
+			continue
+		}
+		n, err := strconvAtoiPos(tok)
+		if err != nil || n == 0 {
+			return nil, usageErrorf("invalid task id %q in --skip", tok)
+		}
+		out[n] = true
+	}
+	return out, nil
 }
 
 // isBetterNext returns true when t should beat current under the
