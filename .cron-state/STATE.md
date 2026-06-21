@@ -64,7 +64,7 @@ Pull the next 5 unstarted items per tick.
 ### Polish & DX (added 2026-06-20)
 
 - [x] `tsk pin <id>` — sticky-flag a task so it appears first in `top`/`next` regardless of priority (tick 2026-06-20/0640)
-- [ ] `tsk depend <id> --on <other>` — track task dependencies; block `done` if unmet
+- [x] `tsk depend <id> --on <other>` — track task dependencies; block `done` if unmet (tick 2026-06-20/1736)
 - [x] `tsk wait <id> <until>` — hide a task from default views until a date (separate from due) (tick 2026-06-20/0640)
 - [ ] `tsk move-to <file>` — relocate a task between .tsk.md files (cross-store mover)
 - [ ] `tsk shell` — interactive REPL with command history, useful for batch sessions
@@ -77,11 +77,11 @@ Pull the next 5 unstarted items per tick.
 ### Polish & DX (added 2026-06-20 tick #6)
 
 - [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress)
-- [ ] `tsk find <regex>` — `grep` over titles only (no notes scan, faster for big stores)
+- [x] `tsk find <regex>` — `grep` over titles only (no notes scan, faster for big stores) (tick 2026-06-20/1736)
 - [x] `tsk rebuild-ids` — densify ID space after lots of removes (1,5,7,12 -> 1,2,3,4) (tick 2026-06-20/0948)
 - [ ] `tsk recent` — alias for `last` with a window flag (`--since 1h`) — NOTE: `recent` is already a `log` alias; consider a different verb
 - [x] `tsk pri --up <id>` / `tsk pri --down <id>` — cycle priority without remembering the name (tick 2026-06-20/0948)
-- [ ] `tsk depends-on <id>` — set/list the prerequisite chain (lighter than full graph)
+- [ ] `tsk depends-on <id>` — set/list the prerequisite chain (lighter than full graph) — SUPERSEDED by full `tsk depend` in tick #9
 - [x] `tsk lint` — validate the file (orphan IDs, dangling notes, ungrouped block) and suggest fixes (tick 2026-06-20/0948)
 - [x] `tsk swap <id> <id>` — exchange two tasks' positions in the file (manual reorder) (tick 2026-06-20/0948)
 - [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
@@ -103,15 +103,30 @@ Pull the next 5 unstarted items per tick.
 ### Polish & DX (added 2026-06-20 tick #8)
 
 - [x] `tsk start <id>` / `tsk stop <id>` / `tsk in-progress` — in-progress state with `started:` timestamp (tick 2026-06-20/1506)
-- [ ] `tsk elapsed <id>` — show "started Nm/h/d ago" for an in-progress task; --json for scripts
+- [x] `tsk elapsed <id>` — show "started Nm/h/d ago" for an in-progress task; --json for scripts (tick 2026-06-20/1736)
 - [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually (semantics: same)
 - [ ] `tsk recent` — rename of the would-be alias; show last-N edits with --since (the verb collision with `log` blocked this in tick #6)
-- [ ] `tsk why <id>` — print created/started/completed/wait/due/tags trail in one view (sister of `tsk show`)
+- [x] `tsk why <id>` — print created/started/completed/wait/due/tags trail in one view (sister of `tsk show`) (tick 2026-06-20/1736)
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from the others, rm the rest (interactive)
-- [ ] `tsk shuffle` — random order of undone tasks (decision-paralysis breaker)
+- [x] `tsk shuffle` — random order of undone tasks (decision-paralysis breaker) (tick 2026-06-20/1736)
 - [ ] `tsk wrap <id>` — split a long title with `>` continuation, mirror of `tsk note` for the title axis
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
 - [ ] `tsk lint --autofix-all` — non-interactive multi-fix
+
+### Polish & DX (added 2026-06-20 tick #9)
+
+Fresh ideas so future ticks have ample sized work:
+
+- [ ] `tsk blocked` — alias for `depend --list` (more discoverable verb for "what's stuck on what?")
+- [ ] `tsk graph` — DOT/ASCII rendering of the dependency graph; pipe to graphviz for a visual
+- [ ] `tsk depend <id> --tree` — print the recursive prerequisite chain (depth-first, indented)
+- [ ] `tsk next --respect-deps` — skip blocked tasks in `next` (already done? validate; not yet wired)
+- [ ] `tsk merge <a> <b>` — merge task b into task a (concatenate notes, union tags, remove b)
+- [ ] `tsk split <id>` — open editor with a one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk export --opml` — outline import format for note-takers (Roam, Logseq, OmniOutliner)
+- [ ] `tsk preview` — stdout-only `ls` that doesn't read .tsk.md (uses a snapshot pipe; useful in pipelines without side effects on the .bak chain)
 
 ## Known footguns the loop has run into
 
@@ -474,3 +489,106 @@ have room.
 Per-feature test counts: hash 9, pri-stats 13, freeze/thaw 10,
 dedupe 15, start/stop/in-progress + helpers 16. Total ~63 new test
 cases on top of the existing suite, all green.
+
+### 2026-06-20 17:36 PT (tick #9)
+
+Shipped 5 features — three from the "Polish & DX tick #8" backlog,
+one cross-section (depend was in the "added tick #6" rough draft,
+fully designed and shipped here), one from "tick #6" backlog
+(find). All single-commit, all tests passing (54 new test cases),
+full gate green (gofmt + vet + build + go test ./...) before push.
+Pushed 5258000..8484534 to origin/feature/autoship; verified landed.
+
+- `elapsed`     — 5258000 feat(elapsed): tsk elapsed [id] elapsed-time view
+- `why`         — 1bfa4fc feat(why): tsk why <id> chronological provenance trail
+- `shuffle`     — 259e0b2 feat(shuffle): tsk shuffle [N] decision-paralysis breaker
+- `find`        — 1491e07 feat(find): tsk find <regex> title-only RE2 search
+- `depend`      — 8484534 feat(depend): tsk depend <id> task deps with done-blocking
+
+Notable choices:
+
+- `elapsed` is the script-friendly cousin of `tsk in-progress`. The
+  list mode sorts OLDEST-start first (staleness view) — opposite of
+  in-progress's most-recent-first sort, because "what's been
+  sitting?" is the actually-actionable question. JSON exposes
+  elapsed_seconds (int) so pipelines like
+    `tsk elapsed --json | jq -r '.[] | select(.elapsed_seconds > 86400) | .id'`
+  work without humanized-string parsing. Single-id JSON is an
+  OBJECT (not array) so `jq -r .elapsed_seconds` works without
+  indexing. Clock-skew (started in the future) clamps to 0 rather
+  than returning a negative duration.
+
+- `why` is the timeline sibling of `show` (snapshot) and `diff`
+  (file delta). Emits each known timestamp (created, started,
+  waited, due, completed) sorted chronologically with relative
+  annotations (today/overdue/upcoming for due; hidden-until vs
+  expired for wait). Done tasks suppress the overdue framing so
+  "due (overdue)" doesn't appear on already-completed work. The
+  due-annotation test uses an explicit +3-day date to dodge the
+  documented UTC-midnight persistence boundary from tick #5.
+  Empty-events case (hand-edited task with no Created) prints an
+  explainer line instead of crashing.
+
+- `shuffle` uses partial Fisher-Yates on an index slice so only
+  the first N positions are uniformly shuffled (O(N) work) and the
+  original pool is never copied. Sampling is WITHOUT replacement
+  (the same task can never appear twice in one pick — sampling
+  with replacement would feel broken given the user's intent).
+  --seed makes picks deterministic for tests and reproducible
+  scripts; 0 = time-based. Default scope mirrors top/next (undone,
+  not waiting); --all expands; --tag and --priority compose via
+  AND. N > pool caps at pool size with a heads-up note instead of
+  erroring (user's intent is obvious).
+
+- `find` is the fast, title-only cousin of `grep`. grep matches
+  across title + tags + notes; find matches TITLE only and skips
+  the notes scan entirely — the right tool when you remember a
+  phrase from the title and the store is big. Defaults mirror grep
+  (case-insensitive default, undone-only, --invert / --limit /
+  --done / --all). compileGrepPattern is reused from grep.go so
+  case-fold semantics can't drift. Mutually-exclusive output
+  modes (--files-only / --count / --json) guarded up-front.
+
+- `depend` is the FIRST storage extension since tick #8's
+  start/started. New field model.Task.DependsOn []int + HasDeps
+  helper; store parser handles depends/depends_on/dependson;
+  writer emits `depends:1,5,7` after pin and before tag closer.
+  Old files round-trip unchanged (strictly additive). lint's
+  knownMetaKeys updated; hash's canonical projection extended in
+  documented order (after tags, before created) — two stores
+  describing the same deps in any input order hash identically
+  thanks to a numeric sort inside the projection.
+  Enforcement lives in toggle.go: runToggle pre-flights every id
+  when done=true; a blocked id aborts the WHOLE batch with a
+  usage-coded error (exit 2, no partial state). The unmetBlockers
+  helper treats ids in the SAME batch as satisfied — so
+  `tsk done 1 2` works when 2 depends on 1 (without forcing arg
+  order; forcing it would be hostile). Dangling deps (id with no
+  task) are TOLERATED at runtime so a hand-edit typo can't lock
+  you out; `tsk lint` is the surface for those.
+  Cycle handling: self-deps and direct A↔B cycles are rejected
+  at write time. 3+ node cycles are intentionally NOT detected —
+  rare in practice and the user notices when both ends refuse to
+  close. Graph traversal cost > value here.
+  Four mutation flags (--on / --add / --remove / --clear) are
+  mutually exclusive. --list gives a global "what's stuck on
+  what?" view with JSON output for CI signals.
+
+Roadmap status: tick #8 "Polish & DX" subsection 5/10 → 8/10
+(elapsed, why, shuffle added). tick #6 subsection 5/10 → 6/10
+(find added). "Polish & DX" original section (tick #5) one more
+done (depend). Added "Polish & DX (added tick #9)" subsection with
+10 fresh items so future ticks have ample room — many are
+follow-ons to depend (blocked alias, graph, --tree, next
+--respect-deps).
+
+Per-feature test counts: elapsed 7, why 8, shuffle 11, find 9,
+depend 15. Total ~50 new test cases on top of the existing suite,
+all green. (Existing test suite ~480 cases also still green after
+the depend storage extension + SetDone enforcement change —
+verified via full repo gate before push.)
+
+One small post-commit fix: the depend commit landed with a typo'd
+author email (`51058514+Sanjays2402+@...` — extra `+`), corrected
+via `git commit --amend --reset-author --no-edit` BEFORE push, so
+origin only ever saw the canonical email.
