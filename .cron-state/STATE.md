@@ -193,11 +193,11 @@ quality-of-life polish items.
 
 - [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
-- [ ] `tsk lint --dep-cycles` — detect 3+ node cycles via Tarjan/Kosaraju; suggest break-points
+- [x] `tsk lint --dep-cycles` — detect 3+ node cycles via Tarjan/Kosaraju; suggest break-points (tick 2026-06-21/0843)
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur branch)
-- [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
+- [x] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id (tick 2026-06-21/0843)
 - [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
-- [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
+- [x] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections (tick 2026-06-21/0843)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
 - [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
@@ -205,12 +205,44 @@ quality-of-life polish items.
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from the others, rm the rest (interactive)
 - [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually (semantics: same)
 - [ ] `tsk lint --autofix-all` — non-interactive multi-fix combining safe round-trips
-- [ ] `tsk preview` — stdout-only `ls` that doesn't read .tsk.md (uses a snapshot pipe; useful in pipelines without side-effects on the .bak chain)
+- [x] `tsk preview` — stdout-only `ls` that doesn't read .tsk.md (uses a snapshot pipe; useful in pipelines without side-effects on the .bak chain) (tick 2026-06-21/0843)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
-- [ ] `tsk depend --pending --tag <t>` — narrow the pending notification queue by tag
+- [x] `tsk depend --pending --tag <t>` — narrow the pending notification queue by tag (tick 2026-06-21/0843)
 - [ ] `tsk justify --all --json | jq` recipe doc — write a one-pager showing the chokepoint-finding patterns (`select(.value[] | .blocked_by == 7)`)
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+
+### Polish & DX (added 2026-06-21 tick #14)
+
+Fresh ideas so future ticks have ample sized work. With the
+dep-debugging cluster now fully mined (including --dep-cycles
+detection), this batch leans hard into the long-unstarted
+storage/import-export backlog, recurring tasks (the stale
+feat-recur branch is a known parking lot), and the TUI gaps.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` respecting --file scoping
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually
+- [ ] `tsk lint --autofix-all` — non-interactive multi-fix combining safe round-trips
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
+- [ ] `tsk archive --strategy monthly` — sibling of --strategy weekly (same scaffolding)
+- [ ] `tsk archive --merge-into <file>` — write to a non-default sibling archive (useful for project rollups)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] `tsk lint --dep-cycles --json | jq -r` recipe doc — one-pager showing how to feed the cycle output back into `tsk depend --remove` automation
+- [ ] `tsk topo --since <id> --depth N` — limit how many layers past the checkpoint to emit (for huge graphs)
+- [ ] `tsk depend --pending --priority urgent` — narrow the queue by priority (sister of --tag)
+- [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
+- [ ] `tsk topo --since <id> --reverse` — emit tasks BEFORE the checkpoint in topo order (the "what's left to do BEFORE I can hit this milestone?" view)
+- [ ] `tsk archive --strategy daily` — finer-grained sibling of weekly
 
 ## Known footguns the loop has run into
 
@@ -1082,4 +1114,119 @@ Process notes:
   --pending flag block in depend.go had unaligned var declarations
   before gofmt ran), keeping per-feature one-commit revertibility
   intact.
+
+### 2026-06-21 08:43 PT (tick #14)
+
+Shipped 5 features from the "Polish & DX (added tick #13)" backlog,
+forming a cohesive "depth-of-feature" cluster on the existing
+commands plus a brand-new pipeline-safe view. The dep-debugging
+follow-ons that landed:
+
+- `lint --dep-cycles`: closes the documented gap where the depend
+  writer rejects self/2-cycles but ignores 3+ node cycles.
+- `topo --since <id>`: anchors topological output at a checkpoint
+  for the "I've already done up through #N, what's next?" workflow.
+- `archive --strategy weekly`: ISO-week section grouping for the
+  archive file (the year-2 scannability problem).
+- `depend --pending --tag <t>`: narrows the standup queue to one
+  project tag — same shape as `tsk ls --tag`.
+- `preview`: stdin/--from rendering of a .tsk.md payload without
+  touching the active store or .bak chain. Pipeline-safe.
+
+All single-commit, all tests passing (29 new test cases across the
+5 features), full gate green (gofmt + vet + build + go test ./...)
+before push. Pushed 9a7ee95..4aa5ed4 to origin/main; verified
+landed.
+
+- `lint --dep-cycles`       — 9a7ee95 feat(lint): tsk lint --dep-cycles Tarjan SCC
+- `topo --since`            — 4610a4e feat(topo): tsk topo --since <id> checkpoint anchor
+- `archive --strategy week` — 7dd99be feat(archive): tsk archive --strategy weekly ISO-week sections
+- `depend --pending --tag`  — d8373d7 feat(depend): tsk depend --pending --tag narrow queue
+- `preview`                 — 4aa5ed4 feat(preview): tsk preview stdin/--from snapshot renderer
+
+Notable choices:
+
+- `lint --dep-cycles` uses Tarjan's strongly-connected-components
+  algorithm rather than a plain DFS cycle search because SCC gives
+  us a stable, canonical surface: every cycle has exactly one
+  representation regardless of visit order. The reconstructed chain
+  follows directed edges from the smallest-id rotation start, so
+  the printed "#1 -> #2 -> #3 -> #1" reads as the actual
+  traversal, not Tarjan's pop order. 2-cycles SKIPPED (rejected at
+  write time; surfacing them would be noise unless hand-edited
+  around the validator). Dangling deps ignored (matches
+  unmetBlockers' policy). Opt-in via --dep-cycles so default
+  `tsk lint` stays fast on big stores.
+
+- `topo --since` strict requirement: the id MUST already be in the
+  topological output for the trim to anchor anything. If not (typo
+  or excluded by --all=false), exit-2 with a message that names
+  --all explicitly — silently emitting empty would be hostile. The
+  helper (sliceTopoSince) first looks in the linear pass then in
+  the cycle tail, so a checkpoint inside a corrupt cycle still
+  anchors — corruption visibility wins over the slicing window.
+  Cycle-tail rows from BEFORE the slice start get re-appended at
+  the new tail (defensive against unusual topoOrder positioning;
+  the property "cycle visibility wins" matches the rest of the
+  codebase).
+
+- `archive --strategy weekly` never re-buckets existing archive
+  content — only the BATCH being added on this call gets weekly
+  layout. Re-arranging old data would shuffle the layout users
+  might already be looking at via grep/editor, and would touch
+  the .bak chain for tasks they didn't ask to modify. ISO-week
+  formatting via time.ISOWeek (Mon-first, year-boundary-safe).
+  "## undated" bucket catches done tasks without a Completed
+  stamp so hand-edited rows aren't lost. Buckets sort oldest-
+  first; "undated" explicitly pushed to the tail (sortKey=0
+  would otherwise put it first). renderArchiveMeta /
+  writeArchiveTask are local dups of store.renderMeta /
+  store.renderTask (both unexported) — kept duplicate rather
+  than exporting store internals because the archive layout is
+  logically a sibling of the active writer, not a public API.
+
+- `depend --pending --tag` uses Task.HasTag (the same predicate
+  ls/top use) so tag semantics are consistent — case-insensitive,
+  exact-match. Empty `--tag ""` deliberately behaves like no
+  filter at all, defensive against a shell-var typo that leaves
+  the value blank. Header annotation includes "tag=<name>" when
+  the filter is active so the user understands WHY they got
+  fewer rows than expected. Empty-result message also includes
+  the tag — silent output on an empty filtered query would look
+  identical to "no work at all".
+
+- `preview` introduces store.LoadBytes — parses an in-memory
+  payload into a Store with an empty Path. Documented contract:
+  callers MUST NOT call Save on the returned Store. Preview
+  reuses the lsFilters surface (--done/--all/--today/--overdue/
+  --upcoming/--tag/--priority/--include-waiting/--respect-deps
+  /--json/--format) so users don't learn a second filter set.
+  --respect-deps walks the snapshot's OWN dep graph (exactly
+  what "test this snapshot in isolation" wants). Safety guards:
+  4 MiB cap on input (binary/log/.git pack files masquerading
+  as .tsk.md); empty input is a usage error not silent "no
+  tasks" (a zero-byte read almost always means the pipe broke
+  or --from was forgotten). io.LimitReader caps the read so we
+  don't even buffer beyond the cap before failing.
+
+Roadmap status: "Polish & DX (added tick #13)" subsection 0/20 →
+5/20 (lint --dep-cycles, topo --since, archive weekly, pending
+--tag, preview). Added "Polish & DX (added 2026-06-21 tick #14)"
+subsection with 23 fresh items — leans into the long-unstarted
+storage/import-export backlog, recurring tasks (stale feat-recur),
+TUI gaps, plus follow-ons to this batch (archive monthly/daily,
+preview --watch, topo --since --depth/--reverse, pending --priority,
+recipe docs).
+
+Per-feature test counts: lint --dep-cycles 6, topo --since 6,
+archive weekly 5, depend pending --tag 5, preview 8. Total 30 new
+test cases on top of the existing suite, all green. (Existing
+suite ~680 cases also still green after the depend pending
+signature change, archive output format addition, lint command
+flag addition, topo flag addition, and the new store.LoadBytes
+export — verified via full repo gate before push.)
+
+This is the second batch (after tick #13) shipped DIRECTLY ON
+MAIN. The quality gate ran clean before push; every feature is a
+single revertible commit (no fixups needed this tick).
 
