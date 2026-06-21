@@ -62,6 +62,7 @@ func newTopoCmd() *cobra.Command {
 		includeDone  bool
 		sinceID      int
 		sinceReverse bool
+		sinceDepth   int
 	)
 	cmd := &cobra.Command{
 		Use:   "topo",
@@ -96,6 +97,17 @@ first? Combine with --ids to feed the prereq chain into a script
 Without --since, --reverse is a usage error (there's no anchor to
 reverse from).
 
+--depth N (only with --since) limits how many dependency layers
+past the checkpoint to emit (forward direction). Useful for huge
+graphs where you want the immediate next few layers without the
+whole tail. Layer 1 = checkpoint + its direct dependents (tasks
+that name the checkpoint in their DependsOn); layer 2 = two hops
+out; etc. Combine with --reverse to limit how many prereq layers
+BEFORE the checkpoint to surface (the "show me only the next 2
+immediate prereqs" review pattern). --depth 0 (the default) means
+no depth limit — emit the full slice. --depth must be a positive
+integer when set, and requires --since.
+
 Examples:
   tsk topo                            # ordered list, human-readable
   tsk topo --all                      # include done tasks (historical first)
@@ -103,6 +115,8 @@ Examples:
   tsk topo --ids                      # comma-separated ids
   tsk topo --since 7                  # start the list at #7 (or just after, if #7 is a prereq)
   tsk topo --since 7 --reverse        # show the prereq chain that leads up to #7
+  tsk topo --since 7 --depth 2        # just the next 2 layers past #7
+  tsk topo --since 7 --reverse --depth 1   # immediate prereqs of #7 only
   tsk topo --ids | xargs -n1 tsk show # walk the chain interactively
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -124,6 +138,12 @@ Examples:
 			if sinceReverse && sinceID == 0 {
 				return usageErrorf("--reverse requires --since <id> as the anchor to reverse from")
 			}
+			if sinceDepth < 0 {
+				return usageErrorf("--depth must be a non-negative integer, got %d", sinceDepth)
+			}
+			if sinceDepth > 0 && sinceID == 0 {
+				return usageErrorf("--depth requires --since <id> as the anchor to limit depth from")
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -138,10 +158,22 @@ Examples:
 					if len(ordered) == 0 {
 						return usageErrorf("--since #%d --reverse: no prereqs come before #%d in the topological output (it's already at the head, or not in the output — try --all)", sinceID, sinceID)
 					}
+					if sinceDepth > 0 {
+						ordered = limitTopoDepth(s, ordered, sinceID, sinceDepth, true)
+						if len(ordered) == 0 {
+							return usageErrorf("--since #%d --reverse --depth %d: no prereqs within %d hop(s) of #%d", sinceID, sinceDepth, sinceDepth, sinceID)
+						}
+					}
 				} else {
 					ordered = sliceTopoSince(ordered, sinceID)
 					if len(ordered) == 0 {
 						return usageErrorf("--since #%d: id is not in the current topological output (try --all to include done tasks)", sinceID)
+					}
+					if sinceDepth > 0 {
+						ordered = limitTopoDepth(s, ordered, sinceID, sinceDepth, false)
+						if len(ordered) == 0 {
+							return usageErrorf("--since #%d --depth %d: no dependents within %d hop(s) of #%d", sinceID, sinceDepth, sinceDepth, sinceID)
+						}
 					}
 				}
 			}
@@ -154,6 +186,7 @@ Examples:
 	cmd.Flags().BoolVar(&includeDone, "all", false, "include done tasks (default: open only)")
 	cmd.Flags().IntVar(&sinceID, "since", 0, "drop tasks that appear before this id in the sequence (id becomes the head)")
 	cmd.Flags().BoolVar(&sinceReverse, "reverse", false, "with --since: emit the prereq tail BEFORE the checkpoint instead of after")
+	cmd.Flags().IntVar(&sinceDepth, "depth", 0, "with --since: limit emission to N dependency layers from the anchor (0 = no limit)")
 	return cmd
 }
 
@@ -323,6 +356,95 @@ func sliceTopoSince(ordered []topoTask, id int) []topoTask {
 		// Append at tail (they're cycle rows, they belong after the
 		// linear plan).
 		kept = append(kept, cyclePrefix...)
+	}
+	return kept
+}
+
+// limitTopoDepth filters an already-sliced topological sequence to
+// only the tasks within `depth` BFS hops of the anchor. Direction
+// switches based on the `reverse` flag:
+//
+//   - forward (reverse=false): BFS through the REVERSE DependsOn
+//     edges — i.e. follow "is depended on by" arrows away from the
+//     anchor. Layer 0 = anchor itself (always kept); layer 1 =
+//     tasks that name the anchor in their DependsOn; layer 2 =
+//     tasks two hops out. Keeps anchor plus everything up to and
+//     including layer `depth`.
+//
+//   - reverse (reverse=true): BFS through the FORWARD DependsOn
+//     edges from the anchor — i.e. transitive prereqs. The anchor
+//     itself is NOT in the input slice (sliceTopoBefore excludes
+//     it), so layer numbering starts at 1: layer 1 = anchor's
+//     direct DependsOn; layer 2 = the deps of those deps; etc.
+//
+// Why we walk store.Tasks rather than `ordered` for adjacency:
+// `ordered` is already the post-filter slice (open-only, or with
+// --all), so dangling deps / done-but-excluded prereqs aren't in
+// there. The store has the full task set, and we want the depth
+// math to match the actual graph structure. A dep pointing at a
+// missing task is treated the same way unmetBlockers treats it
+// (satisfied/ignored — no node visited).
+//
+// Caller's contract: depth >= 1 (depth == 0 means "no limit" at
+// the command-flag layer, and the caller skips this function in
+// that case). Cycle safety: visit-set guards the BFS against the
+// 3+ node cycles tsk tolerates at write time.
+//
+// Returns an empty slice when the filter removes every row —
+// caller surfaces as a usage error.
+func limitTopoDepth(s *store.Store, ordered []topoTask, anchorID, depth int, reverse bool) []topoTask {
+	// Build the adjacency map we'll BFS over.
+	// reverse=false: build "id -> ids that depend on it" (reverse
+	// of DependsOn).
+	// reverse=true: build "id -> ids it depends on" (forward
+	// DependsOn).
+	adj := make(map[int][]int)
+	for _, t := range s.Tasks {
+		for _, dep := range t.DependsOn {
+			if reverse {
+				// Forward DependsOn: t -> dep.
+				adj[t.ID] = append(adj[t.ID], dep)
+			} else {
+				// Reverse DependsOn: dep -> t (the tasks that
+				// depend on dep).
+				adj[dep] = append(adj[dep], t.ID)
+			}
+		}
+	}
+	// BFS from the anchor, tracking each node's depth in `layer`.
+	// In forward mode the anchor itself is layer 0 and lives in
+	// the kept set; in reverse mode the anchor is layer 0 for
+	// counting hops but is NOT added to `layer` so it gets
+	// filtered out (sliceTopoBefore already excluded it from
+	// `ordered`, this just keeps the math consistent).
+	layer := make(map[int]int, len(ordered))
+	if !reverse {
+		layer[anchorID] = 0
+	}
+	queue := []int{anchorID}
+	visited := map[int]bool{anchorID: true}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		currLayer := layer[curr] // 0 for anchor in both modes
+		if currLayer >= depth {
+			continue
+		}
+		for _, neighbor := range adj[curr] {
+			if visited[neighbor] {
+				continue
+			}
+			visited[neighbor] = true
+			layer[neighbor] = currLayer + 1
+			queue = append(queue, neighbor)
+		}
+	}
+	// Keep only `ordered` entries whose id is in the layer map.
+	kept := make([]topoTask, 0, len(ordered))
+	for _, row := range ordered {
+		if _, ok := layer[row.Task.ID]; ok {
+			kept = append(kept, row)
+		}
 	}
 	return kept
 }
