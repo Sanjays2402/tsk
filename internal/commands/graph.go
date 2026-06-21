@@ -35,17 +35,24 @@ import (
 //
 // Filters:
 //
-//	--open       only include open tasks AND the open deps that
-//	             actually block them (filters out the done-history
-//	             noise; the most useful default for active work)
+//	--open               only include open tasks AND the open deps that
+//	                     actually block them (filters out the done-history
+//	                     noise; the most useful default for active work)
+//	--reachable <id>     only include the subgraph reachable from <id>
+//	                     via DependsOn edges (the transitive prereqs of
+//	                     one root + the root itself). Pairs nicely with
+//	                     `tsk depend <id> --tree`: tree shows one chain
+//	                     in depth-first form, --reachable shows the full
+//	                     fan-in/out subgraph in DOT layout.
 //
 // Empty graphs (no deps anywhere) print "no dependencies" rather than
 // emitting a blank DOT skeleton — both shapes are still parseable but
 // the explicit message saves a "why is this empty?" diagnostic loop.
 func newGraphCmd() *cobra.Command {
 	var (
-		format string
-		open   bool
+		format    string
+		open      bool
+		reachable int
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -56,14 +63,23 @@ Two output formats:
   --format ascii     adjacency listing (default; one line per task)
   --format dot       GraphViz DOT source for piping to ` + "`dot -Tpng`" + `
 
+Filters:
+  --open             skip done tasks and edges to done prereqs
+  --reachable <id>   restrict to the subgraph reachable from <id>
+                     via DependsOn (transitive prereqs + root)
+
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
+` + "`--reachable`" + ` is the in-between view: every transitive prereq of
+one root, in the same DOT layout used for the whole-store graph.
 
 Examples:
   tsk graph                              # quick text adjacency view
   tsk graph --open                       # only show what's still blocking
+  tsk graph --reachable 7                # the subgraph rooted at #7
+  tsk graph --reachable 7 --open         # …filtered to active work
   tsk graph --format dot | dot -Tpng -o deps.png
-  tsk graph --format dot --open | dot -Tsvg > active.svg
+  tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -75,11 +91,18 @@ Examples:
 				return err
 			}
 			edges := collectGraphEdges(s, open)
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice)
+			if reachable > 0 {
+				if s.ByID(reachable) == nil {
+					return fmt.Errorf("no task with id %d in %s", reachable, s.Path)
+				}
+				edges = filterReachableEdges(s, edges, reachable)
+			}
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
+	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
 	return cmd
 }
 
@@ -128,6 +151,58 @@ func collectGraphEdges(s *store.Store, openOnly bool) []graphEdge {
 	return edges
 }
 
+// filterReachableEdges keeps only the edges that participate in the
+// subgraph reachable from `root` via DependsOn. Algorithm:
+//
+//  1. BFS from `root` over the source->target edges to compute the
+//     set of every transitively-reachable node (the root itself
+//     plus every prereq, every prereq's prereq, etc).
+//  2. Drop every edge whose source is NOT in that set.
+//
+// Note: this is the "downstream" reachability (where `root` is the
+// source). It answers "what does #X transitively depend on?" — the
+// matching question for the user typing `--reachable 7`. The reverse
+// ("what transitively depends on #X?") is a separate filter we don't
+// add here; users wanting that should reverse the edge direction by
+// piping `tsk graph --format dot` through external tooling, or use
+// `tsk path` for a one-shot lookup.
+//
+// Edges already sorted by collectGraphEdges; we preserve that order
+// so DOT/ASCII output stays deterministic regardless of which root
+// the user picks.
+func filterReachableEdges(s *store.Store, edges []graphEdge, root int) []graphEdge {
+	// Build outgoing adjacency from the edge list.
+	out := make(map[int][]int)
+	for _, e := range edges {
+		out[e.from] = append(out[e.from], e.to)
+	}
+	// BFS to find the reachable node set.
+	visited := map[int]bool{root: true}
+	queue := []int{root}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		for _, next := range out[curr] {
+			if visited[next] {
+				continue
+			}
+			visited[next] = true
+			queue = append(queue, next)
+		}
+	}
+	// Filter the edge list — keep only edges whose source is in the
+	// reachable set. (Target reachability is implied: if from is
+	// reachable and we kept the edge, the BFS already added the
+	// target to visited.)
+	filtered := make([]graphEdge, 0, len(edges))
+	for _, e := range edges {
+		if visited[e.from] {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 // resolveGraphFormat normalizes --format to the canonical lowercase
 // keyword. Empty defaults to ascii. Unknown values are rejected
 // up-front (usage-coded so main.go exits 2).
@@ -141,9 +216,16 @@ func resolveGraphFormat(raw string) (string, error) {
 	return "", usageErrorf("unknown --format %q (want ascii or dot)", raw)
 }
 
-// emitGraph dispatches based on the resolved format.
-func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string) error {
+// emitGraph dispatches based on the resolved format. When reachable
+// is set (>0) and the filter produced zero edges, the message is
+// more specific so the user understands "the root has no prereqs"
+// vs the whole store being empty.
+func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int) error {
 	if len(edges) == 0 {
+		if reachable > 0 {
+			pf(w, "no dependencies reachable from #%d\n", reachable)
+			return nil
+		}
 		pln(w, "no dependencies")
 		return nil
 	}
