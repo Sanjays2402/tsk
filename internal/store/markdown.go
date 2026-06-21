@@ -324,6 +324,30 @@ func applyMeta(t *model.Task, meta string) {
 			case "1", "true", "yes", "on":
 				t.Pinned = true
 			}
+		case "depends", "depends_on", "dependson":
+			// Comma-separated list of integer ids. Bogus tokens (non-
+			// numeric, <= 0) are silently dropped — the user's `tsk
+			// lint` will surface the original meta string for them
+			// to investigate. Duplicates are de-duped here to keep
+			// the in-memory model tidy; the user's hand-edited
+			// ordering is preserved across the de-dupe.
+			seen := make(map[int]bool, 4)
+			for _, raw := range strings.Split(val, ",") {
+				raw = strings.TrimSpace(raw)
+				raw = strings.TrimPrefix(raw, "#")
+				if raw == "" {
+					continue
+				}
+				n, err := strconv.Atoi(raw)
+				if err != nil || n <= 0 {
+					continue
+				}
+				if seen[n] {
+					continue
+				}
+				seen[n] = true
+				t.DependsOn = append(t.DependsOn, n)
+			}
 		}
 	}
 }
@@ -389,6 +413,13 @@ func renderMeta(t model.Task) string {
 	}
 	if t.Pinned {
 		parts = append(parts, "pin:true")
+	}
+	if len(t.DependsOn) > 0 {
+		ids := make([]string, 0, len(t.DependsOn))
+		for _, id := range t.DependsOn {
+			ids = append(ids, strconv.Itoa(id))
+		}
+		parts = append(parts, fmt.Sprintf("depends:%s", strings.Join(ids, ",")))
 	}
 	return strings.Join(parts, " ")
 }

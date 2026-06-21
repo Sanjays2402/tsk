@@ -184,6 +184,9 @@ var knownMetaKeys = map[string]bool{
 	"completed":  true,
 	"pin":        true,
 	"pinned":     true,
+	"depends":    true,
+	"depends_on": true,
+	"dependson":  true,
 }
 
 // metaKeyValueRe matches the canonical "key:value" inside a meta comment.

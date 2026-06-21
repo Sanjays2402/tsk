@@ -227,11 +227,27 @@ func canonicalTaskLine(t model.Task) string {
 		}
 		tags = strings.Join(sorted, ",")
 	}
+	depends := "-"
+	if len(t.DependsOn) > 0 {
+		// Sort numerically so two stores describing the same deps in
+		// different orders hash identically.
+		sorted := append([]int(nil), t.DependsOn...)
+		for i := 1; i < len(sorted); i++ {
+			for j := i; j > 0 && sorted[j-1] > sorted[j]; j-- {
+				sorted[j-1], sorted[j] = sorted[j], sorted[j-1]
+			}
+		}
+		parts := make([]string, len(sorted))
+		for i, n := range sorted {
+			parts[i] = fmt.Sprintf("%d", n)
+		}
+		depends = strings.Join(parts, ",")
+	}
 	notes := escapeNotesForHash(t.Notes)
 	return fmt.Sprintf(
-		"id=%d\ttitle=%s\tdone=%s\tprio=%s\tdue=%s\twait=%s\tpin=%s\ttags=%s\tcreated=%s\tstarted=%s\tcompleted=%s\tnotes=%s",
+		"id=%d	title=%s	done=%s	prio=%s	due=%s	wait=%s	pin=%s	tags=%s	depends=%s	created=%s	started=%s	completed=%s	notes=%s",
 		t.ID, t.Title, done, t.Priority.String(),
-		due, wait, pinned, tags, created, started, completed, notes,
+		due, wait, pinned, tags, depends, created, started, completed, notes,
 	)
 }
 

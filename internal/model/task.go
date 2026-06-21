@@ -84,7 +84,18 @@ type Task struct {
 	Created   time.Time
 	Started   *time.Time
 	Completed *time.Time
+	// DependsOn is the set of task IDs this task is blocked by. A
+	// task can only be marked done when every id in DependsOn refers
+	// to a done task in the same store. Persisted as a comma list in
+	// the meta block under the `depends:` key. Strictly additive:
+	// old files round-trip unchanged when the slice is empty.
+	DependsOn []int
 }
+
+// HasDependencies reports whether this task is blocked on at least
+// one other task by id (regardless of whether those tasks are still
+// open or done).
+func (t *Task) HasDependencies() bool { return len(t.DependsOn) > 0 }
 
 // HasDue reports whether the task has a due date set.
 func (t *Task) HasDue() bool { return t.Due != nil }

@@ -76,6 +76,13 @@ func printTaskDetail(w io.Writer, t *model.Task) {
 	if t.Pinned {
 		pf(w, "pinned:    yes\n")
 	}
+	if len(t.DependsOn) > 0 {
+		ids := make([]string, 0, len(t.DependsOn))
+		for _, id := range t.DependsOn {
+			ids = append(ids, fmt.Sprintf("#%d", id))
+		}
+		pf(w, "depends:   %s\n", strings.Join(ids, ", "))
+	}
 	if t.Due != nil {
 		pf(w, "due:       %s\n", t.Due.Format(model.DateLayout))
 	} else {
