@@ -171,18 +171,46 @@ touched in a while.
 - [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
 - [ ] `tsk lint --dep-cycles` — detect 3+ node cycles via Tarjan/Kosaraju; suggest break-points
-- [ ] `tsk depend --pending` — list tasks whose prereqs were recently completed ("now-unblocked" notification queue)
-- [ ] `tsk justify --all` — emit a justify chain for every blocked task in one screen
-- [ ] `tsk path <a> <b> --any-direction` — BFS in both directions (handles "are these two related at all?")
+- [x] `tsk depend --pending` — list tasks whose prereqs were recently completed ("now-unblocked" notification queue) (tick 2026-06-21/0541)
+- [x] `tsk justify --all` — emit a justify chain for every blocked task in one screen (shipped as top-level `tsk justify [--all]` verb) (tick 2026-06-21/0541)
+- [x] `tsk path <a> <b> --any-direction` — BFS in both directions (handles "are these two related at all?") (tick 2026-06-21/0541)
 - [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
 - [ ] `tsk depend --add-bidir <a> <b>` — symmetric "these relate" (probably a new "related:" field; design first)
 - [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
-- [ ] `tsk show <id> --upstream` — combine snapshot + upstream view (sister of --tree)
-- [ ] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view)
+- [x] `tsk show <id> --upstream` — combine snapshot + upstream view (sister of --tree) (tick 2026-06-21/0541)
+- [x] `tsk top --pinned-only` — show only pinned tasks (the "high-importance bookmark" view) (tick 2026-06-21/0541)
 - [ ] `tsk recent --since 1h` — last-N edits with a window flag (recent verb still collides with log alias)
 - [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+
+### Polish & DX (added 2026-06-21 tick #13)
+
+Fresh ideas so future ticks have ample sized work. The dependency
+debugging cluster is now mostly mined; this batch leans into TUI
+gaps, storage/import-export, recurring tasks, and a few
+quality-of-life polish items.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
+- [ ] `tsk lint --dep-cycles` — detect 3+ node cycles via Tarjan/Kosaraju; suggest break-points
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur branch)
+- [ ] `tsk topo --since <id>` — emit only the tasks in topo order that come AFTER a given checkpoint id
+- [ ] `tsk export --graph-dot` — shortcut for `graph --format dot` that respects --file scoping
+- [ ] `tsk archive --strategy weekly` — roll completed tasks into per-week archive sections
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation, mirror of `tsk note` for the title axis
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from the others, rm the rest (interactive)
+- [ ] `tsk pause <id>` — alias for `stop` that pairs with start visually (semantics: same)
+- [ ] `tsk lint --autofix-all` — non-interactive multi-fix combining safe round-trips
+- [ ] `tsk preview` — stdout-only `ls` that doesn't read .tsk.md (uses a snapshot pipe; useful in pipelines without side-effects on the .bak chain)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk depend --pending --tag <t>` — narrow the pending notification queue by tag
+- [ ] `tsk justify --all --json | jq` recipe doc — write a one-pager showing the chokepoint-finding patterns (`select(.value[] | .blocked_by == 7)`)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
 
 ## Known footguns the loop has run into
 
@@ -927,4 +955,131 @@ feature/autoship branch), so every commit immediately shows on
 GitHub's contribution graph. The quality gate (gofmt + vet +
 build + full test suite) is the only thing protecting main —
 ran clean before push.
+
+### 2026-06-21 05:41 PT (tick #13)
+
+Shipped 5 features from the "Polish & DX (added tick #12)"
+backlog, completing the dependency-debugging follow-ons that the
+last cluster opened up: a top-level `justify` verb (with `--all`
+for the whole-store chokepoint review), the `--upstream` sister
+of `show --tree`, the "now-unblocked notification queue" via
+`depend --pending`, undirected BFS via `path --any-direction`,
+and the pinned-bookmark filter via `top --pinned-only`. All
+single-commit, all tests passing, full gate green (gofmt + vet
++ build + go test ./...) before push. Pushed 911682e..44939fd
+to origin/main; verified landed.
+
+- `justify`             — 911682e feat(justify): top-level chain-of-reasons verb [--all]
+- `show --upstream`     — 11b466b feat(show): tsk show <id> --upstream appends dependents
+- `depend --pending`    — 55d651f feat(depend): tsk depend --pending now-unblocked queue
+- `path --any-direction`— 3ce417c feat(path): undirected BFS for "are these related at all?"
+- `top --pinned-only`   — 44939fd feat(top): tsk top --pinned-only bookmark view
+
+Notable choices:
+
+- `justify` follows the same forwarder pattern as `blocked` and
+  `reachable`: top-level verb that delegates to runDependJustify
+  for the single-id case so output is byte-identical to
+  `tsk depend <id> --justify` (a regression test asserts this).
+  `--all` is the new capability: walks every open blocked task
+  in id order, prefixing each chain with `=== #N title ===`
+  headers in plain text and emitting a JSON OBJECT keyed by id
+  string (NOT array) so callers can look up one chain in
+  constant time. Empty result = `{}` not null so `jq 'keys[]'`
+  consumers don't crash. Inner chain shape matches single-task
+  --json exactly (justifyStep array) so jq filters compose
+  across modes.
+
+- `show --upstream` mirrors `--tree` for the inverse direction.
+  Plain output: snapshot + blank line + `upstream:` header +
+  indented rows with the same `(unblocks)/(blocked)/(done)`
+  annotations `tsk depend --upstream` uses. Suppressed on a
+  task with no dependents — output is BYTE-IDENTICAL to plain
+  `tsk show` in that case (regression test guards). JSON uses
+  the same round-trip-and-splice technique as `--tree`'s
+  emitShowJSONWithTree so the existing field set is preserved
+  exactly; the new `upstream` key is omitted when empty.
+  --tree and --upstream are mutually exclusive — each is a
+  different relationship.
+
+- `depend --pending` is the "now-unblocked notification queue"
+  — distinct from `tsk blocked --inverted` because it includes
+  the RECENCY discriminator. A task is pending iff: open + has
+  deps + zero unmet blockers + at least one done dep completed
+  inside --since (24h default). The recency check is what makes
+  this the "what just became actionable?" view rather than
+  "every open unblocked task" (which would include stale
+  noise). Done prereqs WITHOUT a Completed timestamp (hand-
+  edited) are conservatively ignored for recency but still
+  count as satisfied. Each row annotates the trigger ("unblocked
+  by #1 at 2026-06-21 05:49") so the why-now signal is
+  immediate. Reuses parseDurationLocal (same parser tsk log
+  uses) so 7d / 2w / 1h30m all work consistently. Validator
+  rejects positional id with --pending, mutex with --list and
+  --tree/--justify/--upstream.
+
+- `path --any-direction` adds undirected BFS to the existing
+  directed search. New findDepPathUndirected mirrors findDepPath
+  exactly except the neighbour set combines forward edges
+  (t.DependsOn) AND reverse edges (other tasks that name t in
+  their DependsOn). The reverse adjacency map is built once
+  up-front (O(V+E)) so the BFS stays O(V+E) — avoiding per-pop
+  scans that would make it O(V²+VE) on big stores. Neighbour
+  sort is ascending so output reproducibility matches the
+  directed search's contract. Plain-text not-found message now
+  suggests --any-direction in directed mode ("try
+  --any-direction") and explicitly says "even with
+  --any-direction" when the wider search also fails (no false
+  hope). JSON adds a `direction` field ("directed" vs "any") so
+  consumers know which search produced the result. The reported
+  path always reads from→to in output order even when
+  intermediate hops follow reversed edges.
+
+- `top --pinned-only` is the "important-bookmark" view —
+  restricts the result to pinned tasks regardless of priority.
+  Pinning already floats tasks to the TOP of `top`/`next` via
+  tie-break #1, but that's ordering, not isolation; --pinned-
+  only is the filter that answers "show me ONLY what I've
+  marked worth tracking." filterPinnedTasks is a fresh helper
+  next to filterTopCandidates (kept separate so each predicate
+  is single-purpose, matching the filterBlockedTasks pattern).
+  Applied AFTER filterTopCandidates but BEFORE --respect-deps
+  so the call order documents the layering: scope -> bookmark
+  -> reachability. Stacks cleanly with --respect-deps
+  ("which of my pinned tasks are actually unblocked?"). Empty
+  when nothing's pinned → "no tasks" marker, no silent
+  fallback.
+
+Roadmap status: tick #12 "Polish & DX" subsection 0/15 → 5/15.
+The remaining 10 are show --watch, import, lint --dep-cycles,
+topo --since, depend --add-bidir, export --graph-dot, recent,
+archive, config, multi-file. Added "Polish & DX (added 2026-06-21
+tick #13)" with 20 fresh items so future ticks have ample room
+— leans into TUI, storage/import-export, recurring tasks, and a
+few cross-cuts the loop hasn't visited (split, wrap, dedupe
+--merge, rules, timer).
+
+Per-feature test counts: justify 8, show --upstream 6,
+depend --pending 9, path --any-direction 6, top --pinned-only 6.
+Total 35 new test cases on top of the existing suite, all green.
+(Existing suite ~648 cases also still green after the show flag
+addition, path JSON schema addition, depend validator signature
+change, and top filter chain reorder — verified via full repo
+gate before push.)
+
+Process notes:
+- Hit a self-inflicted bug in TestPendingHonorsSinceWindow's
+  hand-edit logic: used `strings.IndexAny(rest, " -")` to find
+  the end of the completed:RFC3339 value, but `-` matches
+  INSIDE the date (2026-06-21). Replaced with `strings.Index(rest, " ")`
+  (RFC3339 has no spaces, so the next space terminates the value).
+- Hit a name shadow in TestPathDirectionFieldInJSON — local
+  `dir, _ := dirDoc["direction"]…` shadowed the outer `dir` (tmp
+  dir). Tests still passed because the shadow happened after the
+  last runCmd, but renamed local to `direction` for clarity.
+- One commit needed a `git commit --fixup` + autosquash to fold a
+  gofmt alignment pass into the right feature commit (the
+  --pending flag block in depend.go had unaligned var declarations
+  before gofmt ran), keeping per-feature one-commit revertibility
+  intact.
 
