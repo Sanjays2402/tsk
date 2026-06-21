@@ -37,13 +37,18 @@ func newArchiveCmd() *cobra.Command {
 			"from the archive's existing max ID. Active task IDs do not change.\n\n" +
 			"--strategy controls how archived tasks are grouped inside the archive file:\n" +
 			"  flat (default)  one growing list in the order they were archived\n" +
+			"  daily           group into '## YYYY-MM-DD' sections by completion date,\n" +
+			"                  in the task's recorded time zone. Finer-grained sibling\n" +
+			"                  of weekly/monthly — useful when the archive churns and\n" +
+			"                  you want day-level resolution for end-of-day rollups.\n" +
+			"                  Same '## undated' bucket policy as weekly/monthly.\n" +
 			"  weekly          group into '## YYYY-W##' sections by completion week (ISO),\n" +
 			"                  so old archives have a scannable timeline. Tasks without a\n" +
 			"                  Completed timestamp fall into '## undated' so they're not lost.\n" +
 			"  monthly         group into '## YYYY-MM' sections by completion month — coarser\n" +
 			"                  scannability for stores that accumulate hundreds of archived\n" +
 			"                  rows. Same '## undated' bucket policy as weekly.\n\n" +
-			"weekly/monthly is purely a layout choice — IDs, content, and round-trip\n" +
+			"daily/weekly/monthly is purely a layout choice — IDs, content, and round-trip\n" +
 			"semantics are identical; switching strategies later just changes how the\n" +
 			"NEXT batch is placed in the file. Existing archive contents are preserved\n" +
 			"verbatim (no re-bucketing of historical data).",
@@ -53,12 +58,14 @@ func newArchiveCmd() *cobra.Command {
 			switch strategy {
 			case "", "flat":
 				strategy = "flat"
+			case "daily":
+				// ok
 			case "weekly":
 				// ok
 			case "monthly":
 				// ok
 			default:
-				return usageErrorf("unknown --strategy %q (want flat, weekly, or monthly)", strategy)
+				return usageErrorf("unknown --strategy %q (want flat, daily, weekly, or monthly)", strategy)
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -125,6 +132,10 @@ func newArchiveCmd() *cobra.Command {
 				if err := writeBucketedArchive(archivePath, arch, archived, bucketByMonth); err != nil {
 					return fmt.Errorf("save monthly archive: %w", err)
 				}
+			case "daily":
+				if err := writeBucketedArchive(archivePath, arch, archived, bucketByDay); err != nil {
+					return fmt.Errorf("save daily archive: %w", err)
+				}
 			default:
 				arch.ReplaceTasks(append(arch.Tasks, archived...))
 				if err := arch.Save(); err != nil {
@@ -145,7 +156,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&olderThan, "older-than", "30d", "only archive tasks completed more than this ago (e.g. 7d, 2w, 1m)")
 	cmd.Flags().BoolVar(&all, "all", false, "archive every Done task regardless of age")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
-	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | weekly (ISO weeks) | monthly (calendar months)")
+	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily (calendar days) | weekly (ISO weeks) | monthly (calendar months)")
 	return cmd
 }
 
@@ -204,6 +215,33 @@ func bucketByMonth(t model.Task) (string, int) {
 	}
 	y, m, _ := t.Completed.Date()
 	return fmt.Sprintf("%04d-%02d", y, int(m)), y*100 + int(m)
+}
+
+// bucketByDay groups tasks by calendar day (in the time zone of
+// the Completed timestamp). The finest-grained sibling of weekly
+// and monthly — useful when a project archives multiple times a
+// day or when you want day-by-day rollups (end-of-day summaries,
+// daily standup logs). Section header is the same ISO date format
+// the rest of tsk uses (model.DateLayout = "2006-01-02") so
+// scanning is consistent with `tsk ls --due`, `tsk show`, etc.
+//
+// SortKey is year*10000 + month*100 + day — lexicographically
+// safe (Dec 31 2025 = 20251231 < Jan 1 2026 = 20260101) and
+// fits easily in int (year 2147 max). Year-boundary safe by
+// construction.
+//
+// Why a separate sortKey rather than a string compare on the
+// "YYYY-MM-DD" key? Two reasons: keeps the bucketFn contract
+// (returning an int) consistent with bucketByISOWeek's "year*100+
+// week" math, and avoids any subtle locale-string-compare gotchas
+// that could surface if a future tweak to the key format breaks
+// strict ASCII ordering.
+func bucketByDay(t model.Task) (string, int) {
+	if t.Completed == nil {
+		return "undated", 0
+	}
+	y, m, d := t.Completed.Date()
+	return fmt.Sprintf("%04d-%02d-%02d", y, int(m), d), y*10000 + int(m)*100 + d
 }
 
 // writeBucketedArchive renders the archive file with the newly-
