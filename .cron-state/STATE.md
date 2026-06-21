@@ -1,6 +1,6 @@
 # tsk — autoship state
 
-**Active branch:** `feature/autoship` (off main)
+**Active branch: `main`** — commit and push DIRECTLY to main every tick. No feature branches.
 **Loop:** cron — 5 feature slices per 20-minute tick, gated once at the end.
 **Last bootstrapped:** 2026-06-19
 
