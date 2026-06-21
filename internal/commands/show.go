@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Sanjays2402/tsk/internal/model"
+	"github.com/Sanjays2402/tsk/internal/store"
 )
 
 // newShowCmd implements `tsk show <id>`: a single-task detail view that
@@ -19,8 +20,20 @@ import (
 // is the "open it" companion for when you want every field. With `--json`
 // it emits the same task object `tsk export --json` does, but for a
 // single id, so scripts can pluck one field without piping through jq.
+//
+// `--tree` is the "context" companion: it prints the standard snapshot
+// AND appends the recursive prerequisite chain rooted at <id>. Saves
+// users from running `tsk show 7 && tsk depend 7 --tree` back-to-back
+// when triaging a blocked task. The tree section is suppressed entirely
+// when the task has no dependencies (skip the empty "dependencies:" header
+// so the output for a leaf task stays identical to a plain `tsk show`).
+// In JSON mode, --tree adds a `dependency_tree` field containing the
+// same nested shape `tsk depend <id> --tree --json` emits.
 func newShowCmd() *cobra.Command {
-	var asJSON bool
+	var (
+		asJSON bool
+		tree   bool
+	)
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Show full detail for a single task",
@@ -30,9 +43,16 @@ Plain output formats the task across multiple lines with full ISO timestamps,
 labelled fields, and the complete notes block. Pass --json for the same task
 object as 'tsk export --json' but scoped to one id.
 
+--tree appends the recursive prerequisite chain (the same shape
+'tsk depend <id> --tree' would render) under the snapshot. Saves a
+follow-up command when triaging a blocked task. Suppressed when the
+task has no dependencies.
+
 Examples:
   tsk show 3
   tsk show 3 --json
+  tsk show 3 --tree            # snapshot + dep tree
+  tsk show 3 --tree --json     # JSON snapshot + nested dep tree
   tsk show 3 --json | jq -r '.Notes'
 `,
 		Args: cobra.ExactArgs(1),
@@ -50,16 +70,56 @@ Examples:
 				return fmt.Errorf("no task with id %d in %s", id, s.Path)
 			}
 			if asJSON {
+				if tree {
+					return emitShowJSONWithTree(cmd.OutOrStdout(), s, t)
+				}
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
 				return enc.Encode(t)
 			}
 			printTaskDetail(cmd.OutOrStdout(), t)
+			if tree && t.HasDependencies() {
+				pln(cmd.OutOrStdout())
+				pln(cmd.OutOrStdout(), "dependencies:")
+				printDependTreeText(cmd.OutOrStdout(), s, t, 0, make(map[int]bool))
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (single task object)")
+	cmd.Flags().BoolVar(&tree, "tree", false, "append the recursive prerequisite chain below the snapshot")
 	return cmd
+}
+
+// emitShowJSONWithTree builds the JSON shape for `tsk show <id> --tree
+// --json`: the task object embedded with an extra `dependency_tree`
+// field carrying the same nested structure `depend --tree --json`
+// produces. We can't decorate *model.Task itself because the model
+// has no awareness of the tree shape (and shouldn't — it's a view
+// concern), so we round-trip the task into a generic map and tack
+// the tree on as an extra key.
+//
+// The tree key is omitted when the task has no dependencies so the
+// JSON shape for a leaf task matches plain `--json` exactly (callers
+// using a fixed schema don't suddenly see a null/empty field appear).
+func emitShowJSONWithTree(w io.Writer, s *store.Store, t *model.Task) error {
+	// Marshal the task first so we get the exact same field set the
+	// non-tree path produces, then unmarshal into a map to splice on
+	// the extra key. Two-step round-trip keeps the schema stable.
+	raw, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return err
+	}
+	if t.HasDependencies() {
+		doc["dependency_tree"] = buildDependTreeNode(s, t, make(map[int]bool))
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
 
 // printTaskDetail renders one task across labelled lines. Stable column
