@@ -149,6 +149,12 @@ func (s *Store) ReplaceTasks(tasks []model.Task) {
 }
 
 // SetDone toggles the completion state of the task with the given ID.
+//
+// As a side effect, transitioning to done CLEARS any in-progress
+// Started timestamp — once a task is complete, "started" is no
+// longer the most useful timestamp; Completed is. The flip leaves
+// Started untouched when transitioning back to undone (reopen)
+// because the user may want to resume tracking from where they were.
 func (s *Store) SetDone(id int, done bool) bool {
 	t := s.ByID(id)
 	if t == nil {
@@ -158,6 +164,7 @@ func (s *Store) SetDone(id int, done bool) bool {
 	if done {
 		now := time.Now()
 		t.Completed = &now
+		t.Started = nil
 	} else {
 		t.Completed = nil
 	}
@@ -288,6 +295,10 @@ func applyMeta(t *model.Task, meta string) {
 			if tm, err := time.Parse(model.DateLayout, val); err == nil {
 				t.Due = &tm
 			}
+		case "wait", "wait_until", "waituntil":
+			if tm, err := time.Parse(model.DateLayout, val); err == nil {
+				t.WaitUntil = &tm
+			}
 		case "tags":
 			if val == "" {
 				continue
@@ -297,9 +308,45 @@ func applyMeta(t *model.Task, meta string) {
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Created = tm
 			}
+		case "started":
+			if tm, err := time.Parse(TimeLayout, val); err == nil {
+				t.Started = &tm
+			}
 		case "completed":
 			if tm, err := time.Parse(TimeLayout, val); err == nil {
 				t.Completed = &tm
+			}
+		case "pin", "pinned":
+			// Lenient: any truthy spelling (true/1/yes/on, case-insensitive)
+			// flips the flag on. Anything else leaves it false, so hand-
+			// edits like `pin:false` clear it as expected.
+			switch strings.ToLower(val) {
+			case "1", "true", "yes", "on":
+				t.Pinned = true
+			}
+		case "depends", "depends_on", "dependson":
+			// Comma-separated list of integer ids. Bogus tokens (non-
+			// numeric, <= 0) are silently dropped — the user's `tsk
+			// lint` will surface the original meta string for them
+			// to investigate. Duplicates are de-duped here to keep
+			// the in-memory model tidy; the user's hand-edited
+			// ordering is preserved across the de-dupe.
+			seen := make(map[int]bool, 4)
+			for _, raw := range strings.Split(val, ",") {
+				raw = strings.TrimSpace(raw)
+				raw = strings.TrimPrefix(raw, "#")
+				if raw == "" {
+					continue
+				}
+				n, err := strconv.Atoi(raw)
+				if err != nil || n <= 0 {
+					continue
+				}
+				if seen[n] {
+					continue
+				}
+				seen[n] = true
+				t.DependsOn = append(t.DependsOn, n)
 			}
 		}
 	}
@@ -347,6 +394,9 @@ func renderMeta(t model.Task) string {
 	if t.Due != nil {
 		parts = append(parts, fmt.Sprintf("due:%s", t.Due.Format(model.DateLayout)))
 	}
+	if t.WaitUntil != nil {
+		parts = append(parts, fmt.Sprintf("wait:%s", t.WaitUntil.Format(model.DateLayout)))
+	}
 	if len(t.Tags) > 0 {
 		tags := append([]string(nil), t.Tags...)
 		sort.Strings(tags)
@@ -355,8 +405,21 @@ func renderMeta(t model.Task) string {
 	if !t.Created.IsZero() {
 		parts = append(parts, fmt.Sprintf("created:%s", t.Created.Format(TimeLayout)))
 	}
+	if t.Started != nil {
+		parts = append(parts, fmt.Sprintf("started:%s", t.Started.Format(TimeLayout)))
+	}
 	if t.Completed != nil {
 		parts = append(parts, fmt.Sprintf("completed:%s", t.Completed.Format(TimeLayout)))
+	}
+	if t.Pinned {
+		parts = append(parts, "pin:true")
+	}
+	if len(t.DependsOn) > 0 {
+		ids := make([]string, 0, len(t.DependsOn))
+		for _, id := range t.DependsOn {
+			ids = append(ids, strconv.Itoa(id))
+		}
+		parts = append(parts, fmt.Sprintf("depends:%s", strings.Join(ids, ",")))
 	}
 	return strings.Join(parts, " ")
 }

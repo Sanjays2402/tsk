@@ -13,21 +13,29 @@ import (
 )
 
 func newExportCmd() *cobra.Command {
-	var asJSON, asCSV bool
+	var asJSON, asCSV, asJSONL bool
 	var format string
 	cmd := &cobra.Command{
 		Use:   "export",
-		Short: "Export tasks as JSON, CSV, or Markdown",
+		Short: "Export tasks as JSON, JSONL, CSV, or Markdown",
 		Long: `Export tasks in a shareable format.
 
 Formats:
   json      Pretty-printed JSON array of task objects
+  jsonl     Streaming JSON-lines (one task per line, no array wrapper) —
+            ideal for pipelines: each line is independently parsable so
+            jq/mlr/awk can process them without buffering the whole set.
   csv       CSV with header row (id, done, priority, title, due, ...)
   markdown  Human-readable Markdown grouped by section
 
-Use --format to pick a format explicitly, or the legacy --json / --csv flags.`,
+Use --format to pick a format explicitly, or the legacy --json / --jsonl /
+--csv shortcuts.
+
+JSONL pipeline example:
+  tsk export --jsonl | jq -c 'select(.Done == false) | {ID, Title}'
+`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			chosen, err := resolveExportFormat(format, asJSON, asCSV)
+			chosen, err := resolveExportFormat(format, asJSON, asCSV, asJSONL)
 			if err != nil {
 				return err
 			}
@@ -39,6 +47,8 @@ Use --format to pick a format explicitly, or the legacy --json / --csv flags.`,
 			switch chosen {
 			case "json":
 				return exportJSON(out, s.Tasks)
+			case "jsonl":
+				return exportJSONL(out, s.Tasks)
 			case "csv":
 				return exportCSV(out, s.Tasks)
 			case "markdown":
@@ -47,8 +57,9 @@ Use --format to pick a format explicitly, or the legacy --json / --csv flags.`,
 			return fmt.Errorf("unreachable: unknown format %q", chosen)
 		},
 	}
-	cmd.Flags().StringVarP(&format, "format", "f", "", "output format: json, csv, or markdown")
+	cmd.Flags().StringVarP(&format, "format", "f", "", "output format: json, jsonl, csv, or markdown")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
+	cmd.Flags().BoolVar(&asJSONL, "jsonl", false, "emit JSON-lines (shortcut for --format=jsonl)")
 	cmd.Flags().BoolVar(&asCSV, "csv", false, "emit CSV (shortcut for --format=csv)")
 	return cmd
 }
@@ -56,11 +67,15 @@ Use --format to pick a format explicitly, or the legacy --json / --csv flags.`,
 // resolveExportFormat arbitrates between --format and the legacy boolean
 // shortcuts. Supplying more than one wins with a useful error rather than a
 // silent priority rule.
-func resolveExportFormat(format string, asJSON, asCSV bool) (string, error) {
+func resolveExportFormat(format string, asJSON, asCSV, asJSONL bool) (string, error) {
 	chosen := ""
 	count := 0
 	if asJSON {
 		chosen = "json"
+		count++
+	}
+	if asJSONL {
+		chosen = "jsonl"
 		count++
 	}
 	if asCSV {
@@ -72,10 +87,10 @@ func resolveExportFormat(format string, asJSON, asCSV bool) (string, error) {
 		count++
 	}
 	if count == 0 {
-		return "", fmt.Errorf("specify --format=<json|csv|markdown> (or --json / --csv)")
+		return "", fmt.Errorf("specify --format=<json|jsonl|csv|markdown> (or --json / --jsonl / --csv)")
 	}
 	if count > 1 {
-		return "", fmt.Errorf("specify exactly one of --format, --json, --csv")
+		return "", fmt.Errorf("specify exactly one of --format, --json, --jsonl, --csv")
 	}
 	switch chosen {
 	case "json", "csv", "markdown", "md":
@@ -83,14 +98,44 @@ func resolveExportFormat(format string, asJSON, asCSV bool) (string, error) {
 			chosen = "markdown"
 		}
 		return chosen, nil
+	case "jsonl", "ndjson":
+		// ndjson is the same wire format under a different name —
+		// accept it as an alias because half the world calls it that.
+		return "jsonl", nil
 	}
-	return "", fmt.Errorf("unknown --format %q: expected json, csv, or markdown", chosen)
+	return "", fmt.Errorf("unknown --format %q: expected json, jsonl, csv, or markdown", chosen)
 }
 
 func exportJSON(w io.Writer, tasks []model.Task) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(tasks)
+}
+
+// exportJSONL emits one task per line, no array wrapper, no indent.
+// Each line is independently parseable so a downstream `jq` / `mlr` /
+// `awk` pipeline can stream through them without buffering the entire
+// result set — useful when piping into a long-running stage.
+//
+// The per-line schema is identical to one element of exportJSON's
+// array, so a consumer can switch between the two formats without
+// changing field accessors. The contract: every line is exactly one
+// valid JSON object terminated by '\n'; on zero tasks the output is
+// empty (NOT "[]" and NOT a single empty line — that's the jsonlines
+// convention).
+func exportJSONL(w io.Writer, tasks []model.Task) error {
+	enc := json.NewEncoder(w)
+	// NewEncoder writes '\n' after each Encode by default — perfect
+	// for jsonlines. Do NOT call SetIndent here: indented JSONL is a
+	// contradiction (lines would have embedded newlines).
+	for i := range tasks {
+		// Encode one element at a time so the writer can flush between
+		// records — streaming-friendly.
+		if err := enc.Encode(tasks[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func exportCSV(w io.Writer, tasks []model.Task) error {

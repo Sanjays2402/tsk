@@ -2,78 +2,89 @@ package commands
 
 import (
 	"testing"
-	"time"
 )
 
-func TestResolveTZRespectsTSKTZ(t *testing.T) {
+// TestResolveTZPrefersTSKTZ verifies $TSK_TZ wins over $TZ and the system
+// default. Uses ResetTZForTest to clear the sync.Once cache between cases.
+func TestResolveTZPrefersTSKTZ(t *testing.T) {
 	ResetTZForTest()
+	t.Cleanup(ResetTZForTest)
+
 	t.Setenv("TSK_TZ", "America/New_York")
-	t.Setenv("TZ", "Asia/Tokyo") // must lose to TSK_TZ
-	loc := ResolveTZ()
-	if loc.String() != "America/New_York" {
-		t.Fatalf("expected TSK_TZ to win, got %q", loc.String())
-	}
-	t.Cleanup(ResetTZForTest)
-}
+	t.Setenv("TZ", "Europe/London")
 
-func TestResolveTZFallsBackToTZ(t *testing.T) {
-	ResetTZForTest()
-	t.Setenv("TSK_TZ", "")
-	t.Setenv("TZ", "America/New_York")
-	loc := ResolveTZ()
-	if loc.String() != "America/New_York" {
-		t.Fatalf("expected TZ fallback, got %q", loc.String())
-	}
-	t.Cleanup(ResetTZForTest)
-}
-
-func TestResolveTZIgnoresInvalidZone(t *testing.T) {
-	ResetTZForTest()
-	t.Setenv("TSK_TZ", "Invalid/Not_A_Zone")
-	t.Setenv("TZ", "")
-	loc := ResolveTZ()
-	// Must silently fall through to the next strategy rather than crash.
-	if loc == nil {
-		t.Fatal("ResolveTZ returned nil for invalid TSK_TZ")
-	}
-	t.Cleanup(ResetTZForTest)
-}
-
-func TestResolveTZUsesLocalWhenEnvEmpty(t *testing.T) {
-	ResetTZForTest()
-	t.Setenv("TSK_TZ", "")
-	t.Setenv("TZ", "")
 	loc := ResolveTZ()
 	if loc == nil {
 		t.Fatal("ResolveTZ returned nil")
 	}
-	// On most dev hosts time.Local is not UTC; just assert we got something
-	// non-nil without crashing. Specific zone name depends on the host.
-	_ = loc
-	t.Cleanup(ResetTZForTest)
+	if loc.String() != "America/New_York" {
+		t.Fatalf("TSK_TZ should win; want America/New_York, got %s", loc)
+	}
 }
 
-func TestResolveTZCachesFirstCall(t *testing.T) {
+// TestResolveTZFallsBackToTZ verifies $TZ is used when $TSK_TZ is unset.
+func TestResolveTZFallsBackToTZ(t *testing.T) {
 	ResetTZForTest()
+	t.Cleanup(ResetTZForTest)
+
+	t.Setenv("TSK_TZ", "")
+	t.Setenv("TZ", "Asia/Tokyo")
+
+	loc := ResolveTZ()
+	if loc == nil {
+		t.Fatal("ResolveTZ returned nil")
+	}
+	if loc.String() != "Asia/Tokyo" {
+		t.Fatalf("TZ should be used; want Asia/Tokyo, got %s", loc)
+	}
+}
+
+// TestResolveTZIgnoresInvalidZone verifies an unparseable $TSK_TZ is skipped in
+// favor of the next candidate ($TZ) rather than erroring.
+func TestResolveTZIgnoresInvalidZone(t *testing.T) {
+	ResetTZForTest()
+	t.Cleanup(ResetTZForTest)
+
+	t.Setenv("TSK_TZ", "Not/ARealZone")
+	t.Setenv("TZ", "America/Los_Angeles")
+
+	loc := ResolveTZ()
+	if loc == nil {
+		t.Fatal("ResolveTZ returned nil")
+	}
+	if loc.String() != "America/Los_Angeles" {
+		t.Fatalf("invalid TSK_TZ should fall through to TZ; want America/Los_Angeles, got %s", loc)
+	}
+}
+
+// TestResolveTZCachesFirstResult verifies the sync.Once cache: once resolved,
+// later env changes within the same process are ignored until ResetTZForTest.
+func TestResolveTZCachesFirstResult(t *testing.T) {
+	ResetTZForTest()
+	t.Cleanup(ResetTZForTest)
+
 	t.Setenv("TSK_TZ", "America/New_York")
 	first := ResolveTZ()
-	// Change env; second call must return the cached value.
+	if first.String() != "America/New_York" {
+		t.Fatalf("setup: want America/New_York, got %s", first)
+	}
+
+	// Change the env; without a reset the cached value must persist.
 	t.Setenv("TSK_TZ", "Asia/Tokyo")
 	second := ResolveTZ()
-	if first != second {
-		t.Fatalf("expected cached location, got %v then %v", first, second)
+	if second.String() != "America/New_York" {
+		t.Fatalf("cache should hold first result; want America/New_York, got %s", second)
 	}
-	t.Cleanup(ResetTZForTest)
 }
 
-// Sanity: the resolved location actually works with time.Now().
-func TestResolveTZProducesUsableLocation(t *testing.T) {
+// TestPacificLocDelegatesToResolveTZ confirms the backward-compat alias returns
+// the same location as ResolveTZ.
+func TestPacificLocDelegatesToResolveTZ(t *testing.T) {
 	ResetTZForTest()
-	t.Setenv("TSK_TZ", "America/New_York")
-	loc := ResolveTZ()
-	n := time.Now().In(loc)
-	if n.Location() != loc {
-		t.Fatalf("time.Now().In did not adopt the location: got %v", n.Location())
-	}
 	t.Cleanup(ResetTZForTest)
+
+	t.Setenv("TSK_TZ", "Europe/Berlin")
+	if PacificLoc().String() != ResolveTZ().String() {
+		t.Fatalf("PacificLoc should delegate to ResolveTZ")
+	}
 }
