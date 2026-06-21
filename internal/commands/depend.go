@@ -46,18 +46,19 @@ import (
 // `toggle.go` via unmetBlockers — depend just curates the list.
 func newDependCmd() *cobra.Command {
 	var (
-		onCSV        string
-		addCSV       string
-		removeCSV    string
-		clear        bool
-		list         bool
-		tree         bool
-		justify      bool
-		upstream     bool
-		pending      bool
-		pendingSince string
-		pendingTag   string
-		asJSON       bool
+		onCSV           string
+		addCSV          string
+		removeCSV       string
+		clear           bool
+		list            bool
+		tree            bool
+		justify         bool
+		upstream        bool
+		pending         bool
+		pendingSince    string
+		pendingTag      string
+		pendingPriority string
+		asJSON          bool
 	)
 	cmd := &cobra.Command{
 		Use:   "depend [<id>]",
@@ -106,7 +107,11 @@ of prereqs ("what's freshly free?"). Tasks unblocked long ago are
 excluded; pass --since to widen the window (1h, 7d, 30d, etc).
 Pair with --tag to narrow the feed to one project's tag (e.g.
 ` + "`tsk depend --pending --tag work --since 7d`" + ` for "what's freshly
-unblocked on work this week, leaving home stuff out").
+unblocked on work this week, leaving home stuff out"), and/or
+with --priority to focus the feed on just the urgent/high pull
+(e.g. ` + "`tsk depend --pending --priority urgent`" + ` for the
+"what's freshly unblocked AND on fire?" view). --tag and
+--priority compose — they intersect, not union.
 
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
@@ -123,6 +128,8 @@ Examples:
   tsk depend --pending          # what just became actionable?
   tsk depend --pending --since 7d
   tsk depend --pending --tag work --since 7d  # narrow by tag
+  tsk depend --pending --priority urgent      # only urgent freshly-unblocked
+  tsk depend --pending --tag work --priority high  # tag AND priority
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -137,7 +144,7 @@ Examples:
 				return runDependList(cmd.OutOrStdout(), s, asJSON)
 			}
 			if pending {
-				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, asJSON)
+				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, pendingPriority, asJSON)
 			}
 			id, err := parseSingleID(args[0])
 			if err != nil {
@@ -174,6 +181,7 @@ Examples:
 	cmd.Flags().BoolVar(&pending, "pending", false, "list open tasks whose prereqs were recently completed")
 	cmd.Flags().StringVar(&pendingSince, "since", "24h", "for --pending: how recent the unblocking completion must be (e.g. 1h, 7d)")
 	cmd.Flags().StringVar(&pendingTag, "tag", "", "for --pending: restrict to tasks carrying this tag")
+	cmd.Flags().StringVar(&pendingPriority, "priority", "", "for --pending: restrict to tasks at this priority (low/medium/high/urgent)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }

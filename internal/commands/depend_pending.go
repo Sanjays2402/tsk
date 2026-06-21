@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/Sanjays2402/tsk/internal/store"
 )
 
@@ -47,6 +48,13 @@ import (
 //     `tsk ls --tag`). Useful for "what unblocked overnight on my
 //     work projects?" without seeing personal tasks in the same
 //     feed. Empty value = no tag filter.
+//   - --priority narrows the queue to a single priority level
+//     (low/medium/high/urgent — same parser ls/top/add use).
+//     Composes with --tag as an INTERSECTION: tasks must match BOTH.
+//     Useful for "what's freshly unblocked AND high-priority?"
+//     — the most-actionable subset of the freshly-unblocked feed.
+//     Empty value = no priority filter (mirroring --tag's
+//     defensive shell-var-typo policy).
 //
 // Sort order: most-recent unblocking completion FIRST. That mirrors
 // `tsk log`'s newest-first ordering — the freshest unblocks at the
@@ -55,17 +63,21 @@ import (
 // Each row annotates which prereq's completion was the unblocking
 // trigger (the most-recent done dep's id + when), so the user
 // understands the "why now?" without a follow-up.
-func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag string, asJSON bool) error {
+func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag, priorityRaw string, asJSON bool) error {
 	sinceDur, err := parsePendingSince(sinceRaw)
 	if err != nil {
 		return err
 	}
+	prio, prioActive, err := parsePendingPriority(priorityRaw)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
-	rows := collectPendingRows(s, now, sinceDur, tag)
+	rows := collectPendingRows(s, now, sinceDur, tag, prio, prioActive)
 	if asJSON {
 		return emitPendingJSON(w, rows)
 	}
-	return emitPendingPlain(w, rows, sinceDur, tag)
+	return emitPendingPlain(w, rows, sinceDur, tag, priorityRaw, prioActive)
 }
 
 // parsePendingSince validates and parses the --since flag value.
@@ -91,6 +103,28 @@ func parsePendingSince(raw string) (time.Duration, error) {
 	return d, nil
 }
 
+// parsePendingPriority resolves the --priority flag string to a
+// model.Priority value, returning prioActive=false on empty input
+// so the caller can skip the filter cleanly. Mirrors --tag's
+// "empty value behaves like no filter" stance: defensive against
+// an unset shell variable that leaves --priority="".
+//
+// Invalid values are surfaced as a usage error (exit-2) with the
+// list of valid names, so a typo doesn't silently degrade to "no
+// filter" (which would be confusing — the user clearly meant
+// something).
+func parsePendingPriority(raw string) (model.Priority, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false, nil
+	}
+	p, err := model.ParsePriority(raw)
+	if err != nil {
+		return 0, false, usageErrorf("invalid --priority %q: %v", raw, err)
+	}
+	return p, true, nil
+}
+
 // pendingRow describes one task that just became actionable, plus
 // the prereq whose completion triggered the unblocking.
 //
@@ -110,8 +144,10 @@ type pendingRow struct {
 // collectPendingRows scans the store and returns every task that
 // matches the pending criteria, sorted newest trigger first. When
 // tag is non-empty, results are restricted to tasks carrying that
-// tag (case-insensitive via Task.HasTag).
-func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag string) []pendingRow {
+// tag (case-insensitive via Task.HasTag). When prioActive is true,
+// results are further narrowed to tasks at exactly prio (the
+// canonical exact-match on priority — same semantics ls/top use).
+func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag string, prio model.Priority, prioActive bool) []pendingRow {
 	cutoff := now.Add(-since)
 	tag = strings.TrimSpace(tag)
 	out := make([]pendingRow, 0)
@@ -126,6 +162,9 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag 
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if prioActive && t.Priority != prio {
 			continue
 		}
 		t := t
@@ -185,19 +224,24 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag 
 //
 // Empty result gets an explicit message — silent output would be
 // ambiguous for a "what's new?" query.
-func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag string) error {
+//
+// Active filters are reflected in the header AND in the empty
+// message so the user understands WHY they got a narrower or
+// empty result — silent filter-induced emptiness is hostile.
+func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag, priorityRaw string, prioActive bool) error {
 	tag = strings.TrimSpace(tag)
+	filters := buildPendingFilterSummary(tag, priorityRaw, prioActive)
 	if len(rows) == 0 {
-		if tag != "" {
-			pf(w, "no tasks freshly unblocked in the last %s (tag=%s)\n", humanizeDuration(since), tag)
+		if filters != "" {
+			pf(w, "no tasks freshly unblocked in the last %s (%s)\n", humanizeDuration(since), filters)
 		} else {
 			pf(w, "no tasks freshly unblocked in the last %s\n", humanizeDuration(since))
 		}
 		return nil
 	}
 	loc := PacificLoc()
-	if tag != "" {
-		pf(w, "freshly unblocked (last %s, tag=%s): %d task(s)\n", humanizeDuration(since), tag, len(rows))
+	if filters != "" {
+		pf(w, "freshly unblocked (last %s, %s): %d task(s)\n", humanizeDuration(since), filters, len(rows))
 	} else {
 		pf(w, "freshly unblocked (last %s): %d task(s)\n", humanizeDuration(since), len(rows))
 	}
@@ -206,6 +250,24 @@ func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag s
 		pf(w, "  #%d  %s  (unblocked by #%d at %s)\n", r.ID, r.Title, r.TriggerID, when)
 	}
 	return nil
+}
+
+// buildPendingFilterSummary produces the "tag=X, priority=Y" trailer
+// that appears in headers and empty-state messages. Order is
+// deterministic (tag, then priority) so output is reproducible
+// across invocations. Empty → empty string (no trailing comma).
+//
+// Lowercases the priority for display so output is consistent
+// regardless of how the user typed it on the command line.
+func buildPendingFilterSummary(tag, priorityRaw string, prioActive bool) string {
+	parts := make([]string, 0, 2)
+	if tag != "" {
+		parts = append(parts, "tag="+tag)
+	}
+	if prioActive {
+		parts = append(parts, "priority="+strings.ToLower(strings.TrimSpace(priorityRaw)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // emitPendingJSON renders the rows array verbatim. Empty stays `[]`
