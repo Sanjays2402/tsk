@@ -28,6 +28,7 @@ func newArchiveCmd() *cobra.Command {
 		all       bool
 		dryRun    bool
 		strategy  string
+		mergeInto string
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -35,6 +36,14 @@ func newArchiveCmd() *cobra.Command {
 		Long: "Move Done tasks out of the active .tsk.md and into a sibling .tsk.archive.md.\n" +
 			"Archived tasks get fresh sequential IDs in the archive file, continuing\n" +
 			"from the archive's existing max ID. Active task IDs do not change.\n\n" +
+			"--merge-into <file> writes to a non-default archive file instead of the\n" +
+			"sibling .tsk.archive.md. Useful for per-project rollups (e.g. a yearly or\n" +
+			"per-team archive that several .tsk.md files feed into). The target file is\n" +
+			"created if missing, with the same '# tsk archive' header used by the\n" +
+			"default sibling. Subsequent --merge-into calls to the same file continue\n" +
+			"its id space (max+1, same as the default sibling). Bucketed strategies\n" +
+			"layer correctly on top of merge-into so a 'tsk archive --strategy weekly\n" +
+			"--merge-into ~/work.archive.md' run works.\n\n" +
 			"--strategy controls how archived tasks are grouped inside the archive file:\n" +
 			"  flat (default)  one growing list in the order they were archived\n" +
 			"  daily           group into '## YYYY-MM-DD' sections by completion date,\n" +
@@ -94,7 +103,10 @@ func newArchiveCmd() *cobra.Command {
 			kept, archived := s.Partition(pred)
 
 			out := cmd.OutOrStdout()
-			archivePath := filepath.Join(filepath.Dir(s.Path), archiveFileName)
+			archivePath, err := resolveArchivePath(s, mergeInto)
+			if err != nil {
+				return err
+			}
 
 			if len(archived) == 0 {
 				pf(out, "no tasks to archive\n")
@@ -157,6 +169,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "archive every Done task regardless of age")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily (calendar days) | weekly (ISO weeks) | monthly (calendar months)")
+	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
 	return cmd
 }
 
@@ -183,6 +196,62 @@ func maxTaskID(tasks []model.Task) int {
 		}
 	}
 	return m
+}
+
+// resolveArchivePath picks the archive file to write to. The default
+// (mergeInto == "") is the sibling .tsk.archive.md alongside the
+// active .tsk.md — the long-standing tsk behaviour. A non-empty
+// mergeInto overrides with a user-supplied path so several projects
+// can roll into one shared archive.
+//
+// Path handling:
+//   - "~" expansion via os.UserHomeDir (the standard go-stdlib
+//     pattern; cobra doesn't auto-expand)
+//   - relative paths resolve against the active store's directory
+//     so a typo like "archive.md" doesn't accidentally write to the
+//     CWD when the user clearly meant "alongside my .tsk.md"
+//   - absolute paths pass through unchanged
+//
+// Validation: the target must not be the same path as the active
+// store (would be self-archiving — the function would read the file,
+// then overwrite it with the merged result, corrupting the active
+// .tsk.md). Surfaced as a usage error so the user immediately
+// understands the bug. Comparing canonical absolute paths is the
+// only safe way (symlinks, relative ~. shenanigans).
+//
+// Why not normalize to the directory containing the active store
+// for ALL relative paths? Because users typing
+// "--merge-into team.archive.md" inside a project-local context
+// almost always mean "in this project's dir, not my CWD". When
+// they DO mean CWD, they can prefix "./" — explicit beats implicit
+// for filesystem writes.
+func resolveArchivePath(s *store.Store, mergeInto string) (string, error) {
+	if mergeInto == "" {
+		return filepath.Join(filepath.Dir(s.Path), archiveFileName), nil
+	}
+	expanded := mergeInto
+	if strings.HasPrefix(expanded, "~/") || expanded == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("--merge-into: cannot expand ~: %w", err)
+		}
+		if expanded == "~" {
+			expanded = home
+		} else {
+			expanded = filepath.Join(home, expanded[2:])
+		}
+	}
+	if !filepath.IsAbs(expanded) {
+		expanded = filepath.Join(filepath.Dir(s.Path), expanded)
+	}
+	// Refuse to archive into the active store — would corrupt the
+	// active file on the second pass.
+	srcAbs, _ := filepath.Abs(s.Path)
+	dstAbs, _ := filepath.Abs(expanded)
+	if srcAbs != "" && srcAbs == dstAbs {
+		return "", usageErrorf("--merge-into %q resolves to the active store at %s; pick a different file", mergeInto, s.Path)
+	}
+	return expanded, nil
 }
 
 // bucketFn computes the section header key (e.g. "2026-W12" or
