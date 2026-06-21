@@ -43,8 +43,9 @@ import (
 //	2 bad invocation / IO failure
 func newLintCmd() *cobra.Command {
 	var (
-		asJSON bool
-		fix    bool
+		asJSON    bool
+		fix       bool
+		depCycles bool
 	)
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -63,6 +64,15 @@ their byte representation is normalized.
 Pass --json for a stable machine-readable report (CI / pre-commit
 hook friendly).
 
+Pass --dep-cycles to scan the DependsOn graph for 3+ node cycles
+via Tarjan's strongly-connected-components algorithm. The depend
+writer only rejects self-deps and direct A<->B cycles; deeper
+cycles (A->B->C->A) are tolerated at write time and surfaced here.
+Each detected cycle is reported with its full id chain plus a
+suggested edge to break, so the user can ` + "`tsk depend <id> --remove`" + `
+their way out. --dep-cycles is a READ-ONLY scan; it does not
+trigger --fix (cycles need human judgement to resolve).
+
 Exit codes: 0 clean, 1 findings present, 2 bad invocation.
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -73,6 +83,9 @@ Exit codes: 0 clean, 1 findings present, 2 bad invocation.
 			report, err := runLint(path)
 			if err != nil {
 				return err
+			}
+			if depCycles {
+				appendDepCycleFindings(&report, path)
 			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
@@ -98,6 +111,7 @@ Exit codes: 0 clean, 1 findings present, 2 bad invocation.
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "re-render the file in canonical form (safe round-trip)")
+	cmd.Flags().BoolVar(&depCycles, "dep-cycles", false, "scan the DependsOn graph for 3+ node cycles (Tarjan SCC)")
 	return cmd
 }
 
