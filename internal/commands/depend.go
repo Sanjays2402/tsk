@@ -51,6 +51,7 @@ func newDependCmd() *cobra.Command {
 		removeCSV string
 		clear     bool
 		list      bool
+		tree      bool
 		asJSON    bool
 	)
 	cmd := &cobra.Command{
@@ -65,11 +66,14 @@ Add ids:        tsk depend <id> --add 7
 Remove ids:     tsk depend <id> --remove 3
 Clear all:      tsk depend <id> --clear
 Inspect one:    tsk depend <id>
-Inspect all:    tsk depend --list           (every blocked task at once)
+Inspect tree:   tsk depend <id> --tree         (recursive prereq chain)
+Inspect all:    tsk depend --list              (every blocked task at once)
 
 Self-dependencies and direct cycles (A↔B) are rejected. Bigger-than-
 two cycles are intentionally NOT detected — they're rare in practice
-and the user would notice when both ends refuse to close.
+and the user would notice when both ends refuse to close. The --tree
+view DOES detect deeper cycles defensively (marks them "(cycle)") so
+a corrupt hand-edit can't put the renderer in an infinite loop.
 
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
@@ -77,11 +81,12 @@ Examples:
   tsk depend 7 --remove 3       # 3 no longer required
   tsk depend 7 --clear          # 7 is fully unblocked
   tsk depend 7                  # show the chain
+  tsk depend 7 --tree           # recursive prereq chain, indented
   tsk depend --list --json      # CI: what's stuck?
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list); err != nil {
+			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree); err != nil {
 				return err
 			}
 			s, err := resolveStore(cmd, true)
@@ -99,6 +104,9 @@ Examples:
 			if t == nil {
 				return fmt.Errorf("no task with id %d in %s", id, s.Path)
 			}
+			if tree {
+				return runDependTree(cmd.OutOrStdout(), s, t, asJSON)
+			}
 			// Inspect-mode: no mutation flags.
 			if onCSV == "" && addCSV == "" && removeCSV == "" && !clear {
 				return runDependInspect(cmd.OutOrStdout(), s, t, asJSON)
@@ -111,13 +119,14 @@ Examples:
 	cmd.Flags().StringVar(&removeCSV, "remove", "", "remove the given ids from DependsOn")
 	cmd.Flags().BoolVar(&clear, "clear", false, "drop all dependencies")
 	cmd.Flags().BoolVar(&list, "list", false, "list every blocked task in the store")
+	cmd.Flags().BoolVar(&tree, "tree", false, "print the recursive prerequisite chain (depth-first, indented)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd
 }
 
 // validateDependFlags rejects nonsensical combinations up-front so the
 // user sees a precise error instead of weird half-applied state.
-func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list bool) error {
+func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree bool) error {
 	mutexCount := 0
 	if onCSV != "" {
 		mutexCount++
@@ -140,6 +149,18 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 		}
 		if mutexCount > 0 {
 			return usageErrorf("--list can't be combined with mutation flags")
+		}
+		if tree {
+			return usageErrorf("--list and --tree are mutually exclusive (use `tsk depend --list` for the global view, `tsk depend <id> --tree` for one branch)")
+		}
+		return nil
+	}
+	if tree {
+		if mutexCount > 0 {
+			return usageErrorf("--tree is read-only — can't combine with mutation flags")
+		}
+		if len(args) == 0 {
+			return usageErrorf("--tree requires an <id> (e.g. `tsk depend 7 --tree`)")
 		}
 		return nil
 	}
