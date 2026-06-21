@@ -32,6 +32,7 @@ import (
 //	--priority <p>    only consider tasks at this exact priority
 //	--all             include done tasks (default: undone only)
 //	--respect-deps    skip tasks with at least one unmet prerequisite
+//	--pinned-only     restrict to pinned tasks (the "bookmark" view)
 //
 // Output formats match `tsk ls`: plain (default), table, json.
 func newTopCmd() *cobra.Command {
@@ -40,6 +41,7 @@ func newTopCmd() *cobra.Command {
 		prioFilter  string
 		includeDone bool
 		respectDeps bool
+		pinnedOnly  bool
 		asJSON      bool
 		format      string
 	)
@@ -55,6 +57,12 @@ Filters mirror 'tsk ls' for the common slices. --respect-deps skips
 tasks that are blocked by at least one open prerequisite — usually
 what you want when planning the next batch of work.
 
+--pinned-only restricts the result to tasks you've explicitly pinned
+(via 'tsk pin'). That's the "important-bookmark" view: a way to see
+just the small set of tasks you've marked as worth tracking
+regardless of priority. Stacks cleanly with --respect-deps so you
+can ask "which of my pinned tasks are actually unblocked?".
+
 Examples:
   tsk top                      # top 5
   tsk top 10                   # top 10
@@ -63,6 +71,8 @@ Examples:
   tsk top --priority high
   tsk top --all 3              # top 3 across done + undone
   tsk top --respect-deps       # top 5 unblocked tasks
+  tsk top --pinned-only        # just the bookmarks
+  tsk top --pinned-only --respect-deps   # bookmarks I can act on
   tsk top --json | jq '.[].Title'
 `,
 		Args: cobra.MaximumNArgs(1),
@@ -84,6 +94,9 @@ Examples:
 				return err
 			}
 			pool := filterTopCandidates(s.Tasks, tagFilter, prio, prioActive, includeDone)
+			if pinnedOnly {
+				pool = filterPinnedTasks(pool)
+			}
 			if respectDeps {
 				pool = filterBlockedTasks(s, pool)
 			}
@@ -98,6 +111,7 @@ Examples:
 	cmd.Flags().StringVar(&prioFilter, "priority", "", "only consider tasks with this priority")
 	cmd.Flags().BoolVar(&includeDone, "all", false, "include done tasks in the candidate pool")
 	cmd.Flags().BoolVar(&respectDeps, "respect-deps", false, "skip tasks with unmet prerequisites")
+	cmd.Flags().BoolVar(&pinnedOnly, "pinned-only", false, "restrict to pinned tasks (the bookmark view)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: plain, table, or json")
 	return cmd
@@ -148,6 +162,24 @@ func filterTopCandidates(in []model.Task, tag string, prio model.Priority, prioA
 			continue
 		}
 		out = append(out, t)
+	}
+	return out
+}
+
+// filterPinnedTasks narrows a candidate pool to just the pinned subset —
+// the "bookmark" view. Used by `tsk top --pinned-only` (and any future
+// pinned-restricted views). Stays a separate helper rather than another
+// arg on filterTopCandidates so the predicate stays single-purpose and
+// reads cleanly in the call site (`if pinnedOnly { … }`).
+//
+// Operates on the same value-typed []model.Task slice as the other
+// filter helpers and returns a fresh slice — no shared mutable state.
+func filterPinnedTasks(in []model.Task) []model.Task {
+	out := make([]model.Task, 0, len(in))
+	for _, t := range in {
+		if t.Pinned {
+			out = append(out, t)
+		}
 	}
 	return out
 }
