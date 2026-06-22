@@ -56,11 +56,14 @@ func newArchiveCmd() *cobra.Command {
 			"                  Completed timestamp fall into '## undated' so they're not lost.\n" +
 			"  monthly         group into '## YYYY-MM' sections by completion month — coarser\n" +
 			"                  scannability for stores that accumulate hundreds of archived\n" +
-			"                  rows. Same '## undated' bucket policy as weekly.\n\n" +
-			"daily/weekly/monthly is purely a layout choice — IDs, content, and round-trip\n" +
-			"semantics are identical; switching strategies later just changes how the\n" +
-			"NEXT batch is placed in the file. Existing archive contents are preserved\n" +
-			"verbatim (no re-bucketing of historical data).",
+			"                  rows. Same '## undated' bucket policy as weekly.\n" +
+			"  quarterly       group into '## YYYY-Q#' sections (Q1=Jan-Mar, Q2=Apr-Jun,\n" +
+			"                  Q3=Jul-Sep, Q4=Oct-Dec) — fiscal-quarter scannability for\n" +
+			"                  retro reviews. Same '## undated' bucket policy.\n\n" +
+			"daily/weekly/monthly/quarterly is purely a layout choice — IDs, content, and\n" +
+			"round-trip semantics are identical; switching strategies later just changes\n" +
+			"how the NEXT batch is placed in the file. Existing archive contents are\n" +
+			"preserved verbatim (no re-bucketing of historical data).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			strategy = strings.ToLower(strings.TrimSpace(strategy))
@@ -73,8 +76,12 @@ func newArchiveCmd() *cobra.Command {
 				// ok
 			case "monthly":
 				// ok
+			case "quarterly":
+				// ok
+			case "yearly":
+				// ok
 			default:
-				return usageErrorf("unknown --strategy %q (want flat, daily, weekly, or monthly)", strategy)
+				return usageErrorf("unknown --strategy %q (want flat, daily, weekly, monthly, quarterly, or yearly)", strategy)
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -148,6 +155,10 @@ func newArchiveCmd() *cobra.Command {
 				if err := writeBucketedArchive(archivePath, arch, archived, bucketByDay); err != nil {
 					return fmt.Errorf("save daily archive: %w", err)
 				}
+			case "quarterly":
+				if err := writeBucketedArchive(archivePath, arch, archived, bucketByQuarter); err != nil {
+					return fmt.Errorf("save quarterly archive: %w", err)
+				}
 			default:
 				arch.ReplaceTasks(append(arch.Tasks, archived...))
 				if err := arch.Save(); err != nil {
@@ -168,7 +179,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&olderThan, "older-than", "30d", "only archive tasks completed more than this ago (e.g. 7d, 2w, 1m)")
 	cmd.Flags().BoolVar(&all, "all", false, "archive every Done task regardless of age")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
-	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily (calendar days) | weekly (ISO weeks) | monthly (calendar months)")
+	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly (one bucket per fiscal quarter)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
 	return cmd
 }
@@ -311,6 +322,30 @@ func bucketByDay(t model.Task) (string, int) {
 	}
 	y, m, d := t.Completed.Date()
 	return fmt.Sprintf("%04d-%02d-%02d", y, int(m), d), y*10000 + int(m)*100 + d
+}
+
+// bucketByQuarter groups tasks by fiscal quarter (Q1 = Jan-Mar, Q2 =
+// Apr-Jun, Q3 = Jul-Sep, Q4 = Oct-Dec) in the time zone of the
+// Completed timestamp. The coarsest practical sibling of monthly:
+// useful for retro reviews ("what did we ship last quarter?") and
+// for stores that accumulate years of completed work where monthly
+// would still be too many sections to scan.
+//
+// Section header is "YYYY-Q#" (e.g. "2026-Q2") — keeps the leading
+// year so chronological grep/scan still works the same way as the
+// other bucketed strategies. SortKey is year*10+quarter so 2025-Q4
+// (20254) sorts before 2026-Q1 (20261); fits trivially in int.
+//
+// Quarter math: monthInt is 1..12, (monthInt-1)/3 gives 0..3, +1
+// gives Q1..Q4. The boundary cases (March -> Q1, April -> Q2,
+// December -> Q4) are covered by TestBucketByQuarterBoundaries.
+func bucketByQuarter(t model.Task) (string, int) {
+	if t.Completed == nil {
+		return "undated", 0
+	}
+	y, m, _ := t.Completed.Date()
+	q := (int(m)-1)/3 + 1
+	return fmt.Sprintf("%04d-Q%d", y, q), y*10 + q
 }
 
 // writeBucketedArchive renders the archive file with the newly-

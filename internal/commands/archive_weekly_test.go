@@ -170,14 +170,14 @@ func TestArchiveStrategyWeeklyUndatedBucket(t *testing.T) {
 	}
 }
 
-// TestArchiveStrategyWeeklyRejectsBogusValue: --strategy=quarterly
-// (or anything not in the allowed set) must exit-2 cleanly.
+// TestArchiveStrategyWeeklyRejectsBogusValue: --strategy=bogus
+// (anything not in the allowed set) must exit-2 cleanly.
 func TestArchiveStrategyWeeklyRejectsBogusValue(t *testing.T) {
 	dir := t.TempDir()
 	if _, _, err := runCmd(t, dir, "add", "x"); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	_, _, err := runCmd(t, dir, "archive", "--strategy", "quarterly")
+	_, _, err := runCmd(t, dir, "archive", "--strategy", "nonsense")
 	if err == nil {
 		t.Fatal("expected error for unknown strategy")
 	}
