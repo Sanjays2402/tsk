@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,12 +42,17 @@ func newArchiveCmd() *cobra.Command {
 			"--bucket-by selects a USER-DEFINED bucket axis instead of the time/id\n" +
 			"axis --strategy uses. Mutually exclusive with --strategy (each defines\n" +
 			"a different bucket axis). Supported keys:\n" +
-			"  priority   one section per priority (urgent/high/medium/low). Sorted\n" +
-			"             descending so urgent sections come first.\n" +
-			"  tag        one section per FIRST tag of each archived task; untagged\n" +
-			"             tasks fall into '## untagged'. One-task-one-bucket — picking\n" +
-			"             the first tag is the most predictable interpretation when a\n" +
-			"             task has multiple tags.\n\n" +
+			"  priority      one section per priority (urgent/high/medium/low). Sorted\n" +
+			"                descending so urgent sections come first.\n" +
+			"  tag           one section per FIRST tag of each archived task; untagged\n" +
+			"                tasks fall into '## untagged'. One-task-one-bucket — picking\n" +
+			"                the first tag is the most predictable interpretation when a\n" +
+			"                task has multiple tags.\n" +
+			"  id-range:N    fixed-width id windows of size N: '1-N', 'N+1-2N', …\n" +
+			"                Useful when id order doubles as creation order — sister\n" +
+			"                of priority/tag for the id axis. N must be a positive\n" +
+			"                integer. Tasks with id 0 (legacy ID-less tasks) collapse\n" +
+			"                into '## id:0'.\n\n" +
 			"--since-id <N> selects by ID instead of time: archive every Done task\n" +
 			"with id < N. The 'id-axis' sister of --older-than's time-axis cutoff —\n" +
 			"useful when you want to clean up a legacy block of work (e.g. 'everything\n" +
@@ -257,7 +263,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
-	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority' (one section per priority) or 'tag' (one section per first tag). Mutually exclusive with --strategy.")
+	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority' (one section per priority), 'tag' (one section per first tag), or 'id-range:N' (fixed-width id windows of size N). Mutually exclusive with --strategy.")
 	return cmd
 }
 
@@ -514,18 +520,34 @@ func bucketByFirstTag(t model.Task) (string, int) {
 // resolveBucketByKey turns the user-supplied --bucket-by value into
 // the corresponding bucketFn. Supported keys:
 //
-//	""           no --bucket-by — returns nil (caller falls through
-//	             to the default flat or strategy switch path)
-//	"priority"   priority sections (urgent/high/medium/low/none)
-//	"tag"        sections keyed off the first tag of each task
+//	""             no --bucket-by — returns nil (caller falls through
+//	               to the default flat or strategy switch path)
+//	"priority"     priority sections (urgent/high/medium/low/none)
+//	"tag"          sections keyed off the first tag of each task
+//	"id-range:N"   sections of N ids each ("1-N", "N+1-2N", …)
 //
 // Empty/whitespace is treated as the no-op no-flag path. Unknown
 // keys surface a usage error with the supported list so the user
 // can fix the typo quickly. Future extensions (e.g. "tag:work" for
-// a single-tag boolean partition, or "id-range:50" for id-bucketing)
-// slot in here without disturbing the strategy switch above.
+// a single-tag boolean partition) slot in here without disturbing
+// the strategy switch above.
+//
+// "id-range:N" is the id-axis sister of priority/tag bucketing:
+// archived tasks are grouped into fixed-width id windows ("1-50",
+// "51-100", "101-150", …). Useful for project-rollup archives where
+// the id sequence reflects chronological order of creation — id-range
+// bucketing then doubles as a coarse timeline without requiring
+// completion timestamps. The bucket label sorts naturally (1-50 < 51-100)
+// because we use the WINDOW START as the sort key.
+//
+// Range size must be positive. Zero / negative / non-numeric N is
+// rejected with a usage error pointing at the expected shape.
+// Tasks with id == 0 (ID-less tasks created before the model gained
+// id assignment) all collapse into "id:0" so they're not lost.
 func resolveBucketByKey(raw string) (bucketFn, error) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
+	trimmed := strings.TrimSpace(raw)
+	lower := strings.ToLower(trimmed)
+	switch lower {
 	case "":
 		return nil, nil
 	case "priority", "prio":
@@ -533,7 +555,56 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 	case "tag", "tags":
 		return bucketByFirstTag, nil
 	}
-	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag)", raw)
+	// "id-range:N" — variable parameter, parsed below.
+	if strings.HasPrefix(lower, "id-range:") {
+		spec := trimmed[len("id-range:"):]
+		spec = strings.TrimSpace(spec)
+		if spec == "" {
+			return nil, usageErrorf("--bucket-by id-range:N requires a positive window size, got %q", raw)
+		}
+		n, err := strconv.Atoi(spec)
+		if err != nil {
+			return nil, usageErrorf("--bucket-by id-range:N requires an integer N, got %q", raw)
+		}
+		if n <= 0 {
+			return nil, usageErrorf("--bucket-by id-range:N requires N > 0, got %d", n)
+		}
+		return makeIDRangeBucketFn(n), nil
+	}
+	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, id-range:N)", raw)
+}
+
+// makeIDRangeBucketFn returns a bucketFn that groups tasks into
+// fixed-width id windows of size n. Window labels are "1-N",
+// "N+1-2N", "2N+1-3N", …. Tasks with id 0 collapse into "id:0"
+// (no-id legacy bucket). The sort key is the WINDOW START so
+// buckets render in ascending id order ("1-50" before "51-100").
+//
+// Window math:
+//
+//	window index   = (id - 1) / n   (integer division)
+//	window start   = index * n + 1
+//	window end     = (index + 1) * n
+//
+// Examples (n=50):
+//
+//	id=1   → window 0 → "1-50"     sort=1
+//	id=50  → window 0 → "1-50"     sort=1
+//	id=51  → window 1 → "51-100"   sort=51
+//	id=200 → window 3 → "151-200"  sort=151
+//
+// Pulled into its own factory so the resolveBucketByKey switch
+// stays compact and the closure captures n cleanly.
+func makeIDRangeBucketFn(n int) bucketFn {
+	return func(t model.Task) (string, int) {
+		if t.ID <= 0 {
+			return "id:0", 0
+		}
+		windowIdx := (t.ID - 1) / n
+		start := windowIdx*n + 1
+		end := (windowIdx + 1) * n
+		return fmt.Sprintf("%d-%d", start, end), start
+	}
 }
 
 // writeBucketedArchive renders the archive file with the newly-
