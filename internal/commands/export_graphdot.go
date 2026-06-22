@@ -45,7 +45,7 @@ import (
 // reachable from #N" markers as `tsk graph` — keeps the calling
 // experience identical regardless of which verb the user reached
 // for.
-func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, highlight, highlightTag, dim string) error {
+func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, highlight, highlightTag, dim, dimTag string) error {
 	if reachable > 0 && s.ByID(reachable) == nil {
 		return fmt.Errorf("no task with id %d in %s", reachable, s.Path)
 	}
@@ -58,6 +58,7 @@ func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, h
 	if err != nil {
 		return err
 	}
+	dimSet = mergeDimTag(s, dimSet, dimTag)
 	if err := rejectDimHighlightOverlap(dimSet, highlightSet); err != nil {
 		return err
 	}

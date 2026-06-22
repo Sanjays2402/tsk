@@ -59,6 +59,12 @@ import (
 //	                     Mutually exclusive with --highlight on the same
 //	                     id: a single node can't be both spotlighted
 //	                     AND backgrounded — that's contradictory intent.
+//	--dim-tag <name>     (DOT only) tag selector for --dim: push every
+//	                     task carrying the named tag to the background.
+//	                     Sister of --highlight-tag for the inverse
+//	                     verb; same case-insensitive match. Combines
+//	                     with --dim ids (union); rejects overlap with
+//	                     --highlight or --highlight-tag.
 //
 // Empty graphs (no deps anywhere) print "no dependencies" rather than
 // emitting a blank DOT skeleton — both shapes are still parseable but
@@ -71,6 +77,7 @@ func newGraphCmd() *cobra.Command {
 		highlight    string
 		highlightTag string
 		dim          string
+		dimTag       string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -111,6 +118,12 @@ Filters:
                           Mutually exclusive with --highlight on the
                           same id (contradictory intent: a single
                           node can't be both spotlighted and dimmed).
+  --dim-tag <name>        (DOT only) push every node carrying the given
+                          tag to the background in the SAME dim style.
+                          Sister of --highlight-tag for the inverse
+                          verb. Combines with --dim ids (union);
+                          rejected for overlap with --highlight or
+                          --highlight-tag the same way --dim is.
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
@@ -128,6 +141,7 @@ Examples:
   tsk graph --format dot --highlight-tag release  # spotlight a whole tag
   tsk graph --format dot --highlight 42 --highlight-tag release  # union
   tsk graph --format dot --dim 1,2       # push #1 and #2 to the background
+  tsk graph --format dot --dim-tag scaffold # push everything tagged scaffold
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -144,6 +158,9 @@ Examples:
 			if dim != "" && fmtChoice != "dot" {
 				return usageErrorf("--dim only applies to --format dot (got %s)", fmtChoice)
 			}
+			if dimTag != "" && fmtChoice != "dot" {
+				return usageErrorf("--dim-tag only applies to --format dot (got %s)", fmtChoice)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -157,6 +174,7 @@ Examples:
 			if err != nil {
 				return err
 			}
+			dimSet = mergeDimTag(s, dimSet, dimTag)
 			if err := rejectDimHighlightOverlap(dimSet, highlightSet); err != nil {
 				return err
 			}
@@ -176,6 +194,7 @@ Examples:
 	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
 	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) spotlight every task carrying this tag (case-insensitive)")
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
+	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT only) push every task carrying this tag to the background (case-insensitive)")
 	return cmd
 }
 
@@ -198,26 +217,42 @@ Examples:
 // notices the missing spotlight and either fixes the tag or the
 // query.
 func mergeHighlightTag(s *store.Store, highlightSet map[int]bool, tag string) map[int]bool {
+	return mergeTagIntoSet(s, highlightSet, tag)
+}
+
+// mergeDimTag is the inverse sister: extend the DIM set with every
+// task carrying the named tag. Same union semantics, same case-
+// insensitive match, same "missing tag is not an error" policy.
+// Shares the mergeTagIntoSet core with mergeHighlightTag so the
+// two flags behave symmetrically and a fix to one applies to both.
+func mergeDimTag(s *store.Store, dimSet map[int]bool, tag string) map[int]bool {
+	return mergeTagIntoSet(s, dimSet, tag)
+}
+
+// mergeTagIntoSet is the shared "extend an id-set by tag match" body
+// behind --highlight-tag and --dim-tag. Returns the original set
+// unchanged when tag is empty (the "feature not in use" branch).
+// When the merged set is empty (caller-supplied set was nil AND no
+// task carries the tag), returns nil so downstream styling branches
+// fire the "no match" path — matches parseHighlightCSV's "empty
+// returns nil" contract so the two helpers compose seamlessly.
+func mergeTagIntoSet(s *store.Store, set map[int]bool, tag string) map[int]bool {
 	tag = strings.TrimSpace(tag)
 	if tag == "" {
-		return highlightSet
+		return set
 	}
-	if highlightSet == nil {
-		highlightSet = make(map[int]bool)
+	if set == nil {
+		set = make(map[int]bool)
 	}
 	for _, t := range s.Tasks {
 		if t.HasTag(tag) {
-			highlightSet[t.ID] = true
+			set[t.ID] = true
 		}
 	}
-	if len(highlightSet) == 0 {
-		// All-empty after the tag pass: caller-supplied highlight
-		// was nil AND no task carries the tag. Return nil so
-		// printGraphDOT's "no highlight" branch fires (matches the
-		// parseHighlightCSV contract of returning nil for empty).
+	if len(set) == 0 {
 		return nil
 	}
-	return highlightSet
+	return set
 }
 
 // parseHighlightCSV converts a comma-separated highlight id list to
