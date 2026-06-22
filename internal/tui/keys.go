@@ -5,6 +5,7 @@ import "github.com/charmbracelet/bubbles/key"
 // Keymap holds the bindable keys the TUI listens for.
 type Keymap struct {
 	Up, Down          key.Binding
+	Top, Bottom       key.Binding
 	Toggle            key.Binding
 	Add, Edit, Delete key.Binding
 	PriorityCycle     key.Binding
@@ -23,6 +24,8 @@ func DefaultKeymap() Keymap {
 	return Keymap{
 		Up:            key.NewBinding(key.WithKeys("k", "up"), key.WithHelp("k/↑", "up")),
 		Down:          key.NewBinding(key.WithKeys("j", "down"), key.WithHelp("j/↓", "down")),
+		Top:           key.NewBinding(key.WithKeys("g", "home"), key.WithHelp("g", "top")),
+		Bottom:        key.NewBinding(key.WithKeys("G", "end"), key.WithHelp("G", "bottom")),
 		Toggle:        key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("␣/⏎", "toggle done")),
 		Add:           key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "add")),
 		Edit:          key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),

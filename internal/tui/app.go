@@ -142,6 +142,10 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.moveSelection(1)
 	case matches(m, a.keys.Up):
 		a.moveSelection(-1)
+	case matches(m, a.keys.Top):
+		a.jumpTop()
+	case matches(m, a.keys.Bottom):
+		a.jumpBottom()
 	case matches(m, a.keys.Toggle):
 		a.toggleCurrent()
 	case matches(m, a.keys.Add):
@@ -372,6 +376,27 @@ func (a *App) moveSelection(d int) {
 	a.selection = (a.selection + d + n) % n
 }
 
+// jumpTop snaps the selection to the first visible task. Vim-style 'g'
+// (also bound to Home). Safe on an empty list: selection stays at 0
+// so subsequent navigation behaves identically to a fresh app.
+func (a *App) jumpTop() {
+	a.selection = 0
+}
+
+// jumpBottom snaps the selection to the last visible task. Vim-style
+// 'G' (also bound to End). Operates on visibleTasks() so the result
+// respects the current filter/collapse state — \"bottom\" means the
+// last task the user can actually see right now, not the last task
+// in the underlying store.
+func (a *App) jumpBottom() {
+	n := len(a.visibleTasks())
+	if n == 0 {
+		a.selection = 0
+		return
+	}
+	a.selection = n - 1
+}
+
 func (a *App) toggleCurrent() {
 	id := a.currentID()
 	if id == 0 {
@@ -489,7 +514,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -521,6 +546,7 @@ func (a *App) renderTaskLine(t model.Task, selected bool) string {
 func (a *App) helpView() string {
 	rows := [][2]string{
 		{"j/k", "move selection"},
+		{"g/G", "jump top / bottom"},
 		{"⏎/␣", "toggle done"},
 		{"a", "add task"},
 		{"e", "edit title"},
