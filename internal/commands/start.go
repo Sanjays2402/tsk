@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Sanjays2402/tsk/internal/model"
+	"github.com/Sanjays2402/tsk/internal/store"
 )
 
 // newStartCmd implements `tsk start <id>`: mark a task as in-progress
@@ -78,6 +80,7 @@ func newStartCmd() *cobra.Command {
 		startTag  string
 		startPrio string
 		dryRun    bool
+		asJSON    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start [<id>...]",
@@ -105,6 +108,10 @@ without actually flipping any state. Writes nothing to disk; the
 filter before committing to the bulk-start ("does this match what
 I think it matches?").
 
+Pass --json with --dry-run to emit a machine-readable preview
+(stable schema) for scripted pipelines — same shape as pause
+--all --dry-run --json so both bulk verbs feed identical pipes.
+
 Examples:
   tsk start 3
   tsk start 3 5 7                          # several at once
@@ -113,16 +120,20 @@ Examples:
   tsk start --all --priority urgent        # start every open urgent task
   tsk start --all --tag work --priority high
   tsk start --all --tag standup --dry-run  # preview without stamping
+  tsk start --all --tag standup --dry-run --json | jq '.would_start[].id'
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
 				if len(args) > 0 {
 					return usageErrorf("--all takes no positional ids (resolves the filtered set internally)")
 				}
-				return runStartAll(cmd, startTag, startPrio, reset, dryRun)
+				return runStartAll(cmd, startTag, startPrio, reset, dryRun, asJSON)
 			}
 			if dryRun {
 				return usageErrorf("--dry-run only applies to --all (single-id start is already explicit)")
+			}
+			if asJSON {
+				return usageErrorf("--json only applies to --all --dry-run (the preview path)")
 			}
 			if len(args) == 0 {
 				return usageErrorf("missing <id> (or pass --all with --tag/--priority)")
@@ -135,6 +146,7 @@ Examples:
 	cmd.Flags().StringVar(&startTag, "tag", "", "for --all: only start tasks carrying this tag (case-insensitive)")
 	cmd.Flags().StringVar(&startPrio, "priority", "", "for --all: only start tasks at this priority (low/medium/high/urgent)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "for --all: print which tasks would be started without writing")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "for --all --dry-run: emit JSON preview (stable schema for scripted pipelines)")
 	return cmd
 }
 
@@ -155,7 +167,13 @@ Examples:
 // Dry-run on an empty filter result reports the empty case the
 // same way the non-dry path does — same wording so the two paths
 // answer the "what would this do?" question identically.
-func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun bool) error {
+//
+// --json (only meaningful with --dry-run) emits a stable schema
+// (would_start[], total_count, filter, tag, priority, reset) so
+// scripted pipelines can pluck ids without parsing the human
+// preview. Sister of pause --all --dry-run --json — same envelope
+// shape so the two bulk-verb previews share jq pipelines.
+func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun, asJSON bool) error {
 	tag = strings.TrimSpace(tag)
 	prio, prioActive, err := parsePendingPriority(prioRaw)
 	if err != nil {
@@ -164,12 +182,18 @@ func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun bool) er
 	if tag == "" && !prioActive {
 		return usageErrorf("--all requires --tag and/or --priority (refusing to start every open task in the store)")
 	}
+	if asJSON && !dryRun {
+		return usageErrorf("--json only applies to --all --dry-run (the preview path)")
+	}
 	s, err := resolveStore(cmd, true)
 	if err != nil {
 		return err
 	}
 	ids := filterStartAllIDs(s.Tasks, tag, prio, prioActive)
 	if len(ids) == 0 {
+		if dryRun && asJSON {
+			return emitStartAllDryRunJSON(cmd.OutOrStdout(), s, nil, tag, prioRaw, prioActive, reset)
+		}
 		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
 		pf(cmd.OutOrStdout(), "no open tasks match (%s)\n", filters)
 		return nil
@@ -190,6 +214,9 @@ func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun bool) er
 			if t.Started == nil || reset {
 				wouldStart = append(wouldStart, id)
 			}
+		}
+		if asJSON {
+			return emitStartAllDryRunJSON(cmd.OutOrStdout(), s, wouldStart, tag, prioRaw, prioActive, reset)
 		}
 		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
 		if len(wouldStart) == 0 {
@@ -214,6 +241,60 @@ func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun bool) er
 		args[i] = fmt.Sprintf("%d", id)
 	}
 	return runStartStop(true, &reset)(cmd, args)
+}
+
+// startAllDryRunRow is the per-task entry in the JSON preview.
+// Stable schema: id + title. Mirrors pauseAllDryRunRow so the
+// two bulk-verb previews can share jq pipelines.
+type startAllDryRunRow struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+}
+
+// startAllDryRunDoc is the top-level JSON envelope. Stable shape:
+// would_start[] (per-task rows) + counts + filter summary + reset
+// flag. Empty result emits would_start: [] (not null) so consumers
+// iterating the array don't crash. The reset field is exposed so
+// scripted pipelines can branch on "this preview reflects --reset
+// semantics" vs the default skip-already-started behavior.
+type startAllDryRunDoc struct {
+	WouldStart []startAllDryRunRow `json:"would_start"`
+	TotalCount int                 `json:"total_count"`
+	Filter     string              `json:"filter,omitempty"`
+	Tag        string              `json:"tag,omitempty"`
+	Priority   string              `json:"priority,omitempty"`
+	Reset      bool                `json:"reset"`
+}
+
+// emitStartAllDryRunJSON renders the stable preview shape for the
+// start --all --dry-run --json path. Empty would_start is rendered
+// as an empty array, not null, so jq pipelines that iterate don't
+// crash on a no-match case. Filter fields are omitted when not set
+// so the JSON stays minimal; reset is always emitted because false
+// is the meaningful default a script needs to see.
+func emitStartAllDryRunJSON(w io.Writer, s *store.Store, ids []int, tag, prioRaw string, prioActive, reset bool) error {
+	rows := make([]startAllDryRunRow, 0, len(ids))
+	for _, id := range ids {
+		t := s.ByID(id)
+		title := ""
+		if t != nil {
+			title = t.Title
+		}
+		rows = append(rows, startAllDryRunRow{ID: id, Title: title})
+	}
+	doc := startAllDryRunDoc{
+		WouldStart: rows,
+		TotalCount: len(rows),
+		Filter:     buildStartAllFilterSummary(tag, prioRaw, prioActive),
+		Tag:        tag,
+		Reset:      reset,
+	}
+	if prioActive {
+		doc.Priority = strings.ToLower(strings.TrimSpace(prioRaw))
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
 
 // filterStartAllIDs returns the sorted-ascending ids of every OPEN
