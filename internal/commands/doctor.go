@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -20,7 +21,10 @@ import (
 // and unresolved timezone configuration. Exits non-zero when issues found,
 // so it can be wired into pre-commit / CI hooks.
 func newDoctorCmd() *cobra.Command {
-	var asJSON bool
+	var (
+		asJSON             bool
+		checkOrphanArchive bool
+	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Diagnose the active .tsk.md and tsk configuration",
@@ -35,6 +39,17 @@ Checks performed:
   - Resolved timezone (TSK_TZ override or system default)
   - No tasks with empty titles
 
+Pass --check-orphan-archive to ALSO load the sibling
+.tsk.archive.md and scan it for archived tasks whose
+DependsOn references resolve in NEITHER the live store NOR
+the archive itself — i.e. dangling references that survived
+a hand-edit or a partial rollback. This is the corruption
+canary for long-running projects: a stale dep id usually
+means an archived prereq was deleted (rather than properly
+re-archived), leaving an orphan pointer behind. The active
+store doesn't surface these because it doesn't see the
+archive; doctor unifies the view so the rot is visible.
+
 Exit codes:
   0  all checks passed
   1  at least one issue found (error)
@@ -43,7 +58,7 @@ Exit codes:
 Pass --json for machine-readable output (always emitted, exit code still
 reflects severity).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			report := runDoctor(cmd)
+			report := runDoctor(cmd, checkOrphanArchive)
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -60,6 +75,7 @@ reflects severity).`,
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
+	cmd.Flags().BoolVar(&checkOrphanArchive, "check-orphan-archive", false, "also scan the sibling .tsk.archive.md for orphan DependsOn references that resolve in neither the live store nor the archive itself")
 	return cmd
 }
 
@@ -88,7 +104,7 @@ func (r DoctorReport) HasIssues() bool {
 }
 
 // runDoctor performs every check and returns the structured report.
-func runDoctor(cmd *cobra.Command) DoctorReport {
+func runDoctor(cmd *cobra.Command, checkOrphanArchive bool) DoctorReport {
 	tz := ResolveTZ()
 	report := DoctorReport{
 		Timezone: tz.String(),
@@ -135,6 +151,9 @@ func runDoctor(cmd *cobra.Command) DoctorReport {
 	checkTaskFields(&report, s.Tasks)
 	checkTimestamps(&report, s.Tasks)
 	checkTimezoneSanity(&report)
+	if checkOrphanArchive {
+		checkArchiveOrphans(&report, s, path)
+	}
 	return report
 }
 
@@ -263,6 +282,104 @@ func printDoctorReport(w io.Writer, r DoctorReport) {
 	if len(r.Errors) == 0 && len(r.Warnings) == 0 {
 		pln(w, "all checks passed ✓")
 	}
+}
+
+// checkArchiveOrphans scans the sibling .tsk.archive.md for archived
+// tasks whose DependsOn references resolve in NEITHER the live store
+// (s) NOR the archive itself — i.e. dangling pointers that should
+// have been cleaned up but weren't.
+//
+// This is the corruption canary for long-running projects:
+//
+//   - An archived prereq deleted (rather than properly re-archived)
+//     leaves a hanging reference behind.
+//   - A live-store task referenced by an archived "depends:" can be
+//     deleted from the live store without any safeguard, leaving
+//     the archive task pointing at nothing.
+//   - A hand-edit of the archive file (e.g. an "oops, that one
+//     wasn't supposed to be archived") can erase a task that other
+//     archive entries pointed at.
+//
+// Behavior:
+//   - Missing archive file: silent OK ("orphan_archive_check"
+//     passes, because there's no archive to corrupt yet).
+//   - Archive load failure: surfaced as an error (parse problem in
+//     .tsk.archive.md is itself a corruption signal worth a
+//     non-zero exit).
+//   - Live archive: every archived task's DependsOn ids are checked
+//     against (live.ByID ∪ archive.ByID); any id missing from BOTH
+//     yields a Warning entry. (Warning, not Error, because the
+//     archive is a write-rarely store — a dangling pointer is not
+//     a parse failure; the user might prefer to leave it as a
+//     historical artifact rather than be forced to fix it.)
+//
+// archivePath resolves to "<dir>/.tsk.archive.md" relative to the
+// live-store's directory — the standard archive sibling location.
+// We deliberately do NOT honor --merge-into here: doctor is a
+// per-store health check, and the merge-into target is a shared
+// rollup that a different store owns. Adding per-store inspection
+// of merged archives would require an explicit secondary flag and
+// a different command shape; the orphan-check use case is "check
+// THIS project's archive sibling for rot" which is the 90% case.
+func checkArchiveOrphans(r *DoctorReport, s *store.Store, livePath string) {
+	archivePath := archiveSiblingPath(livePath)
+	if _, err := os.Stat(archivePath); err != nil {
+		if os.IsNotExist(err) {
+			// No archive yet → no possible orphans. Pass.
+			r.OKChecks = append(r.OKChecks, "orphan_archive_check")
+			return
+		}
+		r.Errors = append(r.Errors, DoctorIssue{
+			Check:  "orphan_archive_check",
+			Detail: fmt.Sprintf("cannot stat archive %s: %v", archivePath, err),
+		})
+		return
+	}
+	arch, err := store.Load(archivePath)
+	if err != nil {
+		r.Errors = append(r.Errors, DoctorIssue{
+			Check:  "orphan_archive_check",
+			Detail: fmt.Sprintf("archive parse error %s: %v", archivePath, err),
+		})
+		return
+	}
+	// Build a single id-set spanning live + archive — any id in
+	// either store is "resolvable" for the dangling check.
+	resolvable := make(map[int]bool, len(s.Tasks)+len(arch.Tasks))
+	for _, t := range s.Tasks {
+		if t.ID > 0 {
+			resolvable[t.ID] = true
+		}
+	}
+	for _, t := range arch.Tasks {
+		if t.ID > 0 {
+			resolvable[t.ID] = true
+		}
+	}
+	orphanFound := false
+	for _, t := range arch.Tasks {
+		for _, dep := range t.DependsOn {
+			if !resolvable[dep] {
+				orphanFound = true
+				r.Warnings = append(r.Warnings, DoctorIssue{
+					Check:  "orphan_archive_dep",
+					Detail: fmt.Sprintf("archive task #%d (%q) depends on #%d which is missing from both live store and archive", t.ID, t.Title, dep),
+					TaskID: t.ID,
+				})
+			}
+		}
+	}
+	if !orphanFound {
+		r.OKChecks = append(r.OKChecks, "orphan_archive_check")
+	}
+}
+
+// archiveSiblingPath returns the canonical sibling archive path for
+// a given live-store path: "<dir>/.tsk.archive.md". Used by the
+// orphan-check and matches the default archive layout produced by
+// `tsk archive` without --merge-into.
+func archiveSiblingPath(livePath string) string {
+	return filepath.Join(filepath.Dir(livePath), ".tsk.archive.md")
 }
 
 // SilentExitCoder is the interface implemented by errors that carry a
