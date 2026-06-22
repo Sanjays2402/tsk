@@ -47,6 +47,7 @@ func newLintCmd() *cobra.Command {
 		fix        bool
 		autofixAll bool
 		depCycles  bool
+		backup     string
 	)
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -75,6 +76,18 @@ The mode is non-interactive ("just trust me") — every fix it
 applies is conservative and reversible via 'tsk undo-last' (a
 .bak snapshot is taken before writing). --autofix-all implies
 --fix, so both kinds of repair happen in one pass.
+
+Pass --backup <dir> with --autofix-all to redirect the pre-fix
+snapshot from the in-place '<Path>.bak' to a timestamped file
+inside <dir>. Useful in pre-commit setups where the stray
+in-place .bak would show up as untracked: with --backup the
+working tree stays clean (the in-place .bak is removed after
+Save) and the rollback handle lives at '<dir>/<base>.bak.<ts>'
+where <ts> is YYYYMMDD-HHMMSS for natural chronological sort.
+Trade-off: 'tsk undo-last' reads the in-place .bak, so users
+who want one-shot undo should keep the default (no --backup);
+pre-commit users typically have the commit itself as the
+rollback handle, so the trade is an opt-in.
 
 Pass --json for a stable machine-readable report (CI / pre-commit
 hook friendly).
@@ -112,12 +125,20 @@ not fixed, 2 bad invocation.
 			} else {
 				printLintReport(cmd.OutOrStdout(), report)
 			}
+			if backup != "" && !autofixAll {
+				return usageErrorf("--backup only applies to --autofix-all (the writing-fix path)")
+			}
 			if autofixAll && len(report.Findings) > 0 {
-				applied, err := applyLintAutofixAll(path, report)
+				applied, err := applyLintAutofixAll(path, report, backup)
 				if err != nil {
 					return err
 				}
-				pf(cmd.OutOrStdout(), "autofixed: %s (%d repair(s) applied)\n", path, applied)
+				if backup != "" {
+					pf(cmd.OutOrStdout(), "autofixed: %s (%d repair(s) applied; backup -> %s)\n",
+						path, applied, backup)
+				} else {
+					pf(cmd.OutOrStdout(), "autofixed: %s (%d repair(s) applied)\n", path, applied)
+				}
 				return nil
 			}
 			if fix && len(report.Findings) > 0 {
@@ -136,6 +157,7 @@ not fixed, 2 bad invocation.
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	cmd.Flags().BoolVar(&fix, "fix", false, "re-render the file in canonical form (safe round-trip)")
 	cmd.Flags().BoolVar(&autofixAll, "autofix-all", false, "apply --fix PLUS semantic repairs (currently: backfill missing created: stamps)")
+	cmd.Flags().StringVar(&backup, "backup", "", "for --autofix-all: write the pre-fix snapshot to a timestamped file inside this directory instead of the in-place <Path>.bak (useful in pre-commit setups where stray .bak files would dirty the working tree)")
 	cmd.Flags().BoolVar(&depCycles, "dep-cycles", false, "scan the DependsOn graph for 3+ node cycles (Tarjan SCC)")
 	return cmd
 }
