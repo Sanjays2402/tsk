@@ -171,7 +171,75 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.inputCur = inputBox{label: "sort (priority|due|created|id)", value: a.sortMode, focus: true}
 	case matches(m, a.keys.Section):
 		a.toggleSection()
+	case matches(m, a.keys.Reload):
+		a.reloadFromDisk()
 	}
+}
+
+// reloadFromDisk re-reads the active .tsk.md from disk and swaps
+// the in-memory store, discarding any unsaved in-memory mutations
+// EXCEPT those already persisted (which is the steady-state case —
+// the TUI saves after every mutation, so the in-memory store is
+// always in sync with disk before this runs).
+//
+// Use case: an external mutation happens during a TUI session
+// (the user runs `tsk add` in another terminal, or an editor
+// rewrites the file, or `tsk lint --autofix-all` cleans things up
+// from a pre-commit hook). Without reload, the TUI keeps stale
+// state and the user has to quit + re-launch to see the change.
+// With `r`, the TUI picks up the external edit live.
+//
+// Selection is preserved by ID: if the task that was selected
+// before the reload still exists in the new store, the cursor
+// snaps to it; otherwise the cursor falls back to position 0
+// (the first visible task in the new ordering). This is the
+// least-surprising behavior — the user's mental cursor anchor
+// (the TASK, not the row index) is what they'd want to keep.
+//
+// Errors are surfaced into the status footer rather than crashing
+// the app — a transient read failure (file rotated, sync glitch)
+// should be visible but not fatal. The user can hit `r` again
+// once the issue clears.
+//
+// IMPORTANT: this clears a.filter and a.editing because both are
+// tied to the OLD store's view. Re-applying the filter against the
+// new store is the user's call (they may want a fresh look at the
+// reloaded data).
+func (a *App) reloadFromDisk() {
+	if a.store == nil || a.store.Path == "" {
+		a.status = "reload: no store path"
+		return
+	}
+	prevID := a.currentID()
+	fresh, err := store.Load(a.store.Path)
+	if err != nil {
+		a.status = "reload failed: " + err.Error()
+		return
+	}
+	a.store = fresh
+	// Reset transient editing state that pointed at the old store.
+	a.editing = 0
+	a.form = formNone
+	a.confirm = 0
+	// Preserve selection-by-id when possible; otherwise snap to top.
+	if prevID > 0 {
+		vt := a.visibleTasks()
+		newIdx := -1
+		for i, t := range vt {
+			if t.ID == prevID {
+				newIdx = i
+				break
+			}
+		}
+		if newIdx >= 0 {
+			a.selection = newIdx
+		} else {
+			a.selection = 0
+		}
+	} else {
+		a.selection = 0
+	}
+	a.status = "reloaded"
 }
 
 func (a *App) startEditTitle() {

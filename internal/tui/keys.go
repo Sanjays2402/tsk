@@ -17,6 +17,7 @@ type Keymap struct {
 	Quit              key.Binding
 	Confirm, Cancel   key.Binding
 	Section           key.Binding
+	Reload            key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.
@@ -40,5 +41,6 @@ func DefaultKeymap() Keymap {
 		Confirm:       key.NewBinding(key.WithKeys("y")),
 		Cancel:        key.NewBinding(key.WithKeys("esc", "n")),
 		Section:       key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "collapse section")),
+		Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 	}
 }
