@@ -455,15 +455,15 @@ this tick's features.
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk graph --upstream-of <id> --highlight <id> --dim <rest>` recipe doc — impact-analysis pattern after --upstream-of shipped this tick
-- [ ] `tsk graph --upstream-of <id> --json` — JSON list of every transitive dependent (scripted impact-analysis)
-- [ ] `tsk graph --reachable <id> --json` — JSON list of every transitive prereq (sister of --upstream-of --json)
+- [x] `tsk graph --upstream-of <id> --json` — JSON list of every transitive dependent (scripted impact-analysis) (tick 2026-06-22/0823)
+- [x] `tsk graph --reachable <id> --json` — JSON list of every transitive prereq (sister of --upstream-of --json) (tick 2026-06-22/0823)
 - [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
 - [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it (was on tick #19 list, still unstarted)
 - [ ] `tsk archive --since-id <N> --bucket-by id-range:50` — id-axis bucketing
 - [ ] `tsk archive --merge-into ~/work.archive.md --strategy yearly` recipe doc
-- [ ] `tsk archive --bucket-by <key>` — user-supplied key expression (e.g. `tag:work`)
-- [ ] `tsk lint --autofix-all --backup <dir> --keep N` — prune the explicit-backup chain so it doesn't grow unbounded in long-running pre-commit setups
-- [ ] `tsk lint --autofix-all --json` — JSON summary of repairs applied (paired with --backup for fully-machine-readable pre-commit)
+- [x] `tsk archive --bucket-by <key>` — user-supplied key expression: priority or tag (tick 2026-06-22/0823)
+- [x] `tsk lint --autofix-all --backup <dir> --keep N` — prune the explicit-backup chain so it doesn't grow unbounded in long-running pre-commit setups (tick 2026-06-22/0823)
+- [x] `tsk lint --autofix-all --json` — JSON summary of repairs applied (paired with --backup for fully-machine-readable pre-commit) (tick 2026-06-22/0823)
 - [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc
 - [ ] `tsk preview --from <path> --watch N` — live re-render
 - [ ] `tsk preview --json | jq` recipe doc
@@ -475,8 +475,57 @@ this tick's features.
 - [ ] TUI 'r' reload from disk — pick up external edits without restarting the TUI
 - [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
 - [ ] TUI sticky header with `tsk wip` count (so the user always sees their in-progress load)
-- [ ] `tsk doctor --check-orphan-archive` — flag tasks in the archive whose source id is missing from the live store (corruption canary)
+- [x] `tsk doctor --check-orphan-archive` — flag tasks in the archive whose source id is missing from the live store (corruption canary) (tick 2026-06-22/0823)
 - [ ] `tsk doctor --json | jq` recipe doc — CI-friendly health-check loop
+
+### Polish & DX (added 2026-06-22 tick #21)
+
+Fresh ideas so future ticks have ample sized work. The
+graph-decoration + subgraph-JSON cluster is now complete (highlight
+ids/tag CSV, dim ids/tag CSV, reachable/upstream-of subgraph
+extractors with JSON envelopes). The lint --autofix-all
+pre-commit cluster is well-mined (backup dir, keep N, JSON
+envelope). doctor gains its first cross-store check
+(--check-orphan-archive). archive's bucket axis gains a non-time
+sister (--bucket-by priority|tag). This batch leans into the
+still-unstarted long tail: TUI work (7 items, including the new
+elapsed/reload/clone/wip header items from tick #20), recurring
+tasks (parking lot), config + multi-file (long-unstarted),
+plus follow-ons sensible from this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --reachable <id> --json | jq` recipe doc — impact-analysis pattern using the new subgraph envelope
+- [ ] `tsk graph --upstream-of <id> --json | jq '.nodes | length'` recipe doc — quantify the dependent chain
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
+- [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it
+- [ ] `tsk archive --bucket-by tag:work` — single-tag boolean partition (in vs not-in tag), sister of the all-tags `--bucket-by tag`
+- [ ] `tsk archive --bucket-by id-range:50` — id-axis bucketing in fixed-size windows
+- [ ] `tsk archive --bucket-by priority --sort-tasks-asc` — flip task order within each priority section
+- [ ] `tsk lint --autofix-all --backup <dir> --keep N --json` recipe doc — one-pager on bounded-chain pre-commit setup
+- [ ] `tsk doctor --check-orphan-archive --json | jq` recipe doc — CI-friendly cross-store health-check loop
+- [ ] `tsk doctor --check-orphan-archive --merge-into <file>` — extend the orphan check to a project-rollup archive
+- [ ] `tsk doctor --fix-orphans` — remove dangling deps from archive entries (mirror of lint --autofix-all for the archive)
+- [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc
+- [ ] `tsk preview --from <path> --watch N` — live re-render
+- [ ] `tsk preview --json | jq` recipe doc
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI 'r' reload from disk — pick up external edits without restarting the TUI
+- [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
+- [ ] TUI sticky header with `tsk wip` count
+
 
 ## Known footguns the loop has run into
 
@@ -2330,3 +2379,248 @@ JSON); the graph subgraph extractors are bidirectional
 (--reachable for downstream, --upstream-of for upstream); the
 TUI keyboard surface gains its first vim-nav binding; pre-commit
 ergonomics for --autofix-all are now solved by --backup.
+
+
+### 2026-06-22 08:23 PT (tick #21)
+
+Shipped 5 features as 5 clean single-commit slices. All tests
+passing (40+ new test cases across the 5), full gate green (gofmt
++ vet + build + go test ./...) before push. Pushed 04cb7c8..797be8c
+to origin/main; verified landed.
+
+- `graph --reachable/--upstream-of --json`  — 04cb7c8 feat(graph):
+  --reachable/--upstream-of --json emits stable subgraph envelope
+- `lint --autofix-all --json`               — 4184919 feat(lint):
+  --autofix-all --json folds findings + repair summary into one envelope
+- `lint --autofix-all --backup --keep N`    — 34ba194 feat(lint):
+  --autofix-all --backup --keep N prunes the backup chain
+- `doctor --check-orphan-archive`           — 1537cb9 feat(doctor):
+  --check-orphan-archive flags archive tasks with dangling deps
+- `archive --bucket-by priority|tag`        — 797be8c feat(archive):
+  --bucket-by priority|tag groups archived tasks by category
+
+Notable choices:
+
+- `graph --reachable/--upstream-of --json`: ONE feature, not two,
+  because the underlying machinery (emitSubgraphJSON, subgraphDoc/
+  Node/Edge types) is shared between both directions — the only
+  difference is the "direction" field in the envelope. Stable
+  schema: {root_id, direction, nodes[], edges[], filter}. Root
+  ALWAYS appears in nodes[] even when edges is empty so the
+  empty case is non-degenerate ("nothing depends on this id" is
+  itself useful). Empty edges renders as [] not null so jq
+  pipelines don't crash. --json without --reachable/--upstream-of
+  is rejected at exit 2 (the envelope is per-root shaped).
+  Nodes sorted asc by id, edges by (from, to) ascending for
+  determinism. Tested: chain coverage, off-chain exclusion,
+  diamond join (BFS handles multi-parent visits), open-filter
+  composition, deterministic ordering even when deps inserted
+  in reverse, regression on the mutex with --reachable +
+  --upstream-of, no-mutate verification.
+
+- `lint --autofix-all --json`: the LEGACY --json + --autofix-all
+  was interleaved (JSON findings doc, then a stray "autofixed:
+  ... (N repair(s) applied)" text line) which broke jq pipelines
+  because the extra text after the } closed the document. New
+  envelope folds findings + repairs_applied + backup_dir into
+  ONE coherent document so a pre-commit hook reads one signal:
+  `tsk lint --autofix-all --json | jq '.repairs_applied'` works
+  cleanly. The existing test that asserted the interleaved
+  contract (TestLintAutofixAllJSONReportShape) was updated to
+  match the new shape (the old contract was bug, not feature —
+  consumers couldn't actually pipe it to jq). Read-only --json
+  (without --autofix-all) keeps its old shape for backward
+  compat: just the findings list, no repairs_applied. Verified
+  via TestLintJSONReadOnlyPathUnchanged (regression guard).
+
+- `lint --autofix-all --backup --keep N`: bounded backup chain
+  for long-running pre-commit setups. Without --keep, every
+  autofix run adds a new .tsk.md.bak.YYYYMMDD-HHMMSS file and
+  the chain grows unbounded. --keep N prunes after writing the
+  new snapshot, retaining only the N newest matching files.
+  Three correctness invariants tested:
+  (1) Pruning happens AFTER the new snapshot is durable, so an
+      IO failure during write cannot leave the chain too short.
+  (2) ONLY files matching "<base>.bak.<15-char-stamp>" pattern
+      are eligible — a user-renamed ".tsk.md.bak.keep-forever"
+      or unrelated files (READMEs, other-tool backups) are
+      preserved verbatim. Critical for pre-commit setups where
+      a shared backup dir might house multiple tools' state.
+  (3) keep=0 is "keep all" (historical default unchanged).
+      keep<0 rejected at exit 2.
+  --keep without --backup is rejected at exit 2 (it operates on
+  the backup chain; no chain → nothing to prune). isStampSuffix
+  helper validates the 15-char stamp shape exactly (rejects
+  ".bak.OLD", ".bak.YYYY-MM-DD", "bak.20260101120000" without
+  the hyphen). Test count: 10 (4 unit on pruneBackupChain +
+  isStampSuffix + sortStringsDescending, 4 integration on CLI
+  surface, 2 misc).
+
+- `doctor --check-orphan-archive`: doctor's first cross-store
+  check. The active store doesn't see .tsk.archive.md, so an
+  archived task whose DependsOn references an id missing from
+  BOTH stores (live ∪ archive) silently rots. Common causes:
+  - Archived prereq deleted (rather than properly re-archived)
+  - Live task referenced by an archive depends: deleted from
+    the live store with no safeguard
+  - Hand-edit of the archive erasing a task that other archive
+    entries pointed at
+  Implementation: load archive sibling at $LIVE_DIR/.tsk.archive.md,
+  build resolvable set = live.tasks.id ∪ archive.tasks.id, scan
+  archive's DependsOn for ids missing from resolvable. Each
+  orphan emits a Warning (not Error) — dangling deps are not a
+  parse failure; the user might prefer to leave them as
+  historical artifacts. Errors flip exit code; warnings don't.
+  Missing archive is silent OK (nothing to corrupt yet); parse
+  failure in the archive is an ERROR (corruption signal worth
+  exit 1). Doesn't honor --merge-into: per-store health check
+  vs. shared rollup is a different command shape. Sibling
+  .tsk.archive.md is the 90% case. Flag is opt-in (loading a
+  second file slows the otherwise-fast doctor). Tested: clean
+  archive passes, dangling depend detected, opt-in (no flag →
+  no scan), missing archive is clean, JSON shape includes
+  warning, in-archive resolvable deps recognized, live-side
+  resolvable deps recognized, multi-orphan all surfaced.
+
+- `archive --bucket-by priority|tag`: until now archive layout
+  was time/id axis only (--strategy flat/daily/weekly/monthly/
+  quarterly/yearly + --since-id). --bucket-by adds a CATEGORY
+  axis: group by what the task was about, not when. Supported
+  keys: "priority" (urgent/high/medium/low; aliases prio),
+  "tag" (one section per first-tag; untagged → "## untagged";
+  aliases tags). One-task-one-bucket — first-tag picking is
+  the most predictable interpretation when a task has multiple
+  tags (avoids cross-listing which would multiply task counts
+  and break id uniqueness inside the archive). Mutually
+  exclusive with --strategy (each defines a different axis;
+  combining would muddle the layout contract). The existing
+  writeBucketedArchive scaffolding generalized cleanly via
+  the bucketFn type — priority and tag implement it just like
+  ISOWeek/Month/Day/Quarter/Year do. Priority sortKey is
+  INVERTED (1=urgent .. 4=low) so the existing ascending bucket
+  sort puts urgent at top without per-axis code paths. Unknown
+  --bucket-by key surfaces a usage error with the supported
+  list. Composes with --merge-into (write bucketed archive to
+  a non-default sibling) and --dry-run (shows "bucket-by=X"
+  label so the user knows which axis). Future extensions
+  (tag:work boolean partition, id-range:50 id-axis bucketing)
+  slot into resolveBucketByKey() without touching the strategy
+  switch above. Test count: 10 (priority section order,
+  tag-grouping, aliases prio+tags, unknown-key rejection,
+  mutex with --strategy, dry-run label, merge-into composition,
+  multi-task-same-tag-grouped, regression default flat
+  unchanged).
+
+Roadmap status:
+- "Polish & DX (added tick #20)" subsection: 5/31 → 10/31
+  (the 5 shipped this tick: --reachable/--upstream-of --json,
+  --autofix-all --json, --autofix-all --backup --keep N,
+  --check-orphan-archive, --bucket-by; note --reachable/
+  --upstream-of --json counts as one feature with one envelope
+  but closes two roadmap entries).
+- Added "Polish & DX (added 2026-06-22 tick #21)" subsection
+  with 28 fresh items — leans into TUI work (8 items, the
+  oldest cluster left), recurring tasks parking lot, config +
+  multi-file (long unstarted), plus follow-ons from this
+  tick: --bucket-by tag:work / id-range:50 (subset axes),
+  doctor --check-orphan-archive --json recipe doc, doctor
+  --fix-orphans (the autofix mirror), graph --reachable
+  --json | jq recipe docs.
+
+Per-feature test counts:
+  graph --reachable/--upstream-of --json    10 new (envelope,
+                                            direction, empty
+                                            root one-node,
+                                            open filter, reject
+                                            without root, sort
+                                            determinism, chain
+                                            exclusion, done flag,
+                                            mutex respected, no
+                                            mutate)
+  lint --autofix-all --json                  9 new (basic, empty
+                                            findings, with backup,
+                                            without backup omits
+                                            field, no mixed output,
+                                            read-only path
+                                            unchanged regression,
+                                            pre-fix findings,
+                                            file written, plus
+                                            updated legacy test)
+  lint --autofix-all --backup --keep N      10 new (rejects
+                                            negative, requires
+                                            backup, prune trims,
+                                            no-op under limit,
+                                            keep=0 no-op, ignores
+                                            unrelated files,
+                                            missing dir no-op,
+                                            stamp suffix
+                                            validation, sort
+                                            desc, end-to-end CLI)
+  doctor --check-orphan-archive              9 new (clean passes,
+                                            dangling detected,
+                                            opt-in, missing
+                                            archive clean, JSON
+                                            shape, live archive
+                                            id resolves, live
+                                            deps not orphan,
+                                            multi orphans, in
+                                            archive resolves)
+  archive --bucket-by priority|tag          10 new (priority
+                                            order, tag groups,
+                                            unknown rejected,
+                                            mutex with strategy,
+                                            dry-run label,
+                                            aliases prio+tags,
+                                            merge-into composes,
+                                            multi-task-same-
+                                            tag-grouped,
+                                            regression flat
+                                            unchanged)
+  TOTAL                                     48 new test cases
+on top of the existing suite, all green. (Existing suite ~950+
+cases also still green after: emitSubgraphJSON sig addition,
+applyLintAutofixAll signature change for keep param, runDoctor
+signature change for checkOrphanArchive bool, archive flag
+plumbing for bucketBy + bucketFn switch — verified via full
+repo gate before push.)
+
+Process notes:
+- One commit identity bug caught and amended: the third commit
+  (lint --keep) was initially authored as
+  "Sanjays2402+@users.noreply.github.com" (extra '+') due to a
+  typo in the inline -c user.email override. Re-amended with the
+  correct noreply id (51058514+Sanjays2402@users.noreply.github.com,
+  no extra '+') before pushing. No other identity issues this
+  tick; the rebase-free push verified all 5 commits land with
+  the right author.
+- Test bug caught: doctor orphan test for "clean archive"
+  initially tried `tsk done 3` while #3 had an open depends:1 —
+  blocked by depend.go's invariant ("can't finish a task with
+  open prereqs"). Fixed by reordering: done #3 FIRST, then add
+  the depend retroactively (depend doesn't reject a done source).
+  This matches the documented footgun in STATE.md from tick #2's
+  recovery.
+- Test bug caught: a planned "corrupted archive surfaces as
+  Error" test relied on the parser rejecting a malformed
+  completed: timestamp. Confirmed via grep that the parser is
+  permissive there (only IO and scanner errors propagate, content
+  is tolerated). Replaced with a more useful "live store references
+  archive id resolves" regression covering the resolvable union.
+- TestLintAutofixAllJSONReportShape (existing) had to be updated
+  because it asserted the OLD interleaved JSON+text shape (which
+  was a bug not a feature — broken jq pipelines). The legacy
+  behavior is gone; the new single-document envelope is the
+  contract. This is a backward-incompatible change in the
+  --autofix-all --json shape, but a strict superset for
+  consumers using `jq '.findings'` style accessors (those keys
+  still exist; new ones added).
+
+This is the ninth batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The subgraph extractors gain
+their first machine-readable envelope (bidirectional reachable/
+upstream-of --json sharing one shape); the lint --autofix-all
+pre-commit cluster is now complete (--backup with keep-N pruning
+plus --json envelope); doctor gains its first cross-store check
+(--check-orphan-archive); archive gains its first non-time
+bucket axis (--bucket-by priority|tag).
