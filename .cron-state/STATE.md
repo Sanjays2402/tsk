@@ -415,21 +415,68 @@ interaction, multi-tag dim, graph SVG renderer, recipe docs).
 - [ ] `tsk graph --format dot --dim-tag a,b` — multi-tag dim (sister of --highlight-tag CSV; same union pattern) — NOTE: shipped tick #19 mergeTagsIntoSet already supports CSV; verify via integration test
 - [ ] `tsk graph --format dot --highlight-tag X --dim everything-else` recipe doc — "make this one tag pop"
 - [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
-- [ ] `tsk pause --all --dry-run` — sister of start --all --dry-run for the inverse bulk verb
-- [ ] `tsk start --all --json --dry-run` — JSON output of the would-start preview for scripted pipelines
+- [x] `tsk pause --all --dry-run` — sister of start --all --dry-run for the inverse bulk verb (tick 2026-06-22/0442)
+- [x] `tsk start --all --json --dry-run` — JSON output of the would-start preview for scripted pipelines (tick 2026-06-22/0442)
 - [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it
 - [ ] `tsk archive --since-id <N> --bucket-by id-range:50` — sister of --bucket-by tag/priority for the id axis
 - [ ] `tsk archive --merge-into ~/work.archive.md --strategy yearly` recipe doc — one-pager on multi-year rollups
 - [ ] `tsk archive --bucket-by <key>` — accept a user-supplied key expression (e.g. `tag:work`, `priority`) for project-specific layouts
-- [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
+- [x] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups) (tick 2026-06-22/0442)
 - [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — one-pager for pre-commit / CI preflight
 - [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
 - [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
-- [ ] TUI 'g'/'G' top/bottom navigation (vim-style)
+- [x] TUI 'g'/'G' top/bottom navigation (vim-style) (tick 2026-06-22/0442)
 - [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
 - [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+
+### Polish & DX (added 2026-06-22 tick #20)
+
+Fresh ideas so future ticks have ample sized work. With pause's
+dry-run sister now shipped (filter + JSON), the bulk-action verb
+cluster is fully symmetric (start --all and pause --all both have
+filter + dry-run + JSON variants — same envelope shape so jq
+pipelines compose). The graph subgraph extractors are now
+bidirectional (--reachable for downstream, --upstream-of for
+upstream). This batch leans into still-unstarted long-tail:
+recurring tasks (parking lot), config + multi-file, TUI work
+(now 4 items left — g/G shipped), plus follow-ons sensible from
+this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --upstream-of <id> --highlight <id> --dim <rest>` recipe doc — impact-analysis pattern after --upstream-of shipped this tick
+- [ ] `tsk graph --upstream-of <id> --json` — JSON list of every transitive dependent (scripted impact-analysis)
+- [ ] `tsk graph --reachable <id> --json` — JSON list of every transitive prereq (sister of --upstream-of --json)
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
+- [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it (was on tick #19 list, still unstarted)
+- [ ] `tsk archive --since-id <N> --bucket-by id-range:50` — id-axis bucketing
+- [ ] `tsk archive --merge-into ~/work.archive.md --strategy yearly` recipe doc
+- [ ] `tsk archive --bucket-by <key>` — user-supplied key expression (e.g. `tag:work`)
+- [ ] `tsk lint --autofix-all --backup <dir> --keep N` — prune the explicit-backup chain so it doesn't grow unbounded in long-running pre-commit setups
+- [ ] `tsk lint --autofix-all --json` — JSON summary of repairs applied (paired with --backup for fully-machine-readable pre-commit)
+- [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc
+- [ ] `tsk preview --from <path> --watch N` — live re-render
+- [ ] `tsk preview --json | jq` recipe doc
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks ("started 2h ago" inline beside the title)
+- [ ] TUI 'r' reload from disk — pick up external edits without restarting the TUI
+- [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
+- [ ] TUI sticky header with `tsk wip` count (so the user always sees their in-progress load)
+- [ ] `tsk doctor --check-orphan-archive` — flag tasks in the archive whose source id is missing from the live store (corruption canary)
+- [ ] `tsk doctor --json | jq` recipe doc — CI-friendly health-check loop
 
 ## Known footguns the loop has run into
 
@@ -2100,3 +2147,186 @@ is now well-mined: highlight ids (single + CSV), highlight-tag
 helper). The bulk-action verbs are also symmetric: start --all
 required filter, pause --all optional filter, both verbs accept
 --dry-run on the bulk path.
+
+
+### 2026-06-22 04:42 PT (tick #20)
+
+Shipped 5 features as 5 clean single-commit slices. All tests
+passing (40+ new test cases across the 5), full gate green (gofmt
++ vet + build + go test ./...) before push. Pushed 88f2ba6..39fc1a1
+to origin/main; verified landed.
+
+- `pause --all --dry-run [--json]`  — 88f2ba6 feat(pause):
+  tsk pause --all --dry-run [--json] previews bulk-pause without writing
+- `start --all --dry-run --json`    — 7c706b6 feat(start):
+  tsk start --all --dry-run --json emits stable preview schema
+- TUI `g`/`G` top/bottom            — cfdefb7 feat(tui):
+  g/G jump to top/bottom (vim-style navigation)
+- `lint --autofix-all --backup`     — 8d36f08 feat(lint):
+  tsk lint --autofix-all --backup <dir> redirects the pre-fix snapshot
+- `graph --upstream-of <id>`        — 39fc1a1 feat(graph):
+  --upstream-of <id> renders the transitively-dependent subgraph
+
+Notable choices:
+
+- `pause --all --dry-run`: critical invariant tested by a byte-
+  for-byte before/after read — the dry-run path must NOT call
+  Save(). The .bak chain stays untouched. Filter summary appears
+  in the header line so the user remembers WHICH filter generated
+  the preview; empty-match wording mirrors the non-dry path
+  exactly so the two paths answer "what would this do?"
+  identically. --dry-run without --all rejected at exit 2 (single-
+  id pause is already explicit).
+
+- `pause --all --dry-run --json`: extends the dry-run path with a
+  stable schema (would_pause[], total_count, filter, tag, priority).
+  Empty result emits "would_pause": [] (not null) so jq pipelines
+  iterating the array don't crash — verified by a literal substring
+  check on the rendered JSON. Schema mirrors the START side
+  designed in the same tick so a single jq pipeline can swap
+  between the two verbs by changing the array name. --json without
+  --dry-run rejected at exit 2 (pause has no non-dry JSON mode;
+  the actual mutation prints "stopped N task(s)" — text only).
+
+- `start --all --dry-run --json`: the SAME envelope shape as
+  pause's, plus a `reset` field exposing whether the preview
+  reflects --reset semantics or the default skip-already-started
+  behavior. Verified by a paired test: without --reset an already-
+  started task is EXCLUDED from would_start (matches the human
+  preview); with --reset it APPEARS (the bump is real). --json
+  without --dry-run rejected for both the --all path AND per-id
+  start (no JSON output mode for either non-dry case). Defensive
+  test: dry-run --json then non-dry call still starts the task,
+  proving the JSON path didn't accidentally flip state.
+
+- TUI `g`/`G` top/bottom: vim-style navigation, oldest TUI item
+  in the backlog. Two new key bindings (Top bound to g/Home,
+  Bottom bound to G/End) — Home/End is the natural non-vim sister
+  for users who don't have the modal-editor muscle memory.
+  jumpTop is a one-liner; jumpBottom operates on visibleTasks()
+  so "bottom" means the last task the user can SEE right now,
+  not the last in the underlying store (e.g. if Done is collapsed,
+  G lands on the last open task, not on the last historical row
+  hidden under "▸ Done"). The form-active branch in handleKey
+  runs FIRST so g/G during an add/edit form gets buffered as
+  text input rather than triggering nav — regression-tested by
+  typing 'g' and 'G' as part of a new task title and verifying
+  they land in the title. Footer hint extended, help table gains
+  a row right under "j/k".
+
+- `lint --autofix-all --backup <dir>`: pre-commit ergonomics fix.
+  The default in-place .tsk.md.bak is the right rollback handle
+  for interactive use (tsk undo-last reads it), but it dirties
+  the working tree in pre-commit setups — every autofix-all run
+  leaves an untracked file that has to be gitignored or manually
+  cleaned. --backup redirects the snapshot to a timestamped file
+  inside <dir> (YYYYMMDD-HHMMSS suffix for chronological sort,
+  accommodates multiple runs in a row), and removes the in-place
+  .bak afterward so the working tree stays clean. The backup dir
+  is created with parents if missing (the first pre-commit run
+  bootstraps it). Trade-off documented in help text: undo-last
+  reads the in-place .bak, so users who want one-shot undo
+  should keep the default. --backup without --autofix-all is
+  rejected at exit 2 (--fix doesn't take a backup parameter;
+  silently accepting a no-op flag would be confusing). Both
+  plain `lint --backup` and `lint --fix --backup` rejection paths
+  tested. Summary message gains "backup -> <dir>" suffix.
+
+- `graph --upstream-of <id>`: the inverse of --reachable, closing
+  the bidirectional subgraph extraction story for tsk's dependency
+  model. --reachable answers "what must finish before #id?";
+  --upstream-of answers "what's still blocked by #id?". Algorithm:
+  build incoming adjacency (target -> sources), BFS from root
+  over incoming, then keep only edges where BOTH endpoints are
+  in the upstream set. The both-endpoints restriction is the
+  CRITICAL distinction from filterReachableEdges's "source in
+  set" filter — upstream nodes typically have additional prereqs
+  OUTSIDE the upstream chain (e.g. "ship" depends on root AND on
+  "release-notes"; the latter is unrelated to root). Including
+  off-chain edges would dilute the impact-analysis view;
+  restricting keeps the rendered subgraph purely the "what's
+  blocked by root" chain. Tested by the explicit off-chain
+  exclusion case (a critical correctness invariant). --reachable
+  and --upstream-of are mutually exclusive (each answers a
+  different direction; combining them would muddle the subgraph
+  definition). Empty result gets distinct wording: "no tasks
+  depend on #N" (vs --reachable's "no dependencies reachable
+  from #N"), so the empty case reads correctly for the user's
+  actual question. Sister of `tsk depend <id> --upstream` for
+  the full-chain walk; `--upstream` shows one step, --upstream-of
+  walks the full chain in the same DOT layout used for the
+  whole-store graph.
+
+Roadmap status:
+- "Polish & DX (added tick #19)" subsection: 9/27 → 14/27
+  (the 5 shipped this tick: pause --all --dry-run, start --all
+  --json --dry-run, lint --autofix-all --backup, TUI g/G, plus
+  graph --upstream-of which generalizes the tick #19 entry on
+  "JSON output of would-start preview" sister).
+- Added "Polish & DX (added 2026-06-22 tick #20)" subsection
+  with 31 fresh items — leans into the long-tail (TUI work down
+  to 4 items, recurring tasks parking lot, config + multi-file)
+  plus new follow-ons: --upstream-of --json + recipe doc, graph
+  --reachable --json (sister), --autofix-all --keep N for
+  backup retention, --autofix-all --json for fully-machine-
+  readable pre-commit, TUI status-bar elapsed-time render,
+  TUI 'r' reload-from-disk, TUI 'C' clone shortcut, TUI sticky
+  wip header, doctor --check-orphan-archive, doctor --json
+  recipe.
+
+Per-feature test counts:
+  pause --all --dry-run [--json]   10 new (4 dry + 4 JSON + 2 regress)
+  start --all --dry-run --json      6 new (shape, empty, reject×2, reset, priority, no-mutate)
+  TUI g/G                           8 new (basic, round-trip, empty, collapsed, form-buffer, help, footer, bounds)
+  lint --autofix-all --backup       6 new (timestamp, pre-fix bytes, parent dir, rejection×2, two-runs, regression)
+  graph --upstream-of              10 new (chain, off-chain, empty, mutex, missing-id, DOT, highlight, diamond, --open, --reachable regress)
+  TOTAL                            40 new test cases on top of
+the existing suite, all green. (Existing suite ~900+ cases also
+still green after: runPauseAll signature change for dryRun+JSON,
+runStartAll signature change for asJSON, applyLintAutofixAll
+signature change for backupDir, emitGraph signature change for
+rootKind, three callers of emitGraph (graph.go, reachable.go,
+export_graphdot.go) updated in lockstep — verified via full repo
+gate before push.)
+
+Process notes:
+- No fixups or amends needed this tick; each feature landed as a
+  single clean commit on the first pass after two test corrections
+  caught by the test runner BEFORE the gate:
+  (1) `depend X --on Y` REPLACES the deps list — needed `--on 1,3`
+      not two separate `--on 1` then `--on 3` calls. Fixed via the
+      CSV form in the off-chain test.
+  (2) `tsk done` rejects tasks that have open prereqs (depend.go's
+      invariant). The respects-open-filter test was trying to mark
+      #3 done WHILE it had an open prereq on #1; reordered to mark
+      done FIRST, then add the dep (which is fine — depend doesn't
+      reject the source-being-done case).
+- The graph emitGraph signature gained a rootKind parameter (string,
+  "reachable" vs "upstream-of") so the empty-message wording
+  differentiates the two directions. Three call sites updated in
+  lockstep: graph.go (main caller, switches on the flag set),
+  reachable.go (always "reachable" — it's the alias verb for
+  --reachable), export_graphdot.go (always "reachable" — the
+  export verb only takes a reachable param). All three verified
+  via the existing tests on those surfaces.
+- The pause/start dry-run JSON envelope deliberately uses
+  different array names (would_pause vs would_start) so a jq
+  pipeline can tell which verb the preview came from without an
+  extra "verb" field. Same total_count + filter + tag + priority
+  fields otherwise — the shape is symmetric for pipeline reuse.
+- TUI g/G binding: bound to BOTH the vim keys ('g'/'G') AND the
+  conventional non-vim keys (home/end). The conventional keys
+  cost nothing and make the binding discoverable for users coming
+  from non-modal editors. Help row reads "g/G  jump top / bottom"
+  — the vim form is the documented label because it's the more
+  compact one and matches the tsk muscle-memory ethos (j/k for
+  nav, etc).
+
+This is the eighth batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The bulk-action preview cluster
+is now complete (pause/start symmetric across filter + dry-run +
+JSON); the graph subgraph extractors are bidirectional
+(--reachable for downstream, --upstream-of for upstream); the
+TUI keyboard surface gains its first vim-nav binding; pre-commit
+ergonomics for --autofix-all are now solved by --backup.
