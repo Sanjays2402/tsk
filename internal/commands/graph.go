@@ -50,6 +50,15 @@ import (
 //	                     pasting the graph into a review and want to
 //	                     draw the eye to the milestone or chokepoint
 //	                     under discussion.
+//	--dim <ids>          (DOT only) inverse of --highlight: render the
+//	                     named CSV ids in a quiet gray fill + dashed
+//	                     border so the OTHER nodes stand out. Useful
+//	                     when there are a few well-known tasks you want
+//	                     to push to the background ("ignore the
+//	                     scaffolding tasks; show me everything else").
+//	                     Mutually exclusive with --highlight on the same
+//	                     id: a single node can't be both spotlighted
+//	                     AND backgrounded — that's contradictory intent.
 //
 // Empty graphs (no deps anywhere) print "no dependencies" rather than
 // emitting a blank DOT skeleton — both shapes are still parseable but
@@ -61,6 +70,7 @@ func newGraphCmd() *cobra.Command {
 		reachable    int
 		highlight    string
 		highlightTag string
+		dim          string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -92,6 +102,15 @@ Filters:
                           one specific task on top of a tag-wide
                           highlight (e.g. "highlight the release tag,
                           and spotlight #42 inside it").
+  --dim <ids>             (DOT only) inverse of --highlight: render the
+                          named CSV ids in a quiet gray fill + dashed
+                          border so the OTHER nodes stand out.
+                          Useful when there are a few scaffolding
+                          tasks you want to push to the background
+                          and let everything else read as foreground.
+                          Mutually exclusive with --highlight on the
+                          same id (contradictory intent: a single
+                          node can't be both spotlighted and dimmed).
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
@@ -108,6 +127,7 @@ Examples:
   tsk graph --format dot --highlight 7,3,5   # spotlight a whole subset
   tsk graph --format dot --highlight-tag release  # spotlight a whole tag
   tsk graph --format dot --highlight 42 --highlight-tag release  # union
+  tsk graph --format dot --dim 1,2       # push #1 and #2 to the background
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -121,6 +141,9 @@ Examples:
 			if highlightTag != "" && fmtChoice != "dot" {
 				return usageErrorf("--highlight-tag only applies to --format dot (got %s)", fmtChoice)
 			}
+			if dim != "" && fmtChoice != "dot" {
+				return usageErrorf("--dim only applies to --format dot (got %s)", fmtChoice)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -130,6 +153,13 @@ Examples:
 				return err
 			}
 			highlightSet = mergeHighlightTag(s, highlightSet, highlightTag)
+			dimSet, err := parseDimCSV(s, dim)
+			if err != nil {
+				return err
+			}
+			if err := rejectDimHighlightOverlap(dimSet, highlightSet); err != nil {
+				return err
+			}
 			edges := collectGraphEdges(s, open)
 			if reachable > 0 {
 				if s.ByID(reachable) == nil {
@@ -137,7 +167,7 @@ Examples:
 				}
 				edges = filterReachableEdges(s, edges, reachable)
 			}
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlightSet)
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlightSet, dimSet)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
@@ -145,6 +175,7 @@ Examples:
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
 	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
 	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) spotlight every task carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
 	return cmd
 }
 
@@ -205,6 +236,30 @@ func mergeHighlightTag(s *store.Store, highlightSet map[int]bool, tag string) ma
 // linear scan over an N-id highlight list would balloon to O(N*M) on
 // big graphs with multi-id spotlights. The set keeps it linear.
 func parseHighlightCSV(s *store.Store, raw string) (map[int]bool, error) {
+	return parseCSVIDSet(s, raw, "--highlight")
+}
+
+// parseDimCSV is the inverse sister of parseHighlightCSV: same CSV
+// parsing rules (#-prefix tolerance, whitespace trimming, dup-
+// collapse, existence validation), but produces the SET of ids the
+// caller wants to dim. Returns nil on empty input so callers can
+// short-circuit the "no dim" path without branching on len.
+//
+// Shares the CSV parsing core with parseHighlightCSV via
+// parseCSVIDSet — keeps the two flags' error messages perfectly
+// symmetric ("--dim: invalid task id" vs "--highlight: invalid
+// task id"), and means a fix to one tightens the other. The
+// previously inline parseHighlightCSV body has moved into the
+// shared helper.
+func parseDimCSV(s *store.Store, raw string) (map[int]bool, error) {
+	return parseCSVIDSet(s, raw, "--dim")
+}
+
+// parseCSVIDSet is the shared CSV id-set parser behind --highlight
+// and --dim. flagName is the user-facing flag label used in error
+// messages so a typo on `--dim` surfaces as "--dim: ..." not as a
+// confusingly-attributed "--highlight: ..." message.
+func parseCSVIDSet(s *store.Store, raw, flagName string) (map[int]bool, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, nil
@@ -218,10 +273,10 @@ func parseHighlightCSV(s *store.Store, raw string) (map[int]bool, error) {
 		}
 		n, err := strconvAtoiPos(tok)
 		if err != nil || n == 0 {
-			return nil, usageErrorf("--highlight: invalid task id %q", tok)
+			return nil, usageErrorf("%s: invalid task id %q", flagName, tok)
 		}
 		if s.ByID(n) == nil {
-			return nil, fmt.Errorf("--highlight: no task with id %d in %s", n, s.Path)
+			return nil, fmt.Errorf("%s: no task with id %d in %s", flagName, n, s.Path)
 		}
 		out[n] = true
 	}
@@ -229,6 +284,37 @@ func parseHighlightCSV(s *store.Store, raw string) (map[int]bool, error) {
 		return nil, nil
 	}
 	return out, nil
+}
+
+// rejectDimHighlightOverlap returns a usage error if any id appears
+// in BOTH the dim and highlight sets. A node can't be simultaneously
+// spotlighted AND backgrounded — that's contradictory intent, and
+// silently letting one style win would surprise the user. Returns
+// nil when either set is empty (no overlap possible) or when the
+// intersection is empty.
+//
+// Error message lists every overlapping id (sorted ascending for
+// determinism) so the user can see all the conflicts in one shot
+// rather than discovering them one fix at a time.
+func rejectDimHighlightOverlap(dimSet, highlightSet map[int]bool) error {
+	if len(dimSet) == 0 || len(highlightSet) == 0 {
+		return nil
+	}
+	overlap := make([]int, 0)
+	for id := range dimSet {
+		if highlightSet[id] {
+			overlap = append(overlap, id)
+		}
+	}
+	if len(overlap) == 0 {
+		return nil
+	}
+	sort.Ints(overlap)
+	idStrs := make([]string, len(overlap))
+	for i, id := range overlap {
+		idStrs[i] = fmt.Sprintf("#%d", id)
+	}
+	return usageErrorf("--dim and --highlight overlap on %s (a node can't be both spotlighted and dimmed)", strings.Join(idStrs, ", "))
 }
 
 // graphEdge represents a single from->to dependency arrow. Sorted
@@ -348,8 +434,11 @@ func resolveGraphFormat(raw string) (string, error) {
 // focus-id set (only meaningful for DOT format); nil/empty means
 // no highlight. Multi-id sets render every member with the same
 // spotlight style, useful for "show me this whole subset" on a
-// complex graph.
-func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int, highlightSet map[int]bool) error {
+// complex graph. dimSet is the inverse — ids to render in a quiet
+// gray fill + dashed border to push them to the background; nil/
+// empty means no dim. Overlap with highlightSet is the caller's
+// responsibility to reject (see rejectDimHighlightOverlap).
+func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int, highlightSet, dimSet map[int]bool) error {
 	if len(edges) == 0 {
 		if reachable > 0 {
 			pf(w, "no dependencies reachable from #%d\n", reachable)
@@ -359,7 +448,7 @@ func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, re
 		return nil
 	}
 	if format == "dot" {
-		return printGraphDOT(w, s, edges, highlightSet)
+		return printGraphDOT(w, s, edges, highlightSet, dimSet)
 	}
 	return printGraphASCII(w, s, edges)
 }
@@ -438,6 +527,14 @@ func printGraphRow(w io.Writer, s *store.Store, from int, deps []int) {
 //   - done tasks: filled gray (the dep is satisfied)
 //   - open with at least one open prereq (blocked): red outline
 //   - open with no open prereqs (actionable): default outline
+//   - dim target (when id is in dimSet): light-gray fill + dashed
+//     gray border + gray font. Reads as "background scaffolding"
+//     so the foreground nodes stand out. Lower-priority than
+//     highlight: callers must reject overlap up-front (a node
+//     can't be both spotlighted and backgrounded). Higher-
+//     priority than the blocked-red and done-gray defaults: the
+//     point of --dim is to suppress those decorations so the
+//     dimmed node really does recede.
 //   - highlight target (when id is in highlightSet): gold fill + bold black
 //     border, OVERRIDES every other style. Picked because gold/amber
 //     reads as the "this one's important" color in DOT renders
@@ -458,7 +555,12 @@ func printGraphRow(w io.Writer, s *store.Store, from int, deps []int) {
 // already validated existence in the store, so a missing match
 // here is just "you asked to spotlight something not in this
 // subgraph". The graph still renders cleanly in that case.
-func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlightSet map[int]bool) error {
+//
+// dimSet=nil/empty means no dim; any id present is rendered in the
+// quiet background style. Same "ids missing from this subgraph are
+// silently ignored" policy as highlight — the validation was done
+// at the flag layer.
+func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlightSet, dimSet map[int]bool) error {
 	pln(w, "digraph tsk {")
 	pln(w, "  rankdir=LR;")
 	pln(w, `  node [shape=box, fontname="Helvetica", fontsize=10];`)
@@ -500,6 +602,15 @@ func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlightSet 
 			case blocked[id]:
 				style = ` color="red"`
 			}
+		}
+		// Dim sits BETWEEN the default styles and the highlight
+		// override: it replaces the done/blocked/actionable
+		// decoration so the node visually recedes, but the
+		// highlight check below still wins on overlap (which
+		// the caller has already rejected at the flag layer
+		// anyway).
+		if dimSet[id] {
+			style = ` style="filled,dashed", fillcolor="lightgray", color="gray", fontcolor="gray"`
 		}
 		// Highlight overrides every other style so the focus task(s)
 		// always read as the focus regardless of done/blocked

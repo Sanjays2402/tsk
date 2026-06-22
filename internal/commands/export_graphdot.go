@@ -45,7 +45,7 @@ import (
 // reachable from #N" markers as `tsk graph` — keeps the calling
 // experience identical regardless of which verb the user reached
 // for.
-func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, highlight, highlightTag string) error {
+func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, highlight, highlightTag, dim string) error {
 	if reachable > 0 && s.ByID(reachable) == nil {
 		return fmt.Errorf("no task with id %d in %s", reachable, s.Path)
 	}
@@ -54,6 +54,13 @@ func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, h
 		return err
 	}
 	highlightSet = mergeHighlightTag(s, highlightSet, highlightTag)
+	dimSet, err := parseDimCSV(s, dim)
+	if err != nil {
+		return err
+	}
+	if err := rejectDimHighlightOverlap(dimSet, highlightSet); err != nil {
+		return err
+	}
 	edges := collectGraphEdges(s, openOnly)
 	if reachable > 0 {
 		edges = filterReachableEdges(s, edges, reachable)
@@ -62,5 +69,5 @@ func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, h
 	// reachable from #N" empty-state messages match `tsk graph`
 	// byte-for-byte. emitGraph dispatches based on the format
 	// string; pass "dot" to get DOT output.
-	return emitGraph(w, s, edges, "dot", reachable, highlightSet)
+	return emitGraph(w, s, edges, "dot", reachable, highlightSet, dimSet)
 }

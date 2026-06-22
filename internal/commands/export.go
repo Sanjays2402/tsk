@@ -19,6 +19,7 @@ func newExportCmd() *cobra.Command {
 	var graphOpen bool
 	var graphHighlight string
 	var graphHighlightTag string
+	var graphDim string
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export tasks as JSON, JSONL, CSV, Markdown, or GraphViz DOT",
@@ -70,6 +71,9 @@ Graph examples:
 			if graphHighlightTag != "" && chosen != "graph-dot" {
 				return fmt.Errorf("--highlight-tag only applies to --graph-dot (got format %q)", chosen)
 			}
+			if graphDim != "" && chosen != "graph-dot" {
+				return fmt.Errorf("--dim only applies to --graph-dot (got format %q)", chosen)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -85,7 +89,7 @@ Graph examples:
 			case "markdown":
 				return exportMarkdown(out, s.Tasks)
 			case "graph-dot":
-				return exportGraphDOT(out, s, graphOpen, graphReachable, graphHighlight, graphHighlightTag)
+				return exportGraphDOT(out, s, graphOpen, graphReachable, graphHighlight, graphHighlightTag, graphDim)
 			}
 			return fmt.Errorf("unreachable: unknown format %q", chosen)
 		},
@@ -99,6 +103,7 @@ Graph examples:
 	cmd.Flags().BoolVar(&graphOpen, "open", false, "for --graph-dot: only include open tasks and the open deps that block them")
 	cmd.Flags().StringVar(&graphHighlight, "highlight", "", "for --graph-dot: comma-separated task ids to draw with a distinct fill+border")
 	cmd.Flags().StringVar(&graphHighlightTag, "highlight-tag", "", "for --graph-dot: spotlight every task carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&graphDim, "dim", "", "for --graph-dot: comma-separated task ids to render in a quiet gray fill+dashed border")
 	return cmd
 }
 

@@ -79,7 +79,7 @@ Examples:
 			}
 			edges := collectGraphEdges(s, open)
 			edges = filterReachableEdges(s, edges, id)
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, id, nil)
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, id, nil, nil)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
