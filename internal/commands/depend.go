@@ -32,6 +32,9 @@ import (
 //     (about to be removed/merged) and you want every dependent to
 //     forget about it in one shot. Pairs cleanly with `tsk rm` /
 //     `tsk merge` so callers don't have to spelunk for dependents.
+//     Accepts a comma-separated list of ids (`tsk depend 3,5,7
+//     --remove-all`) — same single-pass sweep semantics, just for
+//     N ids at once. The "# of N gone, scrub the lot" case.
 //   - `tsk depend <id>`              (no flags) prints the current
 //     DependsOn list and the OPEN
 //     subset (the actual blockers)
@@ -56,6 +59,7 @@ func newDependCmd() *cobra.Command {
 		removeCSV       string
 		clear           bool
 		removeAll       bool
+		removeAllDry    bool
 		list            bool
 		tree            bool
 		justify         bool
@@ -78,6 +82,7 @@ Add ids:        tsk depend <id> --add 7
 Remove ids:     tsk depend <id> --remove 3
 Clear all:      tsk depend <id> --clear
 Remove globally:tsk depend <id> --remove-all  (scrub <id> from every other task)
+Remove globally:tsk depend 3,5,7 --remove-all (scrub all three in one sweep)
 Inspect one:    tsk depend <id>
 Inspect tree:   tsk depend <id> --tree         (recursive prereq chain)
 Justify block:  tsk depend <id> --justify      (why is this blocked?)
@@ -154,12 +159,23 @@ Examples:
 			if pending {
 				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, pendingPriority, asJSON)
 			}
+			if removeAll {
+				// --remove-all accepts a single id OR a comma-
+				// separated list. We parse via parseDependCSV
+				// (the same parser --on/--add use) so the
+				// surface is consistent.
+				ids, err := parseDependCSV(args[0])
+				if err != nil {
+					return err
+				}
+				if len(ids) == 0 {
+					return usageErrorf("--remove-all requires at least one id")
+				}
+				return runDependRemoveAll(cmd.OutOrStdout(), s, ids, removeAllDry, asJSON)
+			}
 			id, err := parseSingleID(args[0])
 			if err != nil {
 				return err
-			}
-			if removeAll {
-				return runDependRemoveAll(cmd.OutOrStdout(), s, id, asJSON)
 			}
 			t := s.ByID(id)
 			if t == nil {
@@ -185,7 +201,8 @@ Examples:
 	cmd.Flags().StringVar(&addCSV, "add", "", "add the given ids to DependsOn")
 	cmd.Flags().StringVar(&removeCSV, "remove", "", "remove the given ids from DependsOn")
 	cmd.Flags().BoolVar(&clear, "clear", false, "drop all dependencies")
-	cmd.Flags().BoolVar(&removeAll, "remove-all", false, "GLOBAL: scrub this id from every other task's DependsOn")
+	cmd.Flags().BoolVar(&removeAll, "remove-all", false, "GLOBAL: scrub the given id(s) from every other task's DependsOn (positional accepts CSV)")
+	cmd.Flags().BoolVar(&removeAllDry, "dry-run", false, "for --remove-all: print which tasks would be touched without writing")
 	cmd.Flags().BoolVar(&list, "list", false, "list every blocked task in the store")
 	cmd.Flags().BoolVar(&tree, "tree", false, "print the recursive prerequisite chain (depth-first, indented)")
 	cmd.Flags().BoolVar(&justify, "justify", false, "explain why a task is blocked via a chain of reasons")
@@ -445,45 +462,73 @@ func runDependInspect(w io.Writer, s *store.Store, t *model.Task, asJSON bool) e
 	return nil
 }
 
-// runDependRemoveAll sweeps the given id out of EVERY task's
-// DependsOn list. The use case: id is being removed/merged/deleted
-// and you want every dependent task to forget about it in one shot
-// rather than spelunking the store for dependents and editing one
-// at a time.
+// runDependRemoveAll sweeps the given id(s) out of EVERY task's
+// DependsOn list. The use case: those ids are being removed/merged/
+// deleted and you want every dependent task to forget about them
+// in one shot rather than spelunking the store for dependents and
+// editing one at a time.
 //
 // Algorithm:
-//  1. Iterate every task in the store.
-//  2. For each task whose DependsOn contains id, drop it (preserve
-//     the order of the remaining ids — no re-sort, no dedupe; the
-//     caller's other invariants are unchanged).
-//  3. Save ONCE if anything changed. Skip Save on a no-op so the
+//  1. Build a set of the target ids for O(1) membership lookup.
+//  2. Iterate every task in the store.
+//  3. For each task whose DependsOn intersects the target set,
+//     drop those matched ids (preserve the order of the remaining
+//     ids — no re-sort, no dedupe; the caller's other invariants
+//     are unchanged).
+//  4. Save ONCE if anything changed. Skip Save on a no-op so the
 //     .bak chain doesn't grow for nothing.
-//  4. Report a count of touched tasks plus the ids that were
+//  5. Report a count of touched tasks plus the ids that were
 //     changed so the user can audit.
 //
-// Idempotent: running on an id that nothing depends on is a no-op
-// with a clear message. Running on a missing id (not present in
+// Multi-id: passing CSV `3,5,7` does the equivalent of three
+// separate --remove-all runs but in a SINGLE Save and with one
+// scan over the store — cheaper, and a single .bak snapshot. The
+// "touched" set is the UNION of tasks whose DependsOn intersected
+// any of the target ids. This matches the user mental model of
+// "these three tasks are gone; unblock everyone in one verb".
+//
+// Idempotent: running on ids that nothing depends on is a no-op
+// with a clear message. Running on missing ids (not present in
 // the store) is ALSO treated as a no-op rather than an error —
-// the intent is "make sure nothing depends on this id", and a
+// the intent is "make sure nothing depends on these ids", and a
 // missing id satisfies that vacuously. (This matches `tsk rm`'s
 // liberal acceptance of already-gone ids; rejecting the
 // "scrub a freshly-removed task" case would force callers to
 // existence-check first, defeating the ergonomic gain.)
 //
-// JSON shape: {"id": N, "touched": [<task ids>...]} — array (not
-// object map) because the order is the iteration order of the
-// store, which is already id-ascending; callers can index/count
-// without re-sorting. Empty case = {"id": N, "touched": []} so
-// `jq '.touched | length'` reads zero without crashing.
+// JSON shape: {"ids": [<input ids>], "touched": [<task ids>]} —
+// arrays (not object maps) because order is the iteration order
+// of the store, which is already id-ascending; callers can index/
+// count without re-sorting. Empty case = "touched": [] so
+// `jq '.touched | length'` reads zero without crashing. The
+// single-id JSON shape (the legacy form) renders an additional
+// "id" field for backward compatibility — consumers may rely on
+// either key.
+//
+// dryRun=true short-circuits the Save (and the .bak snapshot)
+// entirely: the run reports what WOULD happen ("would scrub #1
+// from 3 task(s): #2, #3, #4") and exits zero with no on-disk
+// change. Mirrors `tsk archive --dry-run`'s shape and exit code
+// so it's safe to chain into pre-commit / CI checks that want to
+// preview the impact of a planned `tsk rm` cascade.
 //
 // Why a separate runner instead of folding into runDependMutate?
 // The shapes are too different: runDependMutate operates on ONE
 // task's list (curate per-task); --remove-all is a global SWEEP
-// (curate the whole store via one id). Folding them would require
+// (curate the whole store via N ids). Folding them would require
 // runDependMutate to accept an "operate on every task" flag, which
 // is a different mental model that would muddle the per-task code.
-func runDependRemoveAll(w io.Writer, s *store.Store, id int, asJSON bool) error {
+func runDependRemoveAll(w io.Writer, s *store.Store, ids []int, dryRun, asJSON bool) error {
+	targetSet := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		targetSet[id] = true
+	}
 	touched := make([]int, 0)
+	// Track the proposed post-sweep DependsOn for each touched task
+	// so we can apply them only when not in dry-run mode. Keeping
+	// the planning + application phases separate lets dry-run
+	// share the entire scan logic with the live run.
+	proposed := make(map[int][]int, 0)
 	for i := range s.Tasks {
 		t := &s.Tasks[i]
 		if !t.HasDependencies() {
@@ -492,36 +537,52 @@ func runDependRemoveAll(w io.Writer, s *store.Store, id int, asJSON bool) error 
 		filtered := make([]int, 0, len(t.DependsOn))
 		dropped := false
 		for _, dep := range t.DependsOn {
-			if dep == id {
+			if targetSet[dep] {
 				dropped = true
 				continue
 			}
 			filtered = append(filtered, dep)
 		}
 		if dropped {
-			t.DependsOn = filtered
 			touched = append(touched, t.ID)
+			proposed[t.ID] = filtered
 		}
 	}
-	if len(touched) > 0 {
+	if !dryRun && len(touched) > 0 {
+		for _, tid := range touched {
+			s.ByID(tid).DependsOn = proposed[tid]
+		}
 		if err := s.Save(); err != nil {
 			return err
 		}
 	}
 	if asJSON {
 		doc := struct {
-			ID      int   `json:"id"`
+			IDs     []int `json:"ids"`
+			ID      int   `json:"id,omitempty"` // legacy single-id form
 			Touched []int `json:"touched"`
-		}{ID: id, Touched: orEmpty(touched)}
+			DryRun  bool  `json:"dry_run,omitempty"`
+		}{IDs: orEmpty(ids), Touched: orEmpty(touched), DryRun: dryRun}
+		// Legacy "id" key for the single-id case so older
+		// consumers of the JSON contract still see the field
+		// they used to read.
+		if len(ids) == 1 {
+			doc.ID = ids[0]
+		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(doc)
 	}
+	verb := "scrubbed"
+	if dryRun {
+		verb = "would scrub"
+	}
+	idsLabel := formatBlockerIDs(ids)
 	if len(touched) == 0 {
-		pf(w, "no tasks depend on #%d (nothing to scrub)\n", id)
+		pf(w, "no tasks depend on %s (nothing to scrub)\n", idsLabel)
 		return nil
 	}
-	pf(w, "scrubbed #%d from %d task(s): %s\n", id, len(touched), formatBlockerIDs(touched))
+	pf(w, "%s %s from %d task(s): %s\n", verb, idsLabel, len(touched), formatBlockerIDs(touched))
 	return nil
 }
 
