@@ -113,15 +113,15 @@ func printGraphSVG(w io.Writer, s *store.Store, edges []graphEdge, highlightSet,
 	// matching DOT's rankdir=LR convention. Nodes within a column
 	// stack top -> bottom in id order.
 	const (
-		nodeW     = 220
-		nodeH     = 40
-		colGapX   = 80
-		rowGapY   = 20
-		marginX   = 30
-		marginY   = 30
-		textOff   = 14
-		titleMax  = 24 // chars before truncate-with-ellipsis
-		fontSize  = 12
+		nodeW    = 220
+		nodeH    = 40
+		colGapX  = 80
+		rowGapY  = 20
+		marginX  = 30
+		marginY  = 30
+		textOff  = 14
+		titleMax = 24 // chars before truncate-with-ellipsis
+		fontSize = 12
 	)
 	pos := make(map[int][2]int, len(ids)) // id -> [x, y] of top-left corner
 

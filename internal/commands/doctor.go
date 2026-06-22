@@ -24,6 +24,7 @@ func newDoctorCmd() *cobra.Command {
 	var (
 		asJSON             bool
 		checkOrphanArchive bool
+		fixOrphans         bool
 	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -50,6 +51,15 @@ re-archived), leaving an orphan pointer behind. The active
 store doesn't surface these because it doesn't see the
 archive; doctor unifies the view so the rot is visible.
 
+Pass --fix-orphans WITH --check-orphan-archive to ALSO repair
+the dangling references in place: scrub the orphan ids out of
+every affected archive task's DependsOn list, then re-save the
+archive (with a .bak snapshot, same contract as every other
+write path). The archive itself is left otherwise untouched —
+only the dangling deps are removed. Mirror of lint
+--autofix-all but for the archive's dep graph rather than the
+live store's metadata.
+
 Exit codes:
   0  all checks passed
   1  at least one issue found (error)
@@ -58,7 +68,24 @@ Exit codes:
 Pass --json for machine-readable output (always emitted, exit code still
 reflects severity).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if fixOrphans && !checkOrphanArchive {
+				return usageErrorf("--fix-orphans requires --check-orphan-archive (the orphan scan must run first to produce the repair set)")
+			}
 			report := runDoctor(cmd, checkOrphanArchive)
+			// --fix-orphans repair runs BEFORE we print, so the
+			// printed report reflects the post-fix state. The
+			// repair count is folded into the report's OKChecks
+			// line so the user sees "fix-orphans: N dangling
+			// refs scrubbed" alongside the standard checks.
+			scrubbed := 0
+			if fixOrphans {
+				n, err := applyOrphanArchiveFix(cmd, &report)
+				if err != nil {
+					return fmt.Errorf("fix-orphans: %w", err)
+				}
+				scrubbed = n
+				report.OKChecks = append(report.OKChecks, fmt.Sprintf("fix-orphans: %d dangling ref(s) scrubbed", n))
+			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -67,6 +94,14 @@ reflects severity).`,
 				}
 			} else {
 				printDoctorReport(cmd.OutOrStdout(), report)
+				// Surface the fix-orphans summary line in the
+				// human-readable path. The JSON path already
+				// carries it in OKChecks; in the human path we
+				// print an explicit "REPAIRS:" block so the
+				// signal isn't buried.
+				if fixOrphans {
+					pf(cmd.OutOrStdout(), "REPAIRS:\n  fix-orphans: %d dangling ref(s) scrubbed\n", scrubbed)
+				}
 			}
 			if report.HasIssues() {
 				return silentExit{code: 1}
@@ -76,6 +111,7 @@ reflects severity).`,
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	cmd.Flags().BoolVar(&checkOrphanArchive, "check-orphan-archive", false, "also scan the sibling .tsk.archive.md for orphan DependsOn references that resolve in neither the live store nor the archive itself")
+	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "with --check-orphan-archive: scrub the dangling DependsOn refs from the archive and re-save (with .bak snapshot)")
 	return cmd
 }
 
