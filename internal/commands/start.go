@@ -77,6 +77,7 @@ func newStartCmd() *cobra.Command {
 		all       bool
 		startTag  string
 		startPrio string
+		dryRun    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "start [<id>...]",
@@ -98,6 +99,12 @@ matching the filter. Sister of ` + "`tsk pause --all`" + `: bulk-start
 a curated subset rather than typing ids one at a time. Requires
 at least one filter (no "start literally every open task" form).
 
+Pass --dry-run with --all to preview which tasks WOULD be started
+without actually flipping any state. Writes nothing to disk; the
+.bak chain stays untouched. Useful for previewing a tag/priority
+filter before committing to the bulk-start ("does this match what
+I think it matches?").
+
 Examples:
   tsk start 3
   tsk start 3 5 7                          # several at once
@@ -105,13 +112,17 @@ Examples:
   tsk start --all --tag standup            # start every open standup task
   tsk start --all --priority urgent        # start every open urgent task
   tsk start --all --tag work --priority high
+  tsk start --all --tag standup --dry-run  # preview without stamping
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
 				if len(args) > 0 {
 					return usageErrorf("--all takes no positional ids (resolves the filtered set internally)")
 				}
-				return runStartAll(cmd, startTag, startPrio, reset)
+				return runStartAll(cmd, startTag, startPrio, reset, dryRun)
+			}
+			if dryRun {
+				return usageErrorf("--dry-run only applies to --all (single-id start is already explicit)")
 			}
 			if len(args) == 0 {
 				return usageErrorf("missing <id> (or pass --all with --tag/--priority)")
@@ -123,6 +134,7 @@ Examples:
 	cmd.Flags().BoolVar(&all, "all", false, "start every open task matching --tag and/or --priority")
 	cmd.Flags().StringVar(&startTag, "tag", "", "for --all: only start tasks carrying this tag (case-insensitive)")
 	cmd.Flags().StringVar(&startPrio, "priority", "", "for --all: only start tasks at this priority (low/medium/high/urgent)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "for --all: print which tasks would be started without writing")
 	return cmd
 }
 
@@ -136,7 +148,14 @@ Examples:
 // for why. The empty-set case ("no open tasks match") is a clean
 // no-op so a typo in --tag exits 0 with a clear message rather
 // than firing a non-zero exit that could trip a wrapper script.
-func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset bool) error {
+//
+// --dry-run short-circuits BEFORE the runStartStop dispatch: it
+// prints the would-be-started ids and exits without writing.
+// Critical invariant: the .bak chain is untouched (no Save called).
+// Dry-run on an empty filter result reports the empty case the
+// same way the non-dry path does — same wording so the two paths
+// answer the "what would this do?" question identically.
+func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset, dryRun bool) error {
 	tag = strings.TrimSpace(tag)
 	prio, prioActive, err := parsePendingPriority(prioRaw)
 	if err != nil {
@@ -153,6 +172,41 @@ func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset bool) error {
 	if len(ids) == 0 {
 		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
 		pf(cmd.OutOrStdout(), "no open tasks match (%s)\n", filters)
+		return nil
+	}
+	if dryRun {
+		// Compute the would-flip ids: in the dry-run path we
+		// further partition into "would-actually-start" (Started
+		// is nil OR reset is set) so the preview matches what
+		// runStartStop would actually do. This mirrors the
+		// idempotent-skip semantics so the preview reads truthfully
+		// instead of just listing the filter-matched set.
+		wouldStart := make([]int, 0, len(ids))
+		for _, id := range ids {
+			t := s.ByID(id)
+			if t == nil {
+				continue
+			}
+			if t.Started == nil || reset {
+				wouldStart = append(wouldStart, id)
+			}
+		}
+		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
+		if len(wouldStart) == 0 {
+			pf(cmd.OutOrStdout(), "[dry-run] no tasks would be started (%d matched %s but all are already in-progress)\n",
+				len(ids), filters)
+			return nil
+		}
+		pf(cmd.OutOrStdout(), "[dry-run] would start %d task(s) (%s):\n",
+			len(wouldStart), filters)
+		for _, id := range wouldStart {
+			t := s.ByID(id)
+			title := ""
+			if t != nil {
+				title = "  " + t.Title
+			}
+			pf(cmd.OutOrStdout(), "  #%d%s\n", id, title)
+		}
 		return nil
 	}
 	args := make([]string, len(ids))
