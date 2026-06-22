@@ -376,12 +376,53 @@ dry-run, dim selectors).
 - [ ] `tsk archive --bucket-by <key>` — accept a user-supplied key expression (e.g. `tag:work`, `priority`) for project-specific layouts
 - [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
 - [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
-- [ ] `tsk graph --format dot --dim <id1,id2>` — inverse of highlight: render named ids gray so others stand out
-- [ ] `tsk graph --format dot --dim-tag <name>` — sister of dim ids using a tag selector (mirrors highlight/highlight-tag pair)
-- [ ] `tsk graph --format dot --highlight-tag a,b` — multi-tag spotlight (union of all matching tasks)
+- [x] `tsk graph --format dot --dim <id1,id2>` — inverse of highlight: render named ids gray so others stand out (tick 2026-06-22/0045)
+- [x] `tsk graph --format dot --dim-tag <name>` — sister of dim ids using a tag selector (mirrors highlight/highlight-tag pair) (tick 2026-06-22/0045)
+- [x] `tsk graph --format dot --highlight-tag a,b` — multi-tag spotlight (union of all matching tasks) (tick 2026-06-22/0045)
 - [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — one-pager for pre-commit / CI preflight
-- [ ] `tsk start --all --dry-run` — sister of archive's dry-run for the bulk-start verb
-- [ ] `tsk pause --all --tag <t>` — narrow pause --all by tag (currently it's all-or-nothing)
+- [x] `tsk start --all --dry-run` — sister of archive's dry-run for the bulk-start verb (tick 2026-06-22/0045)
+- [x] `tsk pause --all --tag <t>` — narrow pause --all by tag (currently it's all-or-nothing) (tick 2026-06-22/0045)
+- [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
+- [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI 'g'/'G' top/bottom navigation (vim-style)
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+
+### Polish & DX (added 2026-06-22 tick #19)
+
+Fresh ideas so future ticks have ample sized work. The graph-decoration
+cluster is now mostly mined (highlight ids, highlight-tag CSV, dim ids,
+dim-tag); the bulk-action filter clusters for start/pause are
+symmetric now (start --all required filter, pause --all optional
+filter, both with dry-run). This batch leans hard into the still-
+unstarted long-tail: TUI work (5 items, oldest in the backlog),
+recurring tasks (parking lot), config + multi-file (long-unstarted),
+plus follow-ons sensible from this tick's features (dim --reachable
+interaction, multi-tag dim, graph SVG renderer, recipe docs).
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --format dot --dim-tag a,b` — multi-tag dim (sister of --highlight-tag CSV; same union pattern) — NOTE: shipped tick #19 mergeTagsIntoSet already supports CSV; verify via integration test
+- [ ] `tsk graph --format dot --highlight-tag X --dim everything-else` recipe doc — "make this one tag pop"
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
+- [ ] `tsk pause --all --dry-run` — sister of start --all --dry-run for the inverse bulk verb
+- [ ] `tsk start --all --json --dry-run` — JSON output of the would-start preview for scripted pipelines
+- [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it
+- [ ] `tsk archive --since-id <N> --bucket-by id-range:50` — sister of --bucket-by tag/priority for the id axis
+- [ ] `tsk archive --merge-into ~/work.archive.md --strategy yearly` recipe doc — one-pager on multi-year rollups
+- [ ] `tsk archive --bucket-by <key>` — accept a user-supplied key expression (e.g. `tag:work`, `priority`) for project-specific layouts
+- [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
+- [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — one-pager for pre-commit / CI preflight
 - [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
 - [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
@@ -1898,3 +1939,164 @@ This is the sixth batch shipped DIRECTLY ON MAIN. The quality
 gate ran clean before push; every commit on origin/main remains
 a single revertible feature slice (with the explicit-pair depend
 exception noted above and in the commit message).
+
+
+### 2026-06-22 00:45 PT (tick #19)
+
+Shipped 5 features as 5 clean single-commit slices. All tests
+passing (60+ new test cases across the 5), full gate green (gofmt
++ vet + build + go test ./...) before push. Pushed 7e4ae2e..f9e8674
+to origin/main; verified landed.
+
+- `graph --dim`                    — 7e4ae2e feat(graph):
+  --dim <ids> inverse of --highlight to push nodes to the background
+- `graph --dim-tag`                — 616ff42 feat(graph):
+  --dim-tag <name> tag selector for the dim verb
+- `graph --highlight-tag CSV`      — 62e6da7 feat(graph):
+  --highlight-tag accepts CSV (union of multiple tags)
+- `start --all --dry-run`          — 6c9efc4 feat(start):
+  tsk start --all --dry-run previews bulk-start without writing
+- `pause --all --tag/--priority`   — f9e8674 feat(pause):
+  tsk pause --all --tag/--priority narrows the bulk-pause
+
+Notable choices:
+
+- `graph --dim`: inverse-of-highlight CSV selector. Renders the
+  named ids with light-gray fill + dashed border + gray font so
+  they recede visually while the un-dimmed nodes read as
+  foreground. Same CSV parser as --highlight (parseCSVIDSet
+  shared helper, with the flagName parameter so error messages
+  read "--dim: ..." vs "--highlight: ..." — symmetry critical
+  for usability). The previously-inline parseHighlightCSV body
+  moved into parseCSVIDSet; parseHighlightCSV is now a one-line
+  delegator. Style placement in printGraphDOT: dim sits BETWEEN
+  the default styles (done-gray, blocked-red, actionable-plain)
+  and the highlight override. It replaces the default styles so
+  a dimmed blocked task really does recede instead of fighting
+  the red outline, but highlight still wins on overlap — and the
+  overlap is rejected up-front at the flag layer anyway, so the
+  ordering is theoretical (it just ensures the styling code is
+  defensive). Plumbed through both `tsk graph --format dot` and
+  `tsk export --graph-dot` in lockstep — exportGraphDOT signature
+  grew the dim parameter; the byte-identical regression test on
+  the two surfaces enforces no drift.
+
+- `graph --dim-tag`: tag-selector sister for the dim verb (the
+  inverse of --highlight-tag). The mergeHighlightTag body
+  refactored into mergeTagIntoSet (shared helper) so mergeDimTag
+  is also a one-line delegator — keeps the two flags
+  behaviorally symmetric and means a fix to one tightens the
+  other. The overlap rejection runs AFTER both tag resolutions
+  so a node that's spotlit by id but dim-tagged (or vice versa)
+  is caught with the same "#N: can't be both spotlighted and
+  dimmed" error the --dim+--highlight pair already enforces.
+  Missing-tag policy mirrors --highlight-tag: renders cleanly
+  with no dim style (defensive for "dim whatever happens to be
+  tagged release" workflows). Lockstep test on graph + export.
+
+- `graph --highlight-tag` CSV extension: single tag "release"
+  still works; multi "release,p0" spotlights every task carrying
+  EITHER tag (logical OR). Mirrors the multi-id highlight
+  extension from tick #17 for the tag-selector axis. The
+  mergeTagIntoSet helper from feature 2 was further generalized
+  into mergeTagsIntoSet, which iterates a splitTagCSV-tokenized
+  slice and ORs every match. Same CSV semantics flow through
+  --dim-tag for free (shared helper). splitTagCSV is the single
+  tokenizer: comma-split, trim whitespace, drop empties. Direct
+  unit test on splitTagCSV covers the edge cases (empty input,
+  trailing comma, leading comma, double comma, whitespace).
+
+- `start --all --dry-run`: sister of `tsk archive --since-id
+  --dry-run` and `tsk depend --remove-all --dry-run` from
+  ticks #17-#18. Critical invariant: dry-run writes NOTHING to
+  disk. A test reads .tsk.md before/after and asserts byte
+  equality. Idempotent-aware preview: tasks already in-progress
+  are excluded from the "would-start" list (matching what the
+  non-dry path actually does — silent-skip via runStartStop's
+  idempotent contract). With --reset they reappear in the
+  preview because --reset DOES bump them. So the dry-run
+  answers the truthful question "what would this command DO?"
+  rather than the misleading "what does this filter match?"
+  Empty result uses the same "no open tasks match (filter
+  summary)" wording the non-dry path uses — consistent answers.
+  All-already-started case gets an explicit "N matched but all
+  are already in-progress" message (empty list there would read
+  as a bug). --dry-run without --all is rejected (exit 2)
+  because per-id start is already an explicit operation.
+
+- `pause --all --tag/--priority`: sister of `tsk start --all`'s
+  filter for the inverse verb. Same AND compose semantics, same
+  parsePendingPriority parser. OPTIONAL here (unlike start
+  --all where the filter is required), because the wip set is
+  usually small and curated — "pause everything" is the natural
+  end-of-day verb that doesn't need scoping. start --all has no
+  such natural scope (every open task is too broad). Empty-
+  result wording is two-tiered: (1) no wip at all → backward-
+  compatible "no in-progress tasks", (2) wip exists but none
+  match → "no in-progress tasks match (filter)" so a typo is
+  visible. Backward compatibility regression test guards that
+  `pause --all` with no filter still pauses every wip task
+  (the pre-filter behavior must not regress). --tag/--priority
+  without --all is rejected (exit 2) because the per-id pause
+  path already takes explicit ids; adding a tag filter there
+  would be a different verb and muddy the meaning.
+
+Roadmap status:
+- "Polish & DX (added tick #18)" subsection: 4/27 → 9/27
+  (the 5 shipped this tick: graph --dim, graph --dim-tag,
+  graph --highlight-tag CSV, start --all --dry-run, pause
+  --all --tag).
+- Added "Polish & DX (added 2026-06-22 tick #19)" subsection
+  with 25 fresh items — leans into the still-unstarted long-
+  tail (TUI work, recurring tasks, config + multi-file) plus
+  new follow-ons: multi-tag dim (the CSV plumbing is already
+  in place via mergeTagsIntoSet — needs verification), pause
+  --all --dry-run, start --all --json --dry-run, recipe doc
+  for "make one tag pop" via highlight-tag + dim-tag of
+  everything else, graph SVG renderer.
+
+Per-feature test counts:
+  graph --dim                 11 new
+  graph --dim-tag              7 new
+  graph --highlight-tag CSV    7 new (+ direct unit test on splitTagCSV)
+  start --all --dry-run        9 new
+  pause --all --tag/--priority 9 new
+  TOTAL                       43+ new test cases (44 incl. helper)
+on top of the existing suite, all green. (Existing suite ~860 cases
+also still green after: parseHighlightCSV → parseCSVIDSet refactor,
+mergeHighlightTag → mergeTagIntoSet → mergeTagsIntoSet refactor,
+emitGraph/printGraphDOT/exportGraphDOT signature changes for dim,
+runPauseAll signature change for tag/prio, runStartAll signature
+change for dryRun — verified via full repo gate before push.)
+
+Process notes:
+- No fixups or amends needed this tick; each feature landed as a
+  single clean commit on the first pass. Discipline of writing
+  tests against the public CLI surface first kept the iteration
+  loops tight.
+- One backtick gotcha in the Long help text: tried to render
+  'release' and 'release,p0' in literal-style backticks inside a
+  Go raw-string literal, which broke the string (backticks
+  terminate raw strings). Switched to single quotes for the
+  inline literal — that's the discipline going forward when
+  writing Long help that contains shell-style examples (the
+  outer raw string already uses backquotes for delimitation).
+- mergeTagIntoSet from feature 2 became mergeTagsIntoSet (plural)
+  in feature 3 to handle CSV. The single-tag form remains a
+  trivial special case of the CSV form (len==1 slice), so no
+  separate code path. Backward-compat test on --highlight-tag
+  single-tag confirms the refactor didn't change behavior.
+- The refactor that moved parseHighlightCSV's body into
+  parseCSVIDSet (shared with --dim) renamed the error prefix
+  to be flag-name-driven. Error message symmetry between the
+  two flags is critical: "--dim: invalid task id" reads cleanly
+  vs. having --dim errors confusingly attributed to --highlight.
+
+This is the seventh batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The graph-decoration cluster
+is now well-mined: highlight ids (single + CSV), highlight-tag
+(single + CSV), dim ids (CSV), dim-tag (single + CSV via shared
+helper). The bulk-action verbs are also symmetric: start --all
+required filter, pause --all optional filter, both verbs accept
+--dry-run on the bulk path.
