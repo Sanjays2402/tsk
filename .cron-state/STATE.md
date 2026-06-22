@@ -553,17 +553,17 @@ SVG renderer, more archive bucket axes).
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk graph --format svg --watch N` — live-render SVG every N seconds (file watch + re-emit)
-- [ ] `tsk graph --format svg --output <path>` — write directly to file with proper extension validation (sister of stdout redirection)
+- [x] `tsk graph --format svg --output <path>` — write directly to file with proper extension validation (sister of stdout redirection) (tick 2026-06-22/1504)
 - [ ] `tsk graph --reachable <id> --json | jq` recipe doc — impact-analysis pattern
 - [ ] `tsk graph --upstream-of <id> --json | jq '.nodes | length'` recipe doc — quantify the dependent chain
 - [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset (still-unstarted; tag+priority filter combo is tested but not as a documented pattern)
-- [ ] `tsk archive --bucket-by tag:X,Y` — multi-tag CSV variant of tag:X (any-of-these-tags vs others)
+- [x] `tsk archive --bucket-by tag:X,Y` — multi-tag CSV variant of tag:X (any-of-these-tags vs others) (tick 2026-06-22/1504)
 - [ ] `tsk archive --bucket-by priority --sort-tasks-asc` — flip task order within each priority section
 - [ ] `tsk archive --bucket-by id-range:N --merge-into <file>` recipe doc — bucketed multi-project rollup pattern
 - [ ] `tsk lint --autofix-all --backup <dir> --keep N --json` recipe doc — bounded-chain pre-commit one-pager
 - [ ] `tsk doctor --fix-orphans --json` — already works but recipe doc for the CI-gate pattern
 - [ ] `tsk doctor --check-orphan-archive --merge-into <file>` — extend orphan check to a project-rollup archive
-- [ ] `tsk doctor --fix-orphans --dry-run` — preview what would be scrubbed without writing (sister of every other fix verb's dry-run)
+- [x] `tsk doctor --fix-orphans --dry-run` — preview what would be scrubbed without writing (sister of every other fix verb's dry-run) (tick 2026-06-22/1504)
 - [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — CI preflight pattern
 - [ ] `tsk preview --from <path> --watch N` — live re-render
 - [ ] `tsk preview --json | jq` recipe doc
@@ -572,9 +572,58 @@ SVG renderer, more archive bucket axes).
 - [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 - [ ] TUI status-bar elapsed-time render for in-progress tasks
-- [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
+- [x] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb) (tick 2026-06-22/1504)
 - [ ] TUI sticky header with `tsk wip` count
-- [ ] TUI 'R' reload-and-clear-filter (capital R) — sister of lowercase r which preserves filter
+- [x] TUI 'R' reload-and-clear-filter (capital R) — sister of lowercase r which preserves filter (tick 2026-06-22/1504)
+
+
+### Polish & DX (added 2026-06-22 tick #23)
+
+Fresh ideas so future ticks have ample sized work. The graph
+output cluster gains its first file-redirection primitive
+(--output with format/extension validation); the archive bucket-
+by tag axis is now multi-valued (tag:X,Y,Z union); doctor's
+fix-orphans gains its preview sister; the TUI's r/R reload pair
+is now complete (preserve vs. clear filter) and the C clone
+shortcut closes the "TUI mirrors CLI" gap for the clone verb.
+This batch leans into the still-unstarted long tail: TUI work
+(4 items left after R/C shipped), recurring tasks (parking lot),
+config + multi-file (long-unstarted), plus follow-ons sensible
+from this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --output <path> --watch N` — re-render every N seconds while a separate process mutates (follow-on to this tick's --output)
+- [ ] `tsk graph --reachable <id> --json --output <path>` — extend --output to the JSON envelope path
+- [ ] `tsk graph --format svg --output <path> --highlight <id>` recipe doc — one-pager on the "render this view, save it for a doc" workflow
+- [ ] `tsk pause --all --tag X --priority Y --dry-run` recipe doc — composing the curated bulk-pause preview
+- [ ] `tsk archive --bucket-by tag:X,Y,Z --merge-into <file>` recipe doc — multi-tag rollup pattern
+- [ ] `tsk archive --bucket-by tag:!X` — INVERSE single-tag partition (everything NOT tagged X lands in the call-out bucket)
+- [ ] `tsk archive --bucket-by tag:X,Y --strict-and` — require ALL tags (intersection) vs ANY (union; current default)
+- [ ] `tsk doctor --fix-orphans --dry-run --json` — already works via existing JSON path; recipe doc for CI preflight
+- [ ] `tsk doctor --fix-orphans --dry-run --merge-into <file>` — extend dry-run to a project-rollup archive
+- [ ] `tsk doctor --fix-orphans --interactive` — prompt per-ref before scrubbing (the "review then apply" middle ground)
+- [ ] `tsk lint --autofix-all --backup <dir> --keep N --json` recipe doc — same backlog item, bounded-chain pre-commit one-pager
+- [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — CI preflight pattern
+- [ ] `tsk preview --from <path> --watch N` — live re-render
+- [ ] `tsk preview --json | jq` recipe doc
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI 'N' jump to next-unblocked task (the "what should I do next" hotkey paired with `tsk next` CLI)
+- [ ] TUI 'F' focus-on-pinned (filter to pinned tasks only — sister of `tsk top --pinned-only`)
+- [ ] TUI 'X' archive-current-task (sister of `tsk archive` CLI verb)
 
 
 ## Known footguns the loop has run into
@@ -2755,3 +2804,160 @@ axis covers all four planned forms (priority/tag/tag:X/id-range:N).
 TUI gains its first session-state-preserving reload primitive.
 Doctor's orphan-archive cluster gains its autofix sister so the
 detection + repair loop is a single command.
+
+### 2026-06-22 15:04 PT (tick #23)
+
+Shipped 5 features. Full quality gate (gofmt + vet + build + go
+test ./...) green before push. Single revertible commit per feature.
+Landed 008dfd9..8b8126f on origin/main; verified via `git log
+origin/main | head`.
+
+- `graph --output <path>`              — 008dfd9 feat(graph): --output writes rendered graph to file with format/extension validation
+- `doctor --fix-orphans --dry-run`     — 904f8a5 feat(doctor): --fix-orphans --dry-run previews scrubbed refs without writing
+- TUI 'C' clone                        — ee6e92f feat(tui): 'C' key clones the currently-selected task in place
+- `archive --bucket-by tag:X,Y,Z`      — 5f8a280 feat(archive): --bucket-by tag:X,Y,Z is a multi-tag CSV union partition
+- TUI 'R' reload+clear-filter          — 8b8126f feat(tui): 'R' key reloads from disk AND clears the active search filter
+
+Notable choices:
+- `graph --output <path>` validates the extension against the
+  format keyword (svg→.svg, dot→.dot/.gv, ascii→.txt or none).
+  Catches the silent-footgun case where SVG bytes would land
+  under a .dot filename. Buffer-before-write so a render failure
+  leaves no partial file on disk (atomic-write contract). JSON
+  path intentionally NOT supported — the JSON envelope is for
+  jq pipelines; a per-file dump is just `... --json > file.json`
+  away. Case-insensitive on the extension so .SVG/.Dot pass.
+  Composes with --reachable/--upstream-of/--highlight/--dim
+  the same way the stdout path does.
+- `doctor --fix-orphans --dry-run` shares the dependency-pruning
+  logic with applyOrphanArchiveFix via a sibling
+  previewOrphanArchiveFix that returns counts + per-ref details
+  without calling Save(). The .bak chain stays untouched. The
+  WARNINGS section retains the orphan flag (dry-run didn't
+  actually fix anything; the truthful report leaves the warning
+  in place). Per-ref details sorted by (task_id, missing_dep)
+  for reproducible CI diffs. Adds a new OrphanArchiveRef public
+  type so the JSON envelope can grow to expose the list directly
+  in a future tick.
+- TUI 'C' clone duplicates the selected task in-place. Mirrors
+  the CLI clone verb's contract: " (copy)" title suffix, deep-
+  copied tags + due pointer, fresh Created, clones always start
+  open (regardless of source done state). Cursor moves to the
+  new clone in the visible list (falls back to original on
+  filter exclusion). Inline implementation rather than importing
+  internal/commands (avoids package cycle; the shared model
+  contract is small). Uppercase to avoid the future "change"
+  cluster's lowercase 'c'.
+- `archive --bucket-by tag:X,Y,Z` extends the boolean tag
+  partition to multi-tag CSV union. Mirrors `graph --highlight-
+  tag a,b` semantics: tagged-any-of-these vs other. Bucket
+  label preserves user case + ordering ("tag:Release,P0"), but
+  matching is case-insensitive (same convention as `tsk ls
+  --tag`). Permissive tokenization (whitespace + double-comma
+  tolerated). Single-tag backward compat verified by regression
+  test (no trailing comma, label unchanged). makeTagFilterBucketFn
+  now takes []string + uses a precomputed lookup map for O(1)
+  membership check per task.
+- TUI 'R' reload+clear-filter is the uppercase sister of 'r'.
+  Same lowercase/uppercase convention as `g`/`G` for top/bottom
+  navigation. Delegates to reloadFromDisk after zeroing filter,
+  so all the selection-by-id preservation, external-edit pickup,
+  and error-into-status semantics inherit unchanged. Status
+  footer says "reloaded (filter cleared)" so the user can tell
+  uppercase from lowercase by mistake (capslock). Unconditional
+  clear: no-filter case is a no-op equivalent to lowercase 'r'.
+
+Files added this tick:
+- internal/commands/graph_output_test.go (9 tests + matrix table-test)
+- internal/commands/doctor_fix_orphans_dryrun_test.go (7 tests)
+- internal/tui/clone_test.go (6 tests)
+- internal/commands/archive_bucket_by_tag_csv_test.go (6 tests)
+- internal/tui/reload_clear_test.go (6 tests)
+
+Files modified:
+- internal/commands/graph.go (--output flag + validation helper +
+  buffered-write dispatch + help text + example block)
+- internal/commands/doctor.go (--dry-run flag + RunE branch for
+  preview path + help text)
+- internal/commands/doctor_fix_orphans.go (OrphanArchiveRef type
+  + previewOrphanArchiveFix sibling function)
+- internal/commands/archive.go (makeTagFilterBucketFn signature
+  change to []string + splitTagFilterCSV helper + help text)
+- internal/tui/keys.go (ReloadClear binding + Clone binding)
+- internal/tui/app.go (cloneCurrent + reloadFromDiskClearingFilter
+  methods + handleNavKey wiring for C and R)
+
+Per-feature test counts:
+  graph --output                       10 new (SVG file write,
+                                        DOT file, .gv accepted,
+                                        ASCII permits txt + bare,
+                                        mismatched ext rejected
+                                        with no file written,
+                                        inverse mismatch, case-
+                                        insensitive ext, --json
+                                        mutex rejection,
+                                        --reachable composition,
+                                        validate matrix table)
+  doctor --fix-orphans --dry-run        7 new (archive byte-
+                                        identical pre/post and no
+                                        .bak created, per-ref
+                                        enumeration in REPAIRS
+                                        block, count parity with
+                                        apply, --dry-run-without-
+                                        fix rejection, JSON
+                                        envelope preserves
+                                        warnings + folds preview,
+                                        missing-archive no-op,
+                                        deterministic sort)
+  TUI 'C' clone                         6 new (title suffix,
+                                        priority/tags/notes
+                                        inheritance, done reset,
+                                        status footer feedback,
+                                        empty-store safety, disk
+                                        round-trip)
+  archive --bucket-by tag:X,Y,Z         6 new (CSV union mixed
+                                        membership, case-
+                                        preserving label, ws
+                                        tolerance, all-empty
+                                        rejection, summary label,
+                                        single-tag backward
+                                        compat)
+  TUI 'R' reload+clear-filter           6 new (filter clears,
+                                        lowercase 'r' preserves
+                                        filter regression, status
+                                        footer distinguishes,
+                                        external edits picked up,
+                                        no-filter still reloads,
+                                        selection-by-id
+                                        preserved)
+  TOTAL                                35 new test cases on top
+of the existing suite, all green.
+
+Process notes:
+- The reload_clear feature uses the lowercase reload's status
+  message as a signal to override only when the lowercase path
+  would have printed "reloaded" verbatim — preserves any error
+  message that lowercase emitted (so a reload+filter-clear that
+  hit an IO failure still surfaces the actual error rather than
+  the misleading "filter cleared" footer).
+- archive_bucket_by_tag_filter (single-tag) test suite still
+  passes after the multi-tag refactor — verified the
+  backward-compatibility commitment for label shape
+  ("## tag:work" not "## tag:work,").
+- The TUI clone test for done-state-reset can't go through the
+  default visibility filter (done section is collapsed by
+  default), so it expands the section explicitly before
+  selection — keeps the test orthogonal to the visibility
+  collapse policy.
+
+This is the eleventh batch shipped directly on main. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The graph cluster gains
+file-output with extension safety; the archive bucket-by tag
+axis is now multi-valued (CSV union, paired with the future
+intersection / inverse variants in tick #23 backlog); doctor's
+fix-orphans cluster is now bidirectional (apply + preview); the
+TUI r/R reload pair is complete (preserve vs. clear), and the C
+clone shortcut closes the "TUI mirrors CLI" gap for the clone
+verb.
+
