@@ -173,6 +173,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.toggleSection()
 	case matches(m, a.keys.Reload):
 		a.reloadFromDisk()
+	case matches(m, a.keys.Clone):
+		a.cloneCurrent()
 	}
 }
 
@@ -240,6 +242,93 @@ func (a *App) reloadFromDisk() {
 		a.selection = 0
 	}
 	a.status = "reloaded"
+}
+
+// cloneCurrent duplicates the currently-selected task in place,
+// the TUI sister of the `tsk clone <id>` CLI verb. Mirrors that
+// verb's contract: the clone gets a fresh id and a fresh Created
+// timestamp, starts open (regardless of the source's done state),
+// inherits priority + due + tags + notes by value, and the title
+// gets a " (copy)" suffix so the duplicate is easy to spot in the
+// list.
+//
+// Why a TUI shortcut for a CLI verb? Because the muscle-memory
+// workflow for "use this completed task as a template for the
+// next instance" (the most common clone use case) is one keystroke
+// in the TUI, vs. dropping back to the shell, typing the id, and
+// re-entering. Same reason `tsk reopen` exists alongside `tsk undo`
+// — discoverability matters when you're inside a focused-work
+// session.
+//
+// Selection-by-id behavior: after the clone, the cursor is moved
+// to the NEW task (the one just created) so the user can
+// immediately edit/tag/repri it without hunting for the new row.
+// Falls back to the original selection if the new id isn't in
+// the visible set (defensive — the visible filter might exclude
+// the clone, e.g. if a filter is active and the clone doesn't
+// match).
+//
+// Errors (Save failure, missing source) surface into the status
+// footer rather than crashing the app — same contract as the
+// reloadFromDisk error path. The clone shares the existing
+// cloneTask body (no duplication of the title-suffix logic).
+//
+// Why not bind to lowercase 'c'? Because 'c' is reserved for
+// future "change" cluster verbs (a common vim convention) and
+// uppercase 'C' is the conventional "create a copy" shortcut in
+// modal editors. The TUI 'r' / 'R' pair (reload vs. reload+clear)
+// follows the same lowercase/uppercase convention.
+func (a *App) cloneCurrent() {
+	id := a.currentID()
+	if id == 0 {
+		a.status = "clone: no task selected"
+		return
+	}
+	src := a.store.ByID(id)
+	if src == nil {
+		a.status = "clone: source not found"
+		return
+	}
+	// Shared cloneTask helper lives in internal/commands but
+	// the model+timestamp logic it embodies is small enough to
+	// inline here without dragging the CLI package into the TUI
+	// (which would risk import cycles). Mirrors cloneTask's
+	// contract exactly so the two surfaces agree on "what a
+	// clone is".
+	clone := model.Task{
+		Title:    src.Title + " (copy)",
+		Priority: src.Priority,
+		Notes:    src.Notes,
+		Created:  time.Now(),
+	}
+	if len(src.Tags) > 0 {
+		clone.Tags = append([]string(nil), src.Tags...)
+	}
+	if src.Due != nil {
+		d := *src.Due
+		clone.Due = &d
+	}
+	// Clones start open regardless of source — matches the
+	// "use this as a template for the next instance" intent.
+	clone.Done = false
+	clone.Completed = nil
+	newID := a.store.Add(clone)
+	if err := a.store.Save(); err != nil {
+		a.status = "clone: save failed: " + err.Error()
+		return
+	}
+	// Move the selection to the new clone so the user can
+	// immediately edit it. Fall back to the original position
+	// if the clone isn't in the visible set (filter, collapsed
+	// section, etc).
+	vt := a.visibleTasks()
+	for i, t := range vt {
+		if t.ID == newID {
+			a.selection = i
+			break
+		}
+	}
+	a.status = fmt.Sprintf("cloned #%d → #%d", id, newID)
 }
 
 func (a *App) startEditTitle() {
