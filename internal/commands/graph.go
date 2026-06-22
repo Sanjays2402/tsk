@@ -1,9 +1,12 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -81,6 +84,7 @@ func newGraphCmd() *cobra.Command {
 		dim          string
 		dimTag       string
 		asJSON       bool
+		outputPath   string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -176,6 +180,8 @@ Examples:
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
   tsk graph --format svg > deps.svg               # self-contained, no graphviz
   tsk graph --format svg --reachable 7 > sub.svg  # subgraph SVG, no graphviz
+  tsk graph --format svg --output deps.svg        # write directly to file (no shell redirection)
+  tsk graph --format dot --output deps.dot        # extension validated against --format
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -236,6 +242,44 @@ Examples:
 				rootDisplay = upstreamOf
 				rootKind = "upstream-of"
 			}
+			// --output redirects the rendered graph to a file
+			// instead of stdout, with extension validation that
+			// pairs the format keyword (ascii/dot/svg) to the
+			// extension (.txt/.dot/.svg). Why bother validating?
+			// Because a `tsk graph --format svg --output deps.dot`
+			// produces a `.dot` file containing SVG bytes — a
+			// silent footgun that breaks every downstream tool
+			// expecting DOT (a `dot -Tpng deps.dot` would fail in
+			// a confusing way). Surfacing the mismatch at the CLI
+			// layer catches the typo before the file lands.
+			//
+			// JSON path is intentionally NOT supported by --output
+			// in this slice: the JSON envelope is already shaped
+			// for jq pipelines (`tsk graph ... --json | jq`); a
+			// per-file dump would just add a tee step. Future
+			// extension if there's a real use case.
+			//
+			// We buffer the render before writing so a render
+			// failure leaves NO partial file on disk (matches the
+			// atomic-write contract every other tsk write path
+			// follows).
+			if outputPath != "" {
+				if asJSON {
+					return usageErrorf("--output is not supported with --json (the JSON envelope is for jq pipelines; pipe to a file with shell redirection)")
+				}
+				if err := validateGraphOutputExtension(outputPath, fmtChoice); err != nil {
+					return err
+				}
+				var buf bytes.Buffer
+				if err := emitGraph(&buf, s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet); err != nil {
+					return err
+				}
+				if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
+					return fmt.Errorf("--output: write %s: %w", outputPath, err)
+				}
+				pf(cmd.OutOrStdout(), "wrote %d bytes to %s (format=%s)\n", buf.Len(), outputPath, fmtChoice)
+				return nil
+			}
 			if asJSON {
 				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open)
 			}
@@ -251,6 +295,7 @@ Examples:
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT/SVG) comma-separated task ids to render in a quiet gray fill+dashed border")
 	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT/SVG) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
+	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). Useful for `tsk graph --format svg --output deps.svg` without shell redirection. Not supported with --json (pipe to a file with shell redirection instead).")
 	return cmd
 }
 
@@ -628,6 +673,60 @@ func resolveGraphFormat(raw string) (string, error) {
 		return "svg", nil
 	}
 	return "", usageErrorf("unknown --format %q (want ascii, dot, or svg)", raw)
+}
+
+// validateGraphOutputExtension surfaces a clear usage error when the
+// caller passes --output with an extension that doesn't match the
+// resolved --format. Catches the silent-footgun case where a user
+// types `--format svg --output deps.dot`: without this check, the
+// file lands containing SVG bytes under a `.dot` filename, breaking
+// every downstream tool (`dot -Tpng deps.dot` would fail in a
+// confusing way; an SVG viewer ignoring the extension would still
+// open it; a content-type-sensitive web server would mislabel it).
+//
+// Extension rules:
+//
+//	ascii  -> .txt or no extension (text files are commonly extensionless)
+//	dot    -> .dot or .gv (GraphViz's two canonical extensions)
+//	svg    -> .svg only (the W3C standard extension)
+//
+// Case-insensitive on the extension so `.SVG`/`.Dot` pass. An empty
+// path is rejected at the caller layer (we only reach here when
+// outputPath != ""). Paths with multiple dots resolve via
+// filepath.Ext which returns the last extension, matching the
+// "deps.tagged.svg" pattern correctly.
+//
+// Why ascii + no-extension OK? Because `--format ascii --output graph`
+// is a perfectly reasonable invocation (text adjacency listings are
+// often dumped to extensionless names like `notes` or `summary`).
+// The other two formats have a real on-disk convention worth
+// enforcing; ascii is the most permissive of the three.
+//
+// Future formats slot in by adding a case here; the helper is the
+// single source of truth for the format <-> extension mapping so
+// drift between flag-help and validation can't sneak in.
+func validateGraphOutputExtension(path, format string) error {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch format {
+	case "ascii":
+		if ext == "" || ext == ".txt" {
+			return nil
+		}
+		return usageErrorf("--format ascii expects --output ending in .txt or no extension, got %q", ext)
+	case "dot":
+		if ext == ".dot" || ext == ".gv" {
+			return nil
+		}
+		return usageErrorf("--format dot expects --output ending in .dot or .gv, got %q", ext)
+	case "svg":
+		if ext == ".svg" {
+			return nil
+		}
+		return usageErrorf("--format svg expects --output ending in .svg, got %q", ext)
+	}
+	// Defensive: a future format keyword we haven't added a case
+	// for shouldn't fall through silently — surface the gap.
+	return usageErrorf("--output extension validation has no rule for --format %q", format)
 }
 
 // emitGraph dispatches based on the resolved format. When rootID
