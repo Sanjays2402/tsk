@@ -52,6 +52,12 @@ func newArchiveCmd() *cobra.Command {
 			"                first), everything else lands in '## other'. Case-insensitive\n" +
 			"                tag match. Use when you want to call out ONE tag in the\n" +
 			"                archive without scattering into one section per distinct tag.\n" +
+			"  tag:X,Y,Z     CSV variant of tag:X: tasks tagged ANY of X/Y/Z land in\n" +
+			"                '## tag:X,Y,Z', everything else in '## other'. Same union\n" +
+			"                semantics as `tsk graph --highlight-tag a,b`. Useful when\n" +
+			"                you want to call out a logical SLICE of the archive (\"show\n" +
+			"                what shipped tagged release OR p0\") without listing tags\n" +
+			"                one-by-one or generating a section per distinct tag.\n" +
 			"  id-range:N    fixed-width id windows of size N: '1-N', 'N+1-2N', …\n" +
 			"                Useful when id order doubles as creation order — sister\n" +
 			"                of priority/tag for the id axis. N must be a positive\n" +
@@ -267,7 +273,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
-	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
+	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:X,Y,Z' (multi-tag CSV union), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	return cmd
 }
 
@@ -582,21 +588,52 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 		}
 		return makeIDRangeBucketFn(n), nil
 	}
-	// "tag:X" — single-tag boolean partition.
+	// "tag:X" or "tag:X,Y,Z" — single-tag boolean partition or
+	// multi-tag CSV union partition. Both share the same render
+	// shape ("tag:<label>" vs "other"); single-tag is just the
+	// CSV variant with len(tags)==1.
 	if strings.HasPrefix(lower, "tag:") {
-		tag := trimmed[len("tag:"):]
-		tag = strings.TrimSpace(tag)
-		if tag == "" {
+		// Slice off the "tag:" prefix from the ORIGINAL (case-
+		// preserving) string so tag values keep their case in
+		// the bucket label. We only normalized `lower` for the
+		// prefix check; the actual tag value is parsed from
+		// `trimmed`.
+		tagPayload := trimmed[len("tag:"):]
+		tagPayload = strings.TrimSpace(tagPayload)
+		if tagPayload == "" {
 			return nil, usageErrorf("--bucket-by tag:X requires a tag name, got %q", raw)
 		}
-		return makeTagFilterBucketFn(tag), nil
+		tags := splitTagFilterCSV(tagPayload)
+		if len(tags) == 0 {
+			return nil, usageErrorf("--bucket-by tag:X requires at least one non-empty tag name, got %q", raw)
+		}
+		return makeTagFilterBucketFn(tags), nil
 	}
-	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, id-range:N)", raw)
+	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, tag:X,Y, id-range:N)", raw)
+}
+
+// splitTagFilterCSV tokenizes a `tag:X,Y,Z` CSV payload into its
+// individual tag names. Whitespace around each tag is trimmed;
+// empty tokens (from "tag:X,,Y") are silently dropped so the
+// user's accidental double-comma doesn't surprise. Returns an
+// empty slice when no usable tokens are present (caller treats
+// that as a usage error).
+func splitTagFilterCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // makeTagFilterBucketFn returns a bucketFn that PARTITIONS tasks
-// into exactly two sections: "tag:X" for tasks carrying tag X
-// (case-insensitive match, same convention as `tsk ls --tag`), and
+// into exactly two sections: "tag:X" (or "tag:X,Y,Z" for the multi-
+// tag variant) for tasks carrying ANY of the listed tags (case-
+// insensitive match, same convention as `tsk ls --tag`), and
 // "other" for everything else.
 //
 // Why this rather than "tag" (which sections by every first-tag
@@ -607,17 +644,32 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 // boolean partition keeps the layout to two clean buckets, which
 // is the right shape for a "highlight this one tag" review.
 //
-// Sort keys: tag:X gets 1 so it sorts BEFORE "other" (the user
-// asked for it; they want it on top). "other" gets 2.
+// Multi-tag CSV variant ("tag:X,Y,Z"): a task lands in the call-
+// out bucket if it carries ANY of the listed tags (logical OR —
+// union semantics). Mirrors the `tsk graph --highlight-tag a,b`
+// CSV semantics so the two surfaces use the same mental model:
+// "show me tasks tagged any of these". The bucket label keeps
+// the full CSV ("tag:X,Y") so the user sees which set was the
+// filter — useful when the same archive holds multiple
+// rollups produced with different filters.
 //
-// Empty tag is rejected at resolveBucketByKey — we never get
-// here with one.
-func makeTagFilterBucketFn(tag string) bucketFn {
-	wantLower := strings.ToLower(tag)
+// Sort keys: the call-out bucket gets 1 so it sorts BEFORE "other"
+// (the user asked for it; they want it on top). "other" gets 2.
+//
+// Empty tags slice is rejected at resolveBucketByKey — we never
+// get here with one.
+func makeTagFilterBucketFn(tags []string) bucketFn {
+	wantLower := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		wantLower[strings.ToLower(t)] = true
+	}
+	// Label keeps the user's original case + ordering for the
+	// bucket header.
+	label := "tag:" + strings.Join(tags, ",")
 	return func(t model.Task) (string, int) {
 		for _, tg := range t.Tags {
-			if strings.ToLower(tg) == wantLower {
-				return "tag:" + tag, 1
+			if wantLower[strings.ToLower(tg)] {
+				return label, 1
 			}
 		}
 		return "other", 2
