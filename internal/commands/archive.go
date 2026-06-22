@@ -48,6 +48,10 @@ func newArchiveCmd() *cobra.Command {
 			"                tasks fall into '## untagged'. One-task-one-bucket — picking\n" +
 			"                the first tag is the most predictable interpretation when a\n" +
 			"                task has multiple tags.\n" +
+			"  tag:X         boolean partition: tasks tagged X land in '## tag:X' (sorted\n" +
+			"                first), everything else lands in '## other'. Case-insensitive\n" +
+			"                tag match. Use when you want to call out ONE tag in the\n" +
+			"                archive without scattering into one section per distinct tag.\n" +
 			"  id-range:N    fixed-width id windows of size N: '1-N', 'N+1-2N', …\n" +
 			"                Useful when id order doubles as creation order — sister\n" +
 			"                of priority/tag for the id axis. N must be a positive\n" +
@@ -263,7 +267,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
-	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority' (one section per priority), 'tag' (one section per first tag), or 'id-range:N' (fixed-width id windows of size N). Mutually exclusive with --strategy.")
+	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	return cmd
 }
 
@@ -524,13 +528,20 @@ func bucketByFirstTag(t model.Task) (string, int) {
 //	               to the default flat or strategy switch path)
 //	"priority"     priority sections (urgent/high/medium/low/none)
 //	"tag"          sections keyed off the first tag of each task
+//	"tag:X"        boolean partition: tasks tagged X go in "tag:X",
+//	               tasks NOT tagged X go in "other"
 //	"id-range:N"   sections of N ids each ("1-N", "N+1-2N", …)
 //
 // Empty/whitespace is treated as the no-op no-flag path. Unknown
 // keys surface a usage error with the supported list so the user
-// can fix the typo quickly. Future extensions (e.g. "tag:work" for
-// a single-tag boolean partition) slot in here without disturbing
-// the strategy switch above.
+// can fix the typo quickly.
+//
+// "tag:X" is the SINGLE-tag boolean partition — different from
+// "tag" (which sections by every first-tag value). Useful when the
+// user wants to highlight ONE tag in the archive (e.g. "show me
+// what I shipped tagged 'release' vs everything else") without
+// generating a section per distinct tag in the batch. Tag matching
+// is case-insensitive, same convention as `tsk ls --tag`.
 //
 // "id-range:N" is the id-axis sister of priority/tag bucketing:
 // archived tasks are grouped into fixed-width id windows ("1-50",
@@ -571,7 +582,46 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 		}
 		return makeIDRangeBucketFn(n), nil
 	}
-	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, id-range:N)", raw)
+	// "tag:X" — single-tag boolean partition.
+	if strings.HasPrefix(lower, "tag:") {
+		tag := trimmed[len("tag:"):]
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			return nil, usageErrorf("--bucket-by tag:X requires a tag name, got %q", raw)
+		}
+		return makeTagFilterBucketFn(tag), nil
+	}
+	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, id-range:N)", raw)
+}
+
+// makeTagFilterBucketFn returns a bucketFn that PARTITIONS tasks
+// into exactly two sections: "tag:X" for tasks carrying tag X
+// (case-insensitive match, same convention as `tsk ls --tag`), and
+// "other" for everything else.
+//
+// Why this rather than "tag" (which sections by every first-tag
+// value)? Because in real archive workflows the user often wants
+// to call out ONE tag — "what shipped tagged release" or "what's
+// in the work bucket vs personal bucket" — without scattering the
+// archive across one section per distinct tag in the batch. The
+// boolean partition keeps the layout to two clean buckets, which
+// is the right shape for a "highlight this one tag" review.
+//
+// Sort keys: tag:X gets 1 so it sorts BEFORE "other" (the user
+// asked for it; they want it on top). "other" gets 2.
+//
+// Empty tag is rejected at resolveBucketByKey — we never get
+// here with one.
+func makeTagFilterBucketFn(tag string) bucketFn {
+	wantLower := strings.ToLower(tag)
+	return func(t model.Task) (string, int) {
+		for _, tg := range t.Tags {
+			if strings.ToLower(tg) == wantLower {
+				return "tag:" + tag, 1
+			}
+		}
+		return "other", 2
+	}
 }
 
 // makeIDRangeBucketFn returns a bucketFn that groups tasks into
