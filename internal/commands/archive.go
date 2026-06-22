@@ -59,9 +59,12 @@ func newArchiveCmd() *cobra.Command {
 			"                  rows. Same '## undated' bucket policy as weekly.\n" +
 			"  quarterly       group into '## YYYY-Q#' sections (Q1=Jan-Mar, Q2=Apr-Jun,\n" +
 			"                  Q3=Jul-Sep, Q4=Oct-Dec) — fiscal-quarter scannability for\n" +
-			"                  retro reviews. Same '## undated' bucket policy.\n\n" +
-			"daily/weekly/monthly/quarterly is purely a layout choice — IDs, content, and\n" +
-			"round-trip semantics are identical; switching strategies later just changes\n" +
+			"                  retro reviews. Same '## undated' bucket policy.\n" +
+			"  yearly          group into '## YYYY' sections — coarsest scannability for\n" +
+			"                  multi-year stores where even quarterly produces too many\n" +
+			"                  sections. Same '## undated' bucket policy.\n\n" +
+			"daily/weekly/monthly/quarterly/yearly is purely a layout choice — IDs, content,\n" +
+			"and round-trip semantics are identical; switching strategies later just changes\n" +
 			"how the NEXT batch is placed in the file. Existing archive contents are\n" +
 			"preserved verbatim (no re-bucketing of historical data).",
 		Args: cobra.NoArgs,
@@ -159,6 +162,10 @@ func newArchiveCmd() *cobra.Command {
 				if err := writeBucketedArchive(archivePath, arch, archived, bucketByQuarter); err != nil {
 					return fmt.Errorf("save quarterly archive: %w", err)
 				}
+			case "yearly":
+				if err := writeBucketedArchive(archivePath, arch, archived, bucketByYear); err != nil {
+					return fmt.Errorf("save yearly archive: %w", err)
+				}
 			default:
 				arch.ReplaceTasks(append(arch.Tasks, archived...))
 				if err := arch.Save(); err != nil {
@@ -179,7 +186,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&olderThan, "older-than", "30d", "only archive tasks completed more than this ago (e.g. 7d, 2w, 1m)")
 	cmd.Flags().BoolVar(&all, "all", false, "archive every Done task regardless of age")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
-	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly (one bucket per fiscal quarter)")
+	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
 	return cmd
 }
@@ -346,6 +353,25 @@ func bucketByQuarter(t model.Task) (string, int) {
 	y, m, _ := t.Completed.Date()
 	q := (int(m)-1)/3 + 1
 	return fmt.Sprintf("%04d-Q%d", y, q), y*10 + q
+}
+
+// bucketByYear groups tasks by calendar year (in the time zone of
+// the Completed timestamp). The coarsest sibling of the bucketed
+// strategies: one section per calendar year. Useful for multi-year
+// stores where even quarterly produces too many sections — e.g. a
+// long-running personal task file that wants "what did I get done
+// in 2024?" / "what about 2025?" navigation.
+//
+// Section header is "YYYY" — no decoration, since the year IS the
+// bucket key. SortKey is the year itself (already int, already
+// sorts chronologically). Year-boundary safety is trivial because
+// the bucket boundary IS the year.
+func bucketByYear(t model.Task) (string, int) {
+	if t.Completed == nil {
+		return "undated", 0
+	}
+	y, _, _ := t.Completed.Date()
+	return fmt.Sprintf("%04d", y), y
 }
 
 // writeBucketedArchive renders the archive file with the newly-
