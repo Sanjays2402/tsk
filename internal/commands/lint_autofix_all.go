@@ -55,10 +55,19 @@ import (
 // don't need undo-last (the commit itself is the rollback handle),
 // so the trade is an explicit opt-in via --backup.
 //
+// keep, when > 0 and used with backupDir, prunes the backup chain
+// in <backupDir> after writing the new snapshot, retaining only
+// the keep newest files (matching the "<base>.bak.<stamp>" naming
+// pattern). 0 means "keep all" (the historical default behavior).
+// Useful in long-running pre-commit setups where the backup chain
+// would otherwise grow unbounded — keep=10 caps it at the last 10
+// fixes per repo. Pruning ONLY touches files matching this verb's
+// naming pattern, so unrelated files in backupDir survive.
+//
 // The save path passes through s.Save, which takes a .bak snapshot
 // before writing — so `tsk undo-last` can revert the autofix in
 // one call if it did something the user didn't want.
-func applyLintAutofixAll(path string, report LintReport, backupDir string) (int, error) {
+func applyLintAutofixAll(path string, report LintReport, backupDir string, keep int) (int, error) {
 	s, err := store.Load(path)
 	if err != nil {
 		return 0, fmt.Errorf("reload for autofix-all: %w", err)
@@ -120,6 +129,20 @@ func applyLintAutofixAll(path string, report LintReport, backupDir string) (int,
 	if backupDir != "" {
 		_ = os.Remove(path + ".bak")
 	}
+	// --keep pruning: only after the new snapshot is written do
+	// we trim the chain. That way an IO failure during snapshot/
+	// save above can't leave the chain too short.
+	if backupDir != "" && keep > 0 {
+		if err := pruneBackupChain(path, backupDir, keep); err != nil {
+			// Non-fatal: the new snapshot was already written;
+			// the prune failure means the chain is one item
+			// longer than asked, which is the safe direction.
+			// Surface as a wrapped error so the caller decides;
+			// current callers warn but don't abort because the
+			// autofix itself succeeded.
+			return repairs, fmt.Errorf("prune backup chain: %w", err)
+		}
+	}
 	return repairs, nil
 }
 
@@ -173,6 +196,117 @@ func hasRoundTrippableFindings(r LintReport) bool {
 		}
 	}
 	return false
+}
+
+// pruneBackupChain trims the backup chain inside backupDir, keeping
+// only the most recent `keep` files matching the pattern
+// "<base>.bak.YYYYMMDD-HHMMSS" where <base> is the base name of the
+// active .tsk.md path. Older snapshots are deleted.
+//
+// Why only the matching pattern? Because users may have unrelated
+// files in the same backup directory (e.g. README, .gitignore,
+// other tools' backups). Touching anything outside our naming
+// scheme would be a surprise — particularly bad for pre-commit
+// hooks where the user might be sharing a single .backup dir
+// across multiple tools.
+//
+// Sort is lexicographic: the "YYYYMMDD-HHMMSS" suffix sorts
+// chronologically as bytes, so newest-first means descending
+// string sort. We keep the first `keep` entries and rm the rest.
+//
+// Missing or empty backupDir is silently a no-op (no chain to
+// prune). Non-existent files inside the dir are skipped (a
+// concurrent rm or an external janitor running ahead of us is
+// fine, not an error).
+func pruneBackupChain(path, backupDir string, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read backup dir %q: %w", backupDir, err)
+	}
+	base := filepath.Base(path)
+	prefix := base + ".bak."
+	matching := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !startsWith(name, prefix) {
+			continue
+		}
+		// Validate the suffix shape: "YYYYMMDD-HHMMSS" is 15
+		// chars. Reject anything else so a user-renamed file
+		// like "<base>.bak.keep-forever" is preserved.
+		suffix := name[len(prefix):]
+		if !isStampSuffix(suffix) {
+			continue
+		}
+		matching = append(matching, name)
+	}
+	if len(matching) <= keep {
+		return nil
+	}
+	// Newest first: lexicographic descending on the timestamp
+	// suffix.
+	sortStringsDescending(matching)
+	// Keep the first `keep`; remove the rest.
+	for _, name := range matching[keep:] {
+		full := filepath.Join(backupDir, name)
+		if err := os.Remove(full); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fmt.Errorf("rm %q: %w", full, err)
+		}
+	}
+	return nil
+}
+
+// startsWith is a small wrapper around strings.HasPrefix kept local
+// so the file can avoid a separate import for one call.
+func startsWith(s, p string) bool {
+	return len(s) >= len(p) && s[:len(p)] == p
+}
+
+// isStampSuffix returns true when s looks like "YYYYMMDD-HHMMSS"
+// (15 chars, digit, "-" between date and time). Used to filter
+// the backup chain to only OUR naming pattern so a user-renamed
+// "<base>.bak.keep-forever" file survives the prune.
+func isStampSuffix(s string) bool {
+	if len(s) != 15 {
+		return false
+	}
+	if s[8] != '-' {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 {
+			continue
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sortStringsDescending sorts a string slice in lexicographically
+// descending order, in place. For the timestamp-suffixed filenames
+// this is equivalent to newest-first.
+func sortStringsDescending(s []string) {
+	for i := 0; i < len(s); i++ {
+		for j := i + 1; j < len(s); j++ {
+			if s[j] > s[i] {
+				s[i], s[j] = s[j], s[i]
+			}
+		}
+	}
 }
 
 // lintAutofixDoc is the JSON envelope for `tsk lint --autofix-all

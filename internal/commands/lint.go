@@ -48,6 +48,7 @@ func newLintCmd() *cobra.Command {
 		autofixAll bool
 		depCycles  bool
 		backup     string
+		backupKeep int
 	)
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -89,6 +90,13 @@ who want one-shot undo should keep the default (no --backup);
 pre-commit users typically have the commit itself as the
 rollback handle, so the trade is an opt-in.
 
+Pass --keep N with --backup to cap the backup chain at N
+newest snapshots — older ones are pruned after each successful
+autofix-all run. 0 (the default) keeps every snapshot
+indefinitely. Pruning ONLY touches files matching the
+'<base>.bak.YYYYMMDD-HHMMSS' naming pattern, so unrelated
+files in the backup directory are preserved.
+
 Pass --json for a stable machine-readable report (CI / pre-commit
 hook friendly). When combined with --autofix-all, the envelope
 folds findings + repairs_applied + backup_dir into a SINGLE JSON
@@ -124,6 +132,12 @@ not fixed, 2 bad invocation.
 			if backup != "" && !autofixAll {
 				return usageErrorf("--backup only applies to --autofix-all (the writing-fix path)")
 			}
+			if backupKeep < 0 {
+				return usageErrorf("--keep must be >= 0, got %d", backupKeep)
+			}
+			if backupKeep > 0 && backup == "" {
+				return usageErrorf("--keep requires --backup (it prunes the explicit backup chain)")
+			}
 			// --autofix-all --json: emit one coherent envelope with
 			// findings + repairs_applied + backup_dir so the entire
 			// pre-commit / CI signal is machine-readable in a single
@@ -133,7 +147,7 @@ not fixed, 2 bad invocation.
 			if autofixAll && asJSON {
 				applied := 0
 				if len(report.Findings) > 0 {
-					applied, err = applyLintAutofixAll(path, report, backup)
+					applied, err = applyLintAutofixAll(path, report, backup, backupKeep)
 					if err != nil {
 						return err
 					}
@@ -150,7 +164,7 @@ not fixed, 2 bad invocation.
 				printLintReport(cmd.OutOrStdout(), report)
 			}
 			if autofixAll && len(report.Findings) > 0 {
-				applied, err := applyLintAutofixAll(path, report, backup)
+				applied, err := applyLintAutofixAll(path, report, backup, backupKeep)
 				if err != nil {
 					return err
 				}
@@ -179,6 +193,7 @@ not fixed, 2 bad invocation.
 	cmd.Flags().BoolVar(&fix, "fix", false, "re-render the file in canonical form (safe round-trip)")
 	cmd.Flags().BoolVar(&autofixAll, "autofix-all", false, "apply --fix PLUS semantic repairs (currently: backfill missing created: stamps)")
 	cmd.Flags().StringVar(&backup, "backup", "", "for --autofix-all: write the pre-fix snapshot to a timestamped file inside this directory instead of the in-place <Path>.bak (useful in pre-commit setups where stray .bak files would dirty the working tree)")
+	cmd.Flags().IntVar(&backupKeep, "keep", 0, "for --autofix-all --backup: prune the backup chain to retain only the N newest snapshots (0 = keep all)")
 	cmd.Flags().BoolVar(&depCycles, "dep-cycles", false, "scan the DependsOn graph for 3+ node cycles (Tarjan SCC)")
 	return cmd
 }
