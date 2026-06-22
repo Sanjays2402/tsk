@@ -56,10 +56,11 @@ import (
 // the explicit message saves a "why is this empty?" diagnostic loop.
 func newGraphCmd() *cobra.Command {
 	var (
-		format    string
-		open      bool
-		reachable int
-		highlight string
+		format       string
+		open         bool
+		reachable    int
+		highlight    string
+		highlightTag string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -71,14 +72,26 @@ Two output formats:
   --format dot       GraphViz DOT source for piping to ` + "`dot -Tpng`" + `
 
 Filters:
-  --open             skip done tasks and edges to done prereqs
-  --reachable <id>   restrict to the subgraph reachable from <id>
-                     via DependsOn (transitive prereqs + root)
-  --highlight <ids>  (DOT only) wrap one or more nodes in a distinct
-                     gold fill + bold border so they stand out.
-                     Comma-separated id list — single id "7" or
-                     multi "7,3,5" both work; the # prefix is
-                     tolerated.
+  --open                  skip done tasks and edges to done prereqs
+  --reachable <id>        restrict to the subgraph reachable from <id>
+                          via DependsOn (transitive prereqs + root)
+  --highlight <ids>       (DOT only) wrap one or more nodes in a distinct
+                          gold fill + bold border so they stand out.
+                          Comma-separated id list — single id "7" or
+                          multi "7,3,5" both work; the # prefix is
+                          tolerated.
+  --highlight-tag <name>  (DOT only) spotlight every node carrying the
+                          given tag in the SAME gold style. Broader
+                          than --highlight ids: useful when you want
+                          to highlight a logical SLICE of the graph
+                          ("show me everything tagged 'release'")
+                          without listing ids one by one. Case-
+                          insensitive (` + "`tsk ls --tag`" + `'s rules).
+                          Combines with --highlight ids — the spotlight
+                          set is the UNION of both, so you can pin
+                          one specific task on top of a tag-wide
+                          highlight (e.g. "highlight the release tag,
+                          and spotlight #42 inside it").
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
@@ -93,6 +106,8 @@ Examples:
   tsk graph --format dot | dot -Tpng -o deps.png
   tsk graph --format dot --highlight 7   # draw the eye to #7
   tsk graph --format dot --highlight 7,3,5   # spotlight a whole subset
+  tsk graph --format dot --highlight-tag release  # spotlight a whole tag
+  tsk graph --format dot --highlight 42 --highlight-tag release  # union
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -103,6 +118,9 @@ Examples:
 			if highlight != "" && fmtChoice != "dot" {
 				return usageErrorf("--highlight only applies to --format dot (got %s)", fmtChoice)
 			}
+			if highlightTag != "" && fmtChoice != "dot" {
+				return usageErrorf("--highlight-tag only applies to --format dot (got %s)", fmtChoice)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -111,6 +129,7 @@ Examples:
 			if err != nil {
 				return err
 			}
+			highlightSet = mergeHighlightTag(s, highlightSet, highlightTag)
 			edges := collectGraphEdges(s, open)
 			if reachable > 0 {
 				if s.ByID(reachable) == nil {
@@ -125,7 +144,49 @@ Examples:
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
 	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
+	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) spotlight every task carrying this tag (case-insensitive)")
 	return cmd
+}
+
+// mergeHighlightTag extends the highlight set with every task in the
+// store carrying the named tag (case-insensitive). When tag is empty,
+// the set is returned unchanged so callers don't have to branch on
+// "feature in use".
+//
+// The result is the UNION of explicit ids (via --highlight) and
+// tag-matched ids (via --highlight-tag) — both render with the same
+// gold-bold style, so the user sees ONE coherent spotlight group
+// rather than two competing decorations. Matches the documented
+// "combines with --highlight ids" contract.
+//
+// Missing tag (no task in the store carries it) is not an error
+// here: the spotlight is a render decoration, not a hard predicate.
+// Surfacing it as an error would be hostile to "highlight whatever
+// happens to be tagged release" workflows where the tag may legit-
+// imately not exist yet. The graph still renders cleanly; the user
+// notices the missing spotlight and either fixes the tag or the
+// query.
+func mergeHighlightTag(s *store.Store, highlightSet map[int]bool, tag string) map[int]bool {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return highlightSet
+	}
+	if highlightSet == nil {
+		highlightSet = make(map[int]bool)
+	}
+	for _, t := range s.Tasks {
+		if t.HasTag(tag) {
+			highlightSet[t.ID] = true
+		}
+	}
+	if len(highlightSet) == 0 {
+		// All-empty after the tag pass: caller-supplied highlight
+		// was nil AND no task carries the tag. Return nil so
+		// printGraphDOT's "no highlight" branch fires (matches the
+		// parseHighlightCSV contract of returning nil for empty).
+		return nil
+	}
+	return highlightSet
 }
 
 // parseHighlightCSV converts a comma-separated highlight id list to
