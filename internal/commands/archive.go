@@ -30,6 +30,7 @@ func newArchiveCmd() *cobra.Command {
 		dryRun    bool
 		strategy  string
 		mergeInto string
+		bucketBy  string
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -37,6 +38,15 @@ func newArchiveCmd() *cobra.Command {
 		Long: "Move Done tasks out of the active .tsk.md and into a sibling .tsk.archive.md.\n" +
 			"Archived tasks get fresh sequential IDs in the archive file, continuing\n" +
 			"from the archive's existing max ID. Active task IDs do not change.\n\n" +
+			"--bucket-by selects a USER-DEFINED bucket axis instead of the time/id\n" +
+			"axis --strategy uses. Mutually exclusive with --strategy (each defines\n" +
+			"a different bucket axis). Supported keys:\n" +
+			"  priority   one section per priority (urgent/high/medium/low). Sorted\n" +
+			"             descending so urgent sections come first.\n" +
+			"  tag        one section per FIRST tag of each archived task; untagged\n" +
+			"             tasks fall into '## untagged'. One-task-one-bucket — picking\n" +
+			"             the first tag is the most predictable interpretation when a\n" +
+			"             task has multiple tags.\n\n" +
 			"--since-id <N> selects by ID instead of time: archive every Done task\n" +
 			"with id < N. The 'id-axis' sister of --older-than's time-axis cutoff —\n" +
 			"useful when you want to clean up a legacy block of work (e.g. 'everything\n" +
@@ -96,6 +106,19 @@ func newArchiveCmd() *cobra.Command {
 				// ok
 			default:
 				return usageErrorf("unknown --strategy %q (want flat, daily, weekly, monthly, quarterly, or yearly)", strategy)
+			}
+			// --bucket-by is a user-supplied non-time/id axis (e.g.
+			// priority, tag) that's mutually exclusive with
+			// --strategy: the two answer different organization
+			// questions (when did it happen vs. what category).
+			// Combining them would muddle the layout contract.
+			bucketBy = strings.TrimSpace(bucketBy)
+			if bucketBy != "" && strategy != "flat" {
+				return usageErrorf("--bucket-by and --strategy are mutually exclusive (each defines a different bucket axis)")
+			}
+			bucketFunc, err := resolveBucketByKey(bucketBy)
+			if err != nil {
+				return err
 			}
 			// --since-id is mutually exclusive with --all and --older-than:
 			// each is a different selection axis (id, all-of-them, time)
@@ -159,7 +182,11 @@ func newArchiveCmd() *cobra.Command {
 			}
 
 			if dryRun {
-				pf(out, "would archive %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, strategy)
+				summary := strategy
+				if bucketBy != "" {
+					summary = fmt.Sprintf("bucket-by=%s", bucketBy)
+				}
+				pf(out, "would archive %d task(s) → %s (%s)\n", len(archived), archivePath, summary)
 				for _, t := range archived {
 					pf(out, "  #%d %s\n", t.ID, t.Title)
 				}
@@ -202,6 +229,12 @@ func newArchiveCmd() *cobra.Command {
 					return fmt.Errorf("save yearly archive: %w", err)
 				}
 			default:
+				if bucketFunc != nil {
+					if err := writeBucketedArchive(archivePath, arch, archived, bucketFunc); err != nil {
+						return fmt.Errorf("save bucket-by archive: %w", err)
+					}
+					break
+				}
 				arch.ReplaceTasks(append(arch.Tasks, archived...))
 				if err := arch.Save(); err != nil {
 					return fmt.Errorf("save archive: %w", err)
@@ -213,7 +246,7 @@ func newArchiveCmd() *cobra.Command {
 				return fmt.Errorf("save active: %w", err)
 			}
 
-			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, strategy)
+			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, archiveStrategyLabel(strategy, bucketBy))
 			pf(out, "active tasks: %d\n", len(kept))
 			return nil
 		},
@@ -224,7 +257,19 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
+	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority' (one section per priority) or 'tag' (one section per first tag). Mutually exclusive with --strategy.")
 	return cmd
+}
+
+// archiveStrategyLabel formats the summary label for the success
+// message: "strategy=X" for the standard time/id bucketing, or
+// "bucket-by=Y" when the user opted into a custom axis. Single
+// helper so the dry-run and success paths print the same shape.
+func archiveStrategyLabel(strategy, bucketBy string) string {
+	if bucketBy != "" {
+		return fmt.Sprintf("bucket-by=%s", bucketBy)
+	}
+	return strategy
 }
 
 // resolveCutoff returns the time before which a task is "old enough" to
@@ -408,6 +453,87 @@ func bucketByYear(t model.Task) (string, int) {
 	}
 	y, _, _ := t.Completed.Date()
 	return fmt.Sprintf("%04d", y), y
+}
+
+// bucketByPriority groups tasks by their priority value: "urgent",
+// "high", "medium", "low". Useful for project-rollup archives where
+// you want sections summarizing the IMPORTANCE of what was shipped,
+// not when. Priority order is enforced via the sort key so sections
+// render in descending priority (urgent first), matching `tsk ls`
+// ordering conventions.
+//
+// sortKey: the bucket emitter sorts ASCENDING, so we INVERT the
+// numeric priority to push higher-importance sections to the top.
+// urgent=1, high=2, medium=3, low=4. Matches the Priority enum
+// ordering elsewhere in the codebase (model.Priority) — just
+// inverted at the bucketing layer for human-friendly section order.
+func bucketByPriority(t model.Task) (string, int) {
+	switch t.Priority {
+	case model.PriorityUrgent:
+		return "urgent", 1
+	case model.PriorityHigh:
+		return "high", 2
+	case model.PriorityMedium:
+		return "medium", 3
+	case model.PriorityLow:
+		return "low", 4
+	}
+	// Unreachable for parsed tasks (priority defaults to medium on
+	// load) — kept as a safety net so a future enum variant doesn't
+	// produce a silent empty key.
+	return "unknown", 99
+}
+
+// bucketByFirstTag groups tasks by their FIRST tag (in declaration
+// order). Useful for per-project / per-context rollups: archive
+// tagged "work" lands under "work", "personal" under "personal",
+// untagged lands under "untagged" so nothing is lost.
+//
+// Why first tag rather than every tag (which would duplicate the
+// task across multiple sections)? Because the archive bucketing
+// contract is one-task-one-bucket. Cross-listing would multiply
+// task counts and break id uniqueness inside the archive. Picking
+// the first tag is the most predictable interpretation: it's the
+// PRIMARY label the user gave the task.
+//
+// sortKey: tags don't have an intrinsic numeric order, so we use
+// 0 for all — writeBucketedArchive falls back to lexicographic
+// sort on the key when the sortKeys tie. Untagged sorts after
+// every tagged section via the "untagged" key vs. real names
+// (writeBucketedArchive's sort is stable; "untagged" is
+// alphabetically late among typical English tags but a
+// deterministic sort puts the user-named tags first regardless
+// of where 'u' falls).
+func bucketByFirstTag(t model.Task) (string, int) {
+	if len(t.Tags) == 0 {
+		return "untagged", 0
+	}
+	return t.Tags[0], 0
+}
+
+// resolveBucketByKey turns the user-supplied --bucket-by value into
+// the corresponding bucketFn. Supported keys:
+//
+//	""           no --bucket-by — returns nil (caller falls through
+//	             to the default flat or strategy switch path)
+//	"priority"   priority sections (urgent/high/medium/low/none)
+//	"tag"        sections keyed off the first tag of each task
+//
+// Empty/whitespace is treated as the no-op no-flag path. Unknown
+// keys surface a usage error with the supported list so the user
+// can fix the typo quickly. Future extensions (e.g. "tag:work" for
+// a single-tag boolean partition, or "id-range:50" for id-bucketing)
+// slot in here without disturbing the strategy switch above.
+func resolveBucketByKey(raw string) (bucketFn, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		return nil, nil
+	case "priority", "prio":
+		return bucketByPriority, nil
+	case "tag", "tags":
+		return bucketByFirstTag, nil
+	}
+	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag)", raw)
 }
 
 // writeBucketedArchive renders the archive file with the newly-
