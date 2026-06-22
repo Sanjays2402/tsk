@@ -74,6 +74,7 @@ func newGraphCmd() *cobra.Command {
 		format       string
 		open         bool
 		reachable    int
+		upstreamOf   int
 		highlight    string
 		highlightTag string
 		dim          string
@@ -91,7 +92,23 @@ Two output formats:
 Filters:
   --open                  skip done tasks and edges to done prereqs
   --reachable <id>        restrict to the subgraph reachable from <id>
-                          via DependsOn (transitive prereqs + root)
+                          via DependsOn (transitive prereqs + root) —
+                          the DOWNSTREAM view: "what does #id depend on
+                          all the way down?"
+  --upstream-of <id>      restrict to the subgraph that transitively
+                          DEPENDS ON <id> via DependsOn (every task
+                          whose prereq chain eventually names <id>,
+                          plus <id> itself). The INVERSE of
+                          --reachable: where --reachable shows "what
+                          must finish before #id?", --upstream-of
+                          shows "what's still waiting on #id to finish?".
+                          Pairs with ` + "`tsk depend <id> --upstream`" + `,
+                          which only shows the direct dependents (one
+                          step); --upstream-of walks the full chain in
+                          the same DOT layout as the whole-store graph.
+                          Mutually exclusive with --reachable: each
+                          answers a different direction and combining
+                          them would muddle the subgraph definition.
   --highlight <ids>       (DOT only) wrap one or more nodes in a distinct
                           gold fill + bold border so they stand out.
                           Comma-separated id list — single id "7" or
@@ -133,11 +150,14 @@ Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
 ` + "`--reachable`" + ` is the in-between view: every transitive prereq of
 one root, in the same DOT layout used for the whole-store graph.
+` + "`--upstream-of`" + ` is the inverse view: every transitive dependent
+of one root — the chain still waiting on it.
 
 Examples:
   tsk graph                              # quick text adjacency view
   tsk graph --open                       # only show what's still blocking
-  tsk graph --reachable 7                # the subgraph rooted at #7
+  tsk graph --reachable 7                # the subgraph rooted at #7 (downstream)
+  tsk graph --upstream-of 7              # the subgraph WAITING on #7 (upstream)
   tsk graph --reachable 7 --open         # …filtered to active work
   tsk graph --format dot | dot -Tpng -o deps.png
   tsk graph --format dot --highlight 7   # draw the eye to #7
@@ -147,12 +167,16 @@ Examples:
   tsk graph --format dot --highlight 42 --highlight-tag release  # union
   tsk graph --format dot --dim 1,2       # push #1 and #2 to the background
   tsk graph --format dot --dim-tag scaffold,wip   # push two tags down
+  tsk graph --format dot --upstream-of 7 --highlight 7 | dot -Tsvg > impact.svg
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
 			if err != nil {
 				return err
+			}
+			if reachable > 0 && upstreamOf > 0 {
+				return usageErrorf("--reachable and --upstream-of are mutually exclusive (each defines a different subgraph direction)")
 			}
 			if highlight != "" && fmtChoice != "dot" {
 				return usageErrorf("--highlight only applies to --format dot (got %s)", fmtChoice)
@@ -190,12 +214,25 @@ Examples:
 				}
 				edges = filterReachableEdges(s, edges, reachable)
 			}
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlightSet, dimSet)
+			if upstreamOf > 0 {
+				if s.ByID(upstreamOf) == nil {
+					return fmt.Errorf("no task with id %d in %s", upstreamOf, s.Path)
+				}
+				edges = filterUpstreamOfEdges(s, edges, upstreamOf)
+			}
+			rootDisplay := reachable
+			rootKind := "reachable"
+			if upstreamOf > 0 {
+				rootDisplay = upstreamOf
+				rootKind = "upstream-of"
+			}
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
-	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
+	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn (downstream prereq chain)")
+	cmd.Flags().IntVar(&upstreamOf, "upstream-of", 0, "restrict to the subgraph that transitively DEPENDS ON this task id (upstream dependent chain; inverse of --reachable)")
 	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
 	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
@@ -449,10 +486,8 @@ func collectGraphEdges(s *store.Store, openOnly bool) []graphEdge {
 // Note: this is the "downstream" reachability (where `root` is the
 // source). It answers "what does #X transitively depend on?" — the
 // matching question for the user typing `--reachable 7`. The reverse
-// ("what transitively depends on #X?") is a separate filter we don't
-// add here; users wanting that should reverse the edge direction by
-// piping `tsk graph --format dot` through external tooling, or use
-// `tsk path` for a one-shot lookup.
+// ("what transitively depends on #X?") is `filterUpstreamOfEdges`
+// (powering `--upstream-of`).
 //
 // Edges already sorted by collectGraphEdges; we preserve that order
 // so DOT/ASCII output stays deterministic regardless of which root
@@ -490,6 +525,70 @@ func filterReachableEdges(s *store.Store, edges []graphEdge, root int) []graphEd
 	return filtered
 }
 
+// filterUpstreamOfEdges is the inverse of filterReachableEdges. It
+// keeps only the edges that participate in the UPSTREAM subgraph of
+// `root` — every task whose transitive prereq chain eventually names
+// `root`, plus `root` itself.
+//
+// Algorithm:
+//
+//  1. Build the INCOMING adjacency from the edge list (target -> [sources]).
+//     In tsk's DependsOn convention, an edge A->B means "A depends on B",
+//     so B's incoming sources are the tasks that point at B in their
+//     prereqs. The reverse BFS from root over incoming gives every
+//     transitive dependent.
+//  2. BFS from `root` over the incoming adjacency to compute the
+//     set of every transitively-upstream node.
+//  3. Keep every edge whose source AND target both land in the upstream
+//     set — i.e. the edge participates in the upstream subgraph.
+//     Edges where only one endpoint is upstream (e.g. a dependent's
+//     OTHER prereq that's unrelated to root) are dropped, so the
+//     rendered subgraph stays focused on the chain leading to root.
+//
+// Why "source AND target both upstream" vs "source upstream"? Because
+// upstream nodes typically have additional prereqs OUTSIDE the
+// upstream chain (e.g. "ship feature" depends on "deploy" depends on
+// root, but "ship feature" might also depend on "write release notes"
+// which is unrelated to root). Including those off-chain edges would
+// pollute the impact-analysis view. By restricting to source-AND-
+// target the rendered subgraph is purely the "what's blocked by root"
+// chain — the answer to the user's actual question.
+//
+// Pairs with `tsk depend <id> --upstream`, which only shows the
+// direct dependents (one step). --upstream-of walks the full chain
+// in the same DOT layout used for the whole-store graph.
+func filterUpstreamOfEdges(s *store.Store, edges []graphEdge, root int) []graphEdge {
+	// Build incoming adjacency from the edge list: target -> sources.
+	in := make(map[int][]int)
+	for _, e := range edges {
+		in[e.to] = append(in[e.to], e.from)
+	}
+	// BFS from root over incoming → every transitively-upstream node.
+	visited := map[int]bool{root: true}
+	queue := []int{root}
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+		for _, next := range in[curr] {
+			if visited[next] {
+				continue
+			}
+			visited[next] = true
+			queue = append(queue, next)
+		}
+	}
+	// Keep only edges where BOTH endpoints are in the upstream set —
+	// see the doc comment for the rationale (off-chain prereqs would
+	// dilute the impact-analysis view).
+	filtered := make([]graphEdge, 0, len(edges))
+	for _, e := range edges {
+		if visited[e.from] && visited[e.to] {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 // resolveGraphFormat normalizes --format to the canonical lowercase
 // keyword. Empty defaults to ascii. Unknown values are rejected
 // up-front (usage-coded so main.go exits 2).
@@ -503,21 +602,29 @@ func resolveGraphFormat(raw string) (string, error) {
 	return "", usageErrorf("unknown --format %q (want ascii or dot)", raw)
 }
 
-// emitGraph dispatches based on the resolved format. When reachable
+// emitGraph dispatches based on the resolved format. When rootID
 // is set (>0) and the filter produced zero edges, the message is
 // more specific so the user understands "the root has no prereqs"
-// vs the whole store being empty. highlightSet is the optional
-// focus-id set (only meaningful for DOT format); nil/empty means
-// no highlight. Multi-id sets render every member with the same
+// vs the whole store being empty. rootKind tells the empty branch
+// which direction was asked — "reachable" gets "no dependencies
+// reachable from #N" (downstream), "upstream-of" gets "no tasks
+// depend on #N" (upstream). highlightSet is the optional focus-id
+// set (only meaningful for DOT format); nil/empty means no
+// highlight. Multi-id sets render every member with the same
 // spotlight style, useful for "show me this whole subset" on a
 // complex graph. dimSet is the inverse — ids to render in a quiet
 // gray fill + dashed border to push them to the background; nil/
 // empty means no dim. Overlap with highlightSet is the caller's
 // responsibility to reject (see rejectDimHighlightOverlap).
-func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int, highlightSet, dimSet map[int]bool) error {
+func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, rootID int, rootKind string, highlightSet, dimSet map[int]bool) error {
 	if len(edges) == 0 {
-		if reachable > 0 {
-			pf(w, "no dependencies reachable from #%d\n", reachable)
+		if rootID > 0 {
+			switch rootKind {
+			case "upstream-of":
+				pf(w, "no tasks depend on #%d\n", rootID)
+			default:
+				pf(w, "no dependencies reachable from #%d\n", rootID)
+			}
 			return nil
 		}
 		pln(w, "no dependencies")

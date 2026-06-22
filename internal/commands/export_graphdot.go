@@ -70,5 +70,5 @@ func exportGraphDOT(w io.Writer, s *store.Store, openOnly bool, reachable int, h
 	// reachable from #N" empty-state messages match `tsk graph`
 	// byte-for-byte. emitGraph dispatches based on the format
 	// string; pass "dot" to get DOT output.
-	return emitGraph(w, s, edges, "dot", reachable, highlightSet, dimSet)
+	return emitGraph(w, s, edges, "dot", reachable, "reachable", highlightSet, dimSet)
 }
