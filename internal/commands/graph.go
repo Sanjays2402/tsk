@@ -59,7 +59,7 @@ func newGraphCmd() *cobra.Command {
 		format    string
 		open      bool
 		reachable int
-		highlight int
+		highlight string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -74,8 +74,11 @@ Filters:
   --open             skip done tasks and edges to done prereqs
   --reachable <id>   restrict to the subgraph reachable from <id>
                      via DependsOn (transitive prereqs + root)
-  --highlight <id>   (DOT only) wrap one node in a distinct gold fill
-                     + bold border so the focus task stands out
+  --highlight <ids>  (DOT only) wrap one or more nodes in a distinct
+                     gold fill + bold border so they stand out.
+                     Comma-separated id list — single id "7" or
+                     multi "7,3,5" both work; the # prefix is
+                     tolerated.
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
 depth-first form; this command is the bird's-eye view.
@@ -89,6 +92,7 @@ Examples:
   tsk graph --reachable 7 --open         # …filtered to active work
   tsk graph --format dot | dot -Tpng -o deps.png
   tsk graph --format dot --highlight 7   # draw the eye to #7
+  tsk graph --format dot --highlight 7,3,5   # spotlight a whole subset
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -96,15 +100,16 @@ Examples:
 			if err != nil {
 				return err
 			}
-			if highlight != 0 && fmtChoice != "dot" {
+			if highlight != "" && fmtChoice != "dot" {
 				return usageErrorf("--highlight only applies to --format dot (got %s)", fmtChoice)
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
 			}
-			if highlight > 0 && s.ByID(highlight) == nil {
-				return fmt.Errorf("--highlight: no task with id %d in %s", highlight, s.Path)
+			highlightSet, err := parseHighlightCSV(s, highlight)
+			if err != nil {
+				return err
 			}
 			edges := collectGraphEdges(s, open)
 			if reachable > 0 {
@@ -113,14 +118,56 @@ Examples:
 				}
 				edges = filterReachableEdges(s, edges, reachable)
 			}
-			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlight)
+			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, reachable, highlightSet)
 		},
 	}
 	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
-	cmd.Flags().IntVar(&highlight, "highlight", 0, "(DOT only) draw one node with a distinct fill+border so it stands out")
+	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
 	return cmd
+}
+
+// parseHighlightCSV converts a comma-separated highlight id list to
+// a set (map). Returns nil for an empty input (no highlight). Validates
+// that every id is positive and exists in the store — surfaces typos
+// at the flag layer with a clear error rather than silently rendering
+// a graph with no spotlight.
+//
+// The leading "#" prefix is tolerated so `--highlight #3,#5` works the
+// same as `--highlight 3,5`, matching `tsk depend --on` and friends.
+// Whitespace around tokens is trimmed for forgiving shell-quoted input.
+// Duplicates collapse: `--highlight 3,3,3` is the same as `--highlight 3`.
+//
+// Why a set rather than a slice? printGraphDOT membership lookup is
+// O(1) per node — the rendering loop iterates every used id, and a
+// linear scan over an N-id highlight list would balloon to O(N*M) on
+// big graphs with multi-id spotlights. The set keeps it linear.
+func parseHighlightCSV(s *store.Store, raw string) (map[int]bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	out := make(map[int]bool, 4)
+	for _, tok := range strings.Split(raw, ",") {
+		tok = strings.TrimSpace(tok)
+		tok = strings.TrimPrefix(tok, "#")
+		if tok == "" {
+			continue
+		}
+		n, err := strconvAtoiPos(tok)
+		if err != nil || n == 0 {
+			return nil, usageErrorf("--highlight: invalid task id %q", tok)
+		}
+		if s.ByID(n) == nil {
+			return nil, fmt.Errorf("--highlight: no task with id %d in %s", n, s.Path)
+		}
+		out[n] = true
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // graphEdge represents a single from->to dependency arrow. Sorted
@@ -236,9 +283,12 @@ func resolveGraphFormat(raw string) (string, error) {
 // emitGraph dispatches based on the resolved format. When reachable
 // is set (>0) and the filter produced zero edges, the message is
 // more specific so the user understands "the root has no prereqs"
-// vs the whole store being empty. highlight is the optional focus
-// id (only meaningful for DOT format); 0 means no highlight.
-func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable, highlight int) error {
+// vs the whole store being empty. highlightSet is the optional
+// focus-id set (only meaningful for DOT format); nil/empty means
+// no highlight. Multi-id sets render every member with the same
+// spotlight style, useful for "show me this whole subset" on a
+// complex graph.
+func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, reachable int, highlightSet map[int]bool) error {
 	if len(edges) == 0 {
 		if reachable > 0 {
 			pf(w, "no dependencies reachable from #%d\n", reachable)
@@ -248,7 +298,7 @@ func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, re
 		return nil
 	}
 	if format == "dot" {
-		return printGraphDOT(w, s, edges, highlight)
+		return printGraphDOT(w, s, edges, highlightSet)
 	}
 	return printGraphASCII(w, s, edges)
 }
@@ -327,7 +377,7 @@ func printGraphRow(w io.Writer, s *store.Store, from int, deps []int) {
 //   - done tasks: filled gray (the dep is satisfied)
 //   - open with at least one open prereq (blocked): red outline
 //   - open with no open prereqs (actionable): default outline
-//   - highlight target (when highlight > 0): gold fill + bold black
+//   - highlight target (when id is in highlightSet): gold fill + bold black
 //     border, OVERRIDES every other style. Picked because gold/amber
 //     reads as the "this one's important" color in DOT renders
 //     without colliding with the red "blocked" outline. The bold
@@ -337,14 +387,17 @@ func printGraphRow(w io.Writer, s *store.Store, from int, deps []int) {
 // Long titles are truncated to 40 chars at the node level so the
 // rendered graph stays readable.
 //
-// highlight=0 means no highlight; any positive id wraps that node
-// (whether it's a source, target, or both) in the focus style. The
-// id is silently ignored if it's not actually in the rendered
-// graph — at the command-flag layer we already validated it exists
-// in the store and printed an error if it didn't, so a missing
-// match here means the user filtered it out (e.g. --reachable
-// rooted elsewhere). The graph still renders cleanly in that case.
-func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlight int) error {
+// highlightSet=nil/empty means no highlight; any id present in the
+// set wraps that node (whether it's a source, target, or both) in
+// the focus style. Multi-id sets render every member with the SAME
+// spotlight style — useful for "show me this whole subset" reviews
+// where several related tasks all deserve the eye. Ids missing
+// from the rendered graph (e.g. filtered out by --reachable rooted
+// elsewhere) are silently ignored — at the command-flag layer we
+// already validated existence in the store, so a missing match
+// here is just "you asked to spotlight something not in this
+// subgraph". The graph still renders cleanly in that case.
+func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlightSet map[int]bool) error {
 	pln(w, "digraph tsk {")
 	pln(w, "  rankdir=LR;")
 	pln(w, `  node [shape=box, fontname="Helvetica", fontsize=10];`)
@@ -387,12 +440,14 @@ func printGraphDOT(w io.Writer, s *store.Store, edges []graphEdge, highlight int
 				style = ` color="red"`
 			}
 		}
-		// Highlight overrides every other style so the focus task
-		// always reads as the focus regardless of done/blocked
+		// Highlight overrides every other style so the focus task(s)
+		// always read as the focus regardless of done/blocked
 		// state. Gold/amber + bold border picks the "look here"
 		// signal cleanly without clashing with the red blocked
-		// outline.
-		if highlight > 0 && id == highlight {
+		// outline. Same style for every id in the set so a multi-
+		// task subset reads as ONE highlighted group rather than
+		// per-node noise.
+		if highlightSet[id] {
 			style = ` style="filled,bold", fillcolor="gold", color="black", penwidth=2`
 		}
 		pf(w, "  %d [label=%q%s];\n", id, label, style)

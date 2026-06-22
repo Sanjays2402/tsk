@@ -17,7 +17,7 @@ func newExportCmd() *cobra.Command {
 	var format string
 	var graphReachable int
 	var graphOpen bool
-	var graphHighlight int
+	var graphHighlight string
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export tasks as JSON, JSONL, CSV, Markdown, or GraphViz DOT",
@@ -60,7 +60,7 @@ Graph examples:
 			if (graphReachable > 0 || graphOpen) && chosen != "graph-dot" {
 				return fmt.Errorf("--reachable / --open only apply to --graph-dot (got format %q)", chosen)
 			}
-			if graphHighlight > 0 && chosen != "graph-dot" {
+			if graphHighlight != "" && chosen != "graph-dot" {
 				return fmt.Errorf("--highlight only applies to --graph-dot (got format %q)", chosen)
 			}
 			s, err := resolveStore(cmd, true)
@@ -90,7 +90,7 @@ Graph examples:
 	cmd.Flags().BoolVar(&asGraphDot, "graph-dot", false, "emit GraphViz DOT of the dependency graph (shortcut for --format=graph-dot)")
 	cmd.Flags().IntVar(&graphReachable, "reachable", 0, "for --graph-dot: restrict to the subgraph reachable from this task id")
 	cmd.Flags().BoolVar(&graphOpen, "open", false, "for --graph-dot: only include open tasks and the open deps that block them")
-	cmd.Flags().IntVar(&graphHighlight, "highlight", 0, "for --graph-dot: draw one node with a distinct fill+border so it stands out")
+	cmd.Flags().StringVar(&graphHighlight, "highlight", "", "for --graph-dot: comma-separated task ids to draw with a distinct fill+border")
 	return cmd
 }
 
