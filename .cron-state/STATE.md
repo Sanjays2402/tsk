@@ -505,15 +505,15 @@ plus follow-ons sensible from this tick's features.
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk graph --reachable <id> --json | jq` recipe doc — impact-analysis pattern using the new subgraph envelope
 - [ ] `tsk graph --upstream-of <id> --json | jq '.nodes | length'` recipe doc — quantify the dependent chain
-- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
+- [x] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer) (tick 2026-06-22/1154)
 - [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset before flipping it
-- [ ] `tsk archive --bucket-by tag:work` — single-tag boolean partition (in vs not-in tag), sister of the all-tags `--bucket-by tag`
-- [ ] `tsk archive --bucket-by id-range:50` — id-axis bucketing in fixed-size windows
+- [x] `tsk archive --bucket-by tag:work` — single-tag boolean partition (in vs not-in tag), sister of the all-tags `--bucket-by tag` (tick 2026-06-22/1154)
+- [x] `tsk archive --bucket-by id-range:50` — id-axis bucketing in fixed-size windows (tick 2026-06-22/1154)
 - [ ] `tsk archive --bucket-by priority --sort-tasks-asc` — flip task order within each priority section
 - [ ] `tsk lint --autofix-all --backup <dir> --keep N --json` recipe doc — one-pager on bounded-chain pre-commit setup
 - [ ] `tsk doctor --check-orphan-archive --json | jq` recipe doc — CI-friendly cross-store health-check loop
 - [ ] `tsk doctor --check-orphan-archive --merge-into <file>` — extend the orphan check to a project-rollup archive
-- [ ] `tsk doctor --fix-orphans` — remove dangling deps from archive entries (mirror of lint --autofix-all for the archive)
+- [x] `tsk doctor --fix-orphans` — remove dangling deps from archive entries (mirror of lint --autofix-all for the archive) (tick 2026-06-22/1154)
 - [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc
 - [ ] `tsk preview --from <path> --watch N` — live re-render
 - [ ] `tsk preview --json | jq` recipe doc
@@ -522,9 +522,59 @@ plus follow-ons sensible from this tick's features.
 - [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 - [ ] TUI status-bar elapsed-time render for in-progress tasks
-- [ ] TUI 'r' reload from disk — pick up external edits without restarting the TUI
+- [x] TUI 'r' reload from disk — pick up external edits without restarting the TUI (tick 2026-06-22/1154)
 - [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
 - [ ] TUI sticky header with `tsk wip` count
+
+
+### Polish & DX (added 2026-06-22 tick #22)
+
+Fresh ideas so future ticks have ample sized work. With graph SVG
+now embedded (no GraphViz dep), archive's bucket-by axis fully
+covers all four directions (priority / tag / tag:X / id-range:N),
+TUI gains its 'r' reload, and doctor's orphan-archive cluster
+gains its autofix sister (--fix-orphans). This batch leans into
+the still-unstarted long tail: recipe docs (now four queued —
+the impact-analysis chain, the depend --remove-all chain, the
+lint backup chain, the doctor health-check chain), recurring
+tasks (parking lot), config + multi-file (long-unstarted), TUI
+work (5 items left after r/g/G shipped), plus follow-ons sensible
+from this tick's features (SVG --json, --watch overlay on the
+SVG renderer, more archive bucket axes).
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --format svg --watch N` — live-render SVG every N seconds (file watch + re-emit)
+- [ ] `tsk graph --format svg --output <path>` — write directly to file with proper extension validation (sister of stdout redirection)
+- [ ] `tsk graph --reachable <id> --json | jq` recipe doc — impact-analysis pattern
+- [ ] `tsk graph --upstream-of <id> --json | jq '.nodes | length'` recipe doc — quantify the dependent chain
+- [ ] `tsk pause --all --tag X --priority Y --dry-run` — preview the curated subset (still-unstarted; tag+priority filter combo is tested but not as a documented pattern)
+- [ ] `tsk archive --bucket-by tag:X,Y` — multi-tag CSV variant of tag:X (any-of-these-tags vs others)
+- [ ] `tsk archive --bucket-by priority --sort-tasks-asc` — flip task order within each priority section
+- [ ] `tsk archive --bucket-by id-range:N --merge-into <file>` recipe doc — bucketed multi-project rollup pattern
+- [ ] `tsk lint --autofix-all --backup <dir> --keep N --json` recipe doc — bounded-chain pre-commit one-pager
+- [ ] `tsk doctor --fix-orphans --json` — already works but recipe doc for the CI-gate pattern
+- [ ] `tsk doctor --check-orphan-archive --merge-into <file>` — extend orphan check to a project-rollup archive
+- [ ] `tsk doctor --fix-orphans --dry-run` — preview what would be scrubbed without writing (sister of every other fix verb's dry-run)
+- [ ] `tsk depend --remove-all --json --dry-run | jq` recipe doc — CI preflight pattern
+- [ ] `tsk preview --from <path> --watch N` — live re-render
+- [ ] `tsk preview --json | jq` recipe doc
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI 'C' clone-current-task shortcut (paired with the `tsk clone` CLI verb)
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI 'R' reload-and-clear-filter (capital R) — sister of lowercase r which preserves filter
 
 
 ## Known footguns the loop has run into
@@ -2624,3 +2674,84 @@ pre-commit cluster is now complete (--backup with keep-N pruning
 plus --json envelope); doctor gains its first cross-store check
 (--check-orphan-archive); archive gains its first non-time
 bucket axis (--bucket-by priority|tag).
+
+### 2026-06-22 11:54 PT (tick #22)
+
+Shipped 5 features. Full quality gate (gofmt + vet + build + go
+test ./...) green before push. Single revertible commit per feature.
+Landed a729b05..11f9f3f on origin/main; verified via `git log
+origin/main | head`.
+
+- `graph --format svg`              — 58c69c7 feat(graph): --format svg emits self-contained SVG (no GraphViz dep)
+- `archive --bucket-by id-range:N`  — 8956a97 feat(archive): id-axis fixed-width id-window bucketing
+- `archive --bucket-by tag:X`       — 03f86fc feat(archive): single-tag boolean partition
+- TUI 'r' reload                    — 61203c1 feat(tui): 'r' key reloads .tsk.md from disk without restart
+- `doctor --fix-orphans`            — 11f9f3f feat(doctor): --fix-orphans scrubs dangling DependsOn refs from the archive
+
+Notable choices:
+- The SVG renderer is a tiny embedded layered-layout (Sugiyama-ish):
+  layer 0 = leaf prereqs (no in-graph deps), nodes-within-layer sort
+  by id ascending, cycle-safe via bounded iteration. Intentionally
+  simple — for production layouts `--format dot | dot -Tsvg` still
+  wins (GraphViz has decades of heuristics), but the embedded path
+  shines on CI containers and fresh dev boxes without graphviz.
+  Reused the DOT renderer's styling intent for visual consistency:
+  done=gray, blocked=red border, dim=muted+dashed, highlight=gold
+  override. --highlight/--dim/--highlight-tag/--dim-tag guards
+  updated to accept svg alongside dot. XML-escapes the five
+  reserved chars in titles so a "fix <bug> in &lib" task name
+  doesn't break the SVG parser.
+- id-range:N parses via a HasPrefix branch in resolveBucketByKey,
+  closure-factory pattern (makeIDRangeBucketFn) so the switch stays
+  compact. Window labels "1-N", "N+1-2N" sort naturally because
+  sortKey = window start. id=0 collapses into "id:0" (no-id legacy
+  bucket) so nothing is silently dropped. N <= 0 / non-int / empty
+  all rejected at exit 2 with informative messages.
+- tag:X is the SAME pattern as id-range:N (HasPrefix + closure
+  factory). Boolean partition: "tag:X" (sort=1) vs "other" (sort=2)
+  so the filter tag always renders FIRST. Case-insensitive match
+  (same convention as `tsk ls --tag`), label preserves user case.
+  Empty tag rejected at exit 2. When every task matches, no empty
+  "## other" section emitted (the bucket map only holds non-empty
+  buckets).
+- TUI 'r' preserves selection BY ID across reload: if the previously-
+  selected task still exists in the new store, cursor snaps to it;
+  otherwise falls back to 0. This is the least-surprising behavior —
+  the user's mental anchor is the TASK, not the row index. A new
+  high-pri task added externally won't displace focus. Transient
+  state (a.editing, a.form, a.confirm) is reset so a half-typed
+  form doesn't dangle. Error path surfaces into status footer
+  rather than crashing.
+- doctor --fix-orphans requires --check-orphan-archive (the scan
+  must run first; enforced at exit 2 with a clear usage error).
+  Per-INDIVIDUAL-ref counting matches warning granularity (one
+  archive task with two dangling deps counts as 2). Post-fix
+  Warnings are stripped from the in-memory report (the dangling
+  refs are gone; keeping the warnings would lie about state).
+  Goes through archive.Save() so .bak snapshot is atomic — undo-last
+  on the archive can revert the fix. Adds explicit "REPAIRS:" block
+  to the human-readable path so the signal isn't buried.
+
+Files added this tick: internal/commands/graph_svg.go (266 lines
+including doc comments), internal/commands/graph_svg_test.go (7
+tests), internal/commands/archive_bucket_by_id_range_test.go (5
+tests), internal/commands/archive_bucket_by_tag_filter_test.go
+(5 tests), internal/tui/reload_test.go (4 tests),
+internal/commands/doctor_fix_orphans.go (157 lines), and
+internal/commands/doctor_fix_orphans_test.go (7 tests, including
+.bak-snapshot regression).
+
+Files modified: internal/commands/graph.go (format gate, SVG
+dispatch, help text), internal/commands/archive.go (bucket parsers
++ help text), internal/commands/doctor.go (fix-orphans flag + RunE
+wiring + REPAIRS line), internal/tui/keys.go (Reload binding),
+internal/tui/app.go (handleNavKey wiring + reloadFromDisk).
+
+This is the tenth batch shipped directly on main. Quality gate
+ran clean before push; every commit on origin/main is still a
+single revertible feature slice. The graph format triad is now
+complete (ascii/dot/svg, all self-contained). The archive bucket-by
+axis covers all four planned forms (priority/tag/tag:X/id-range:N).
+TUI gains its first session-state-preserving reload primitive.
+Doctor's orphan-archive cluster gains its autofix sister so the
+detection + repair loop is a single command.
