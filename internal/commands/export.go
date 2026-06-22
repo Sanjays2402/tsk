@@ -106,9 +106,9 @@ Graph examples:
 	cmd.Flags().IntVar(&graphReachable, "reachable", 0, "for --graph-dot: restrict to the subgraph reachable from this task id")
 	cmd.Flags().BoolVar(&graphOpen, "open", false, "for --graph-dot: only include open tasks and the open deps that block them")
 	cmd.Flags().StringVar(&graphHighlight, "highlight", "", "for --graph-dot: comma-separated task ids to draw with a distinct fill+border")
-	cmd.Flags().StringVar(&graphHighlightTag, "highlight-tag", "", "for --graph-dot: spotlight every task carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&graphHighlightTag, "highlight-tag", "", "for --graph-dot: comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
 	cmd.Flags().StringVar(&graphDim, "dim", "", "for --graph-dot: comma-separated task ids to render in a quiet gray fill+dashed border")
-	cmd.Flags().StringVar(&graphDimTag, "dim-tag", "", "for --graph-dot: push every task carrying this tag to the background (case-insensitive)")
+	cmd.Flags().StringVar(&graphDimTag, "dim-tag", "", "for --graph-dot: comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	return cmd
 }
 

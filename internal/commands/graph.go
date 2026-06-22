@@ -97,13 +97,15 @@ Filters:
                           Comma-separated id list — single id "7" or
                           multi "7,3,5" both work; the # prefix is
                           tolerated.
-  --highlight-tag <name>  (DOT only) spotlight every node carrying the
-                          given tag in the SAME gold style. Broader
-                          than --highlight ids: useful when you want
-                          to highlight a logical SLICE of the graph
-                          ("show me everything tagged 'release'")
-                          without listing ids one by one. Case-
-                          insensitive (` + "`tsk ls --tag`" + `'s rules).
+  --highlight-tag <list>  (DOT only) spotlight every node carrying any
+                          of the listed tags in the SAME gold style.
+                          Comma-separated CSV — 'release' matches one
+                          tag, 'release,p0' matches the UNION of both.
+                          Broader than --highlight ids: useful when
+                          you want to highlight a logical SLICE of
+                          the graph ("show me everything tagged
+                          'release'") without listing ids one by one.
+                          Case-insensitive (` + "`tsk ls --tag`" + `'s rules).
                           Combines with --highlight ids — the spotlight
                           set is the UNION of both, so you can pin
                           one specific task on top of a tag-wide
@@ -118,11 +120,13 @@ Filters:
                           Mutually exclusive with --highlight on the
                           same id (contradictory intent: a single
                           node can't be both spotlighted and dimmed).
-  --dim-tag <name>        (DOT only) push every node carrying the given
-                          tag to the background in the SAME dim style.
-                          Sister of --highlight-tag for the inverse
-                          verb. Combines with --dim ids (union);
-                          rejected for overlap with --highlight or
+  --dim-tag <list>        (DOT only) push every node carrying any of
+                          the listed tags to the background in the
+                          SAME dim style. Comma-separated CSV (same
+                          shape as --highlight-tag). Sister of
+                          --highlight-tag for the inverse verb.
+                          Combines with --dim ids (union); rejected
+                          for overlap with --highlight or
                           --highlight-tag the same way --dim is.
 
 Use ` + "`tsk depend <id> --tree`" + ` instead if you want one branch in
@@ -139,9 +143,10 @@ Examples:
   tsk graph --format dot --highlight 7   # draw the eye to #7
   tsk graph --format dot --highlight 7,3,5   # spotlight a whole subset
   tsk graph --format dot --highlight-tag release  # spotlight a whole tag
+  tsk graph --format dot --highlight-tag release,p0   # union of two tags
   tsk graph --format dot --highlight 42 --highlight-tag release  # union
   tsk graph --format dot --dim 1,2       # push #1 and #2 to the background
-  tsk graph --format dot --dim-tag scaffold # push everything tagged scaffold
+  tsk graph --format dot --dim-tag scaffold,wip   # push two tags down
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -192,67 +197,103 @@ Examples:
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn")
 	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
-	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) spotlight every task carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
-	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT only) push every task carrying this tag to the background (case-insensitive)")
+	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT only) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	return cmd
 }
 
 // mergeHighlightTag extends the highlight set with every task in the
-// store carrying the named tag (case-insensitive). When tag is empty,
-// the set is returned unchanged so callers don't have to branch on
-// "feature in use".
+// store carrying any of the named tags (case-insensitive). When the
+// raw input is empty, the set is returned unchanged so callers don't
+// have to branch on "feature in use".
+//
+// The raw input is a CSV of one or more tag names (comma-separated):
+//
+//	mergeHighlightTag(s, set, "")           → no-op
+//	mergeHighlightTag(s, set, "release")    → single tag
+//	mergeHighlightTag(s, set, "release,p0") → UNION of both tags
+//
+// Multi-tag matches a TASK if it carries ANY of the listed tags
+// (logical OR). Useful for "spotlight everything tagged release OR
+// p0" without typing ids individually. Mirrors the multi-id CSV
+// extension on --highlight that landed in tick #17.
 //
 // The result is the UNION of explicit ids (via --highlight) and
-// tag-matched ids (via --highlight-tag) — both render with the same
-// gold-bold style, so the user sees ONE coherent spotlight group
-// rather than two competing decorations. Matches the documented
-// "combines with --highlight ids" contract.
+// every tag-matched id (via --highlight-tag CSV) — all render with
+// the same gold-bold style, so the user sees ONE coherent spotlight
+// group rather than competing decorations.
 //
-// Missing tag (no task in the store carries it) is not an error
-// here: the spotlight is a render decoration, not a hard predicate.
-// Surfacing it as an error would be hostile to "highlight whatever
-// happens to be tagged release" workflows where the tag may legit-
-// imately not exist yet. The graph still renders cleanly; the user
-// notices the missing spotlight and either fixes the tag or the
-// query.
-func mergeHighlightTag(s *store.Store, highlightSet map[int]bool, tag string) map[int]bool {
-	return mergeTagIntoSet(s, highlightSet, tag)
+// Missing tag (none of the listed names match any task in the
+// store) is not an error here: the spotlight is a render decoration,
+// not a hard predicate. Empty/whitespace tokens in the CSV are
+// quietly dropped so `--highlight-tag release,,p0` doesn't surprise.
+func mergeHighlightTag(s *store.Store, highlightSet map[int]bool, tagsRaw string) map[int]bool {
+	return mergeTagsIntoSet(s, highlightSet, tagsRaw)
 }
 
 // mergeDimTag is the inverse sister: extend the DIM set with every
-// task carrying the named tag. Same union semantics, same case-
-// insensitive match, same "missing tag is not an error" policy.
-// Shares the mergeTagIntoSet core with mergeHighlightTag so the
+// task carrying any of the named tags. Same CSV semantics, same
+// case-insensitive match, same "missing tag is not an error" policy.
+// Shares the mergeTagsIntoSet core with mergeHighlightTag so the
 // two flags behave symmetrically and a fix to one applies to both.
-func mergeDimTag(s *store.Store, dimSet map[int]bool, tag string) map[int]bool {
-	return mergeTagIntoSet(s, dimSet, tag)
+func mergeDimTag(s *store.Store, dimSet map[int]bool, tagsRaw string) map[int]bool {
+	return mergeTagsIntoSet(s, dimSet, tagsRaw)
 }
 
-// mergeTagIntoSet is the shared "extend an id-set by tag match" body
-// behind --highlight-tag and --dim-tag. Returns the original set
-// unchanged when tag is empty (the "feature not in use" branch).
+// mergeTagsIntoSet is the shared "extend an id-set by tag-CSV match"
+// body behind --highlight-tag and --dim-tag. Returns the original set
+// unchanged when the input is empty (the "feature not in use" branch).
 // When the merged set is empty (caller-supplied set was nil AND no
-// task carries the tag), returns nil so downstream styling branches
-// fire the "no match" path — matches parseHighlightCSV's "empty
-// returns nil" contract so the two helpers compose seamlessly.
-func mergeTagIntoSet(s *store.Store, set map[int]bool, tag string) map[int]bool {
-	tag = strings.TrimSpace(tag)
-	if tag == "" {
+// task carries any of the listed tags), returns nil so downstream
+// styling branches fire the "no match" path — matches parseHighlight
+// CSV's "empty returns nil" contract so the two helpers compose
+// seamlessly.
+//
+// Tokenization: comma-split, trim whitespace, drop empties. So
+// "release, p0," produces the same parse as "release,p0". Case-
+// insensitive match is delegated to model.Task.HasTag (the same
+// resolver `tsk ls --tag` uses).
+func mergeTagsIntoSet(s *store.Store, set map[int]bool, tagsRaw string) map[int]bool {
+	tags := splitTagCSV(tagsRaw)
+	if len(tags) == 0 {
 		return set
 	}
 	if set == nil {
 		set = make(map[int]bool)
 	}
 	for _, t := range s.Tasks {
-		if t.HasTag(tag) {
-			set[t.ID] = true
+		for _, tag := range tags {
+			if t.HasTag(tag) {
+				set[t.ID] = true
+				break
+			}
 		}
 	}
 	if len(set) == 0 {
 		return nil
 	}
 	return set
+}
+
+// splitTagCSV tokenizes the CSV tag input. Empty / whitespace-only
+// tokens are dropped so `--highlight-tag release,,p0` (a typo) and
+// `--highlight-tag release` both work without surprises. Returns
+// an empty slice when the input has no usable tokens.
+func splitTagCSV(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // parseHighlightCSV converts a comma-separated highlight id list to
