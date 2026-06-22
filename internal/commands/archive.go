@@ -25,6 +25,7 @@ const archiveHeader = "# tsk archive\n"
 func newArchiveCmd() *cobra.Command {
 	var (
 		olderThan string
+		sinceID   int
 		all       bool
 		dryRun    bool
 		strategy  string
@@ -36,6 +37,16 @@ func newArchiveCmd() *cobra.Command {
 		Long: "Move Done tasks out of the active .tsk.md and into a sibling .tsk.archive.md.\n" +
 			"Archived tasks get fresh sequential IDs in the archive file, continuing\n" +
 			"from the archive's existing max ID. Active task IDs do not change.\n\n" +
+			"--since-id <N> selects by ID instead of time: archive every Done task\n" +
+			"with id < N. The 'id-axis' sister of --older-than's time-axis cutoff —\n" +
+			"useful when you want to clean up a legacy block of work (e.g. 'everything\n" +
+			"older than the v2 refactor at id #150') without worrying about completion\n" +
+			"timestamps. Combines with --strategy and --merge-into the same way every\n" +
+			"other selector does. Mutually exclusive with --all (intent overlap) and\n" +
+			"with --older-than (two different axes; pick one to keep the selection\n" +
+			"crisp). Tasks WITHOUT a Completed timestamp still qualify if their id\n" +
+			"is below the cutoff — the whole point of an id-axis is to skip the\n" +
+			"time check entirely.\n\n" +
 			"--merge-into <file> writes to a non-default archive file instead of the\n" +
 			"sibling .tsk.archive.md. Useful for per-project rollups (e.g. a yearly or\n" +
 			"per-team archive that several .tsk.md files feed into). The target file is\n" +
@@ -86,6 +97,24 @@ func newArchiveCmd() *cobra.Command {
 			default:
 				return usageErrorf("unknown --strategy %q (want flat, daily, weekly, monthly, quarterly, or yearly)", strategy)
 			}
+			// --since-id is mutually exclusive with --all and --older-than:
+			// each is a different selection axis (id, all-of-them, time)
+			// and combining them would muddle the contract.
+			if sinceID > 0 {
+				if all {
+					return usageErrorf("--since-id and --all are mutually exclusive (each picks a different selection axis)")
+				}
+				// Detect an EXPLICIT --older-than: the default
+				// value is "30d", so we can't just check for
+				// non-empty. cobra's Changed() check is the
+				// idiomatic "did the user pass this flag?"
+				if cmd.Flags().Changed("older-than") {
+					return usageErrorf("--since-id and --older-than are mutually exclusive (id-axis vs time-axis)")
+				}
+			}
+			if sinceID < 0 {
+				return usageErrorf("--since-id must be positive, got %d", sinceID)
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -99,6 +128,12 @@ func newArchiveCmd() *cobra.Command {
 			pred := func(t model.Task) bool {
 				if !t.Done {
 					return false
+				}
+				if sinceID > 0 {
+					// id-axis: archive every Done task with id < cutoff.
+					// Time check skipped entirely (the whole point of
+					// --since-id).
+					return t.ID < sinceID
 				}
 				if !useCutoff {
 					return true // --all
@@ -184,6 +219,7 @@ func newArchiveCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&olderThan, "older-than", "30d", "only archive tasks completed more than this ago (e.g. 7d, 2w, 1m)")
+	cmd.Flags().IntVar(&sinceID, "since-id", 0, "archive every Done task with id < N (id-axis cutoff; sister of --older-than)")
 	cmd.Flags().BoolVar(&all, "all", false, "archive every Done task regardless of age")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
