@@ -90,6 +90,7 @@ func newGraphCmd() *cobra.Command {
 Two output formats:
   --format ascii     adjacency listing (default; one line per task)
   --format dot       GraphViz DOT source for piping to ` + "`dot -Tpng`" + `
+  --format svg       self-contained SVG (embedded renderer; no GraphViz dep)
 
 Filters:
   --open                  skip done tasks and edges to done prereqs
@@ -173,6 +174,8 @@ Examples:
   tsk graph --format dot --dim-tag scaffold,wip   # push two tags down
   tsk graph --format dot --upstream-of 7 --highlight 7 | dot -Tsvg > impact.svg
   tsk graph --format dot --reachable 7 | dot -Tsvg > sub.svg
+  tsk graph --format svg > deps.svg               # self-contained, no graphviz
+  tsk graph --format svg --reachable 7 > sub.svg  # subgraph SVG, no graphviz
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -182,17 +185,17 @@ Examples:
 			if reachable > 0 && upstreamOf > 0 {
 				return usageErrorf("--reachable and --upstream-of are mutually exclusive (each defines a different subgraph direction)")
 			}
-			if highlight != "" && fmtChoice != "dot" {
-				return usageErrorf("--highlight only applies to --format dot (got %s)", fmtChoice)
+			if highlight != "" && fmtChoice != "dot" && fmtChoice != "svg" {
+				return usageErrorf("--highlight only applies to --format dot or svg (got %s)", fmtChoice)
 			}
-			if highlightTag != "" && fmtChoice != "dot" {
-				return usageErrorf("--highlight-tag only applies to --format dot (got %s)", fmtChoice)
+			if highlightTag != "" && fmtChoice != "dot" && fmtChoice != "svg" {
+				return usageErrorf("--highlight-tag only applies to --format dot or svg (got %s)", fmtChoice)
 			}
-			if dim != "" && fmtChoice != "dot" {
-				return usageErrorf("--dim only applies to --format dot (got %s)", fmtChoice)
+			if dim != "" && fmtChoice != "dot" && fmtChoice != "svg" {
+				return usageErrorf("--dim only applies to --format dot or svg (got %s)", fmtChoice)
 			}
-			if dimTag != "" && fmtChoice != "dot" {
-				return usageErrorf("--dim-tag only applies to --format dot (got %s)", fmtChoice)
+			if dimTag != "" && fmtChoice != "dot" && fmtChoice != "svg" {
+				return usageErrorf("--dim-tag only applies to --format dot or svg (got %s)", fmtChoice)
 			}
 			if asJSON && reachable == 0 && upstreamOf == 0 {
 				return usageErrorf("--json only applies to --reachable or --upstream-of (the per-root subgraph paths)")
@@ -239,14 +242,14 @@ Examples:
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
 	}
-	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii or dot")
+	cmd.Flags().StringVar(&format, "format", "ascii", "output format: ascii, dot, or svg (svg uses a self-contained embedded renderer; no GraphViz required)")
 	cmd.Flags().BoolVar(&open, "open", false, "only include open tasks and the open deps that block them")
 	cmd.Flags().IntVar(&reachable, "reachable", 0, "restrict to the subgraph reachable from this task id via DependsOn (downstream prereq chain)")
 	cmd.Flags().IntVar(&upstreamOf, "upstream-of", 0, "restrict to the subgraph that transitively DEPENDS ON this task id (upstream dependent chain; inverse of --reachable)")
-	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT only) comma-separated task ids to draw with a distinct fill+border")
-	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
-	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
-	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT only) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
+	cmd.Flags().StringVar(&highlight, "highlight", "", "(DOT/SVG) comma-separated task ids to draw with a distinct fill+border")
+	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT/SVG) comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
+	cmd.Flags().StringVar(&dim, "dim", "", "(DOT/SVG) comma-separated task ids to render in a quiet gray fill+dashed border")
+	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT/SVG) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
 	return cmd
 }
@@ -603,14 +606,28 @@ func filterUpstreamOfEdges(s *store.Store, edges []graphEdge, root int) []graphE
 // resolveGraphFormat normalizes --format to the canonical lowercase
 // keyword. Empty defaults to ascii. Unknown values are rejected
 // up-front (usage-coded so main.go exits 2).
+//
+// Supported formats:
+//   - "ascii" (default; aliases "text", "txt"): adjacency listing
+//   - "dot"   (alias "graphviz"):              GraphViz DOT source
+//   - "svg":                                    self-contained SVG
+//     emitted directly by a tiny embedded layered-layout renderer
+//     (no GraphViz dependency). Useful for `tsk graph --format svg
+//     > deps.svg` without piping through `dot -Tsvg`. The renderer
+//     is intentionally simple — for production-quality layouts the
+//     DOT format piped to GraphViz still wins, but the embedded
+//     path is great for quick visual inspection in environments
+//     without graphviz installed (CI containers, fresh dev boxes).
 func resolveGraphFormat(raw string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "", "ascii", "text", "txt":
 		return "ascii", nil
 	case "dot", "graphviz":
 		return "dot", nil
+	case "svg":
+		return "svg", nil
 	}
-	return "", usageErrorf("unknown --format %q (want ascii or dot)", raw)
+	return "", usageErrorf("unknown --format %q (want ascii, dot, or svg)", raw)
 }
 
 // emitGraph dispatches based on the resolved format. When rootID
@@ -643,6 +660,9 @@ func emitGraph(w io.Writer, s *store.Store, edges []graphEdge, format string, ro
 	}
 	if format == "dot" {
 		return printGraphDOT(w, s, edges, highlightSet, dimSet)
+	}
+	if format == "svg" {
+		return printGraphSVG(w, s, edges, highlightSet, dimSet)
 	}
 	return printGraphASCII(w, s, edges)
 }
