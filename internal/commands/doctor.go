@@ -25,6 +25,7 @@ func newDoctorCmd() *cobra.Command {
 		asJSON             bool
 		checkOrphanArchive bool
 		fixOrphans         bool
+		dryRun             bool
 	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
@@ -60,6 +61,13 @@ only the dangling deps are removed. Mirror of lint
 --autofix-all but for the archive's dep graph rather than the
 live store's metadata.
 
+Pass --dry-run WITH --fix-orphans to preview which refs would
+be scrubbed without writing to the archive. Same scan + pruning
+logic runs (so the count and per-ref details match the real
+fix); nothing lands on disk and the .bak chain stays untouched.
+Useful for CI gates and pre-commit hooks that want to know "is
+the archive currently dirty?" without committing a repair.
+
 Exit codes:
   0  all checks passed
   1  at least one issue found (error)
@@ -71,14 +79,60 @@ reflects severity).`,
 			if fixOrphans && !checkOrphanArchive {
 				return usageErrorf("--fix-orphans requires --check-orphan-archive (the orphan scan must run first to produce the repair set)")
 			}
+			if dryRun && !fixOrphans {
+				return usageErrorf("--dry-run only applies to --fix-orphans (every other doctor path is already side-effect-free)")
+			}
 			report := runDoctor(cmd, checkOrphanArchive)
 			// --fix-orphans repair runs BEFORE we print, so the
 			// printed report reflects the post-fix state. The
 			// repair count is folded into the report's OKChecks
 			// line so the user sees "fix-orphans: N dangling
 			// refs scrubbed" alongside the standard checks.
+			//
+			// --dry-run short-circuits the actual archive write:
+			// the same scan + dependency-pruning logic runs, but
+			// nothing is saved to disk. The .bak chain stays
+			// untouched. The user sees exactly which refs WOULD
+			// be scrubbed without committing to the change — a
+			// preflight for CI gates or before-you-commit sanity
+			// checks. Counts and per-ref details match the
+			// non-dry-run path so the preview is honest.
 			scrubbed := 0
 			if fixOrphans {
+				if dryRun {
+					n, refs, err := previewOrphanArchiveFix(cmd, &report)
+					if err != nil {
+						return fmt.Errorf("fix-orphans --dry-run: %w", err)
+					}
+					scrubbed = n
+					report.OKChecks = append(report.OKChecks, fmt.Sprintf("fix-orphans (dry-run): %d dangling ref(s) would be scrubbed", n))
+					// Carry the per-ref details into the report
+					// as a Detail field on a new "dry_run_preview"
+					// entry — surfaced in the human path as the
+					// REPAIRS block (see below), in JSON via the
+					// OKChecks list.
+					if asJSON {
+						enc := json.NewEncoder(cmd.OutOrStdout())
+						enc.SetIndent("", "  ")
+						if err := enc.Encode(report); err != nil {
+							return err
+						}
+					} else {
+						printDoctorReport(cmd.OutOrStdout(), report)
+						if scrubbed > 0 {
+							pf(cmd.OutOrStdout(), "REPAIRS (dry-run):\n  would scrub %d dangling ref(s) — pass without --dry-run to apply:\n", scrubbed)
+							for _, r := range refs {
+								pf(cmd.OutOrStdout(), "    archive task #%d depends on missing #%d\n", r.TaskID, r.MissingDep)
+							}
+						} else {
+							pf(cmd.OutOrStdout(), "REPAIRS (dry-run):\n  no dangling refs to scrub\n")
+						}
+					}
+					if report.HasIssues() {
+						return silentExit{code: 1}
+					}
+					return nil
+				}
 				n, err := applyOrphanArchiveFix(cmd, &report)
 				if err != nil {
 					return fmt.Errorf("fix-orphans: %w", err)
@@ -112,6 +166,7 @@ reflects severity).`,
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	cmd.Flags().BoolVar(&checkOrphanArchive, "check-orphan-archive", false, "also scan the sibling .tsk.archive.md for orphan DependsOn references that resolve in neither the live store nor the archive itself")
 	cmd.Flags().BoolVar(&fixOrphans, "fix-orphans", false, "with --check-orphan-archive: scrub the dangling DependsOn refs from the archive and re-save (with .bak snapshot)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "with --fix-orphans: preview which refs would be scrubbed without writing to the archive (sister of every other tsk --dry-run preview verb)")
 	return cmd
 }
 

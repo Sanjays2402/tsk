@@ -150,3 +150,93 @@ func applyOrphanArchiveFix(cmd *cobra.Command, report *DoctorReport) (int, error
 
 	return scrubbed, nil
 }
+
+// OrphanArchiveRef is one (archive-task-id, missing-dep-id) pair
+// in the dry-run preview. Stable shape so the JSON path can grow
+// to expose the list directly without breaking consumers — for
+// now it's used only in the human REPAIRS block, but the type
+// being public makes a future JSON envelope drop-in.
+type OrphanArchiveRef struct {
+	TaskID     int `json:"task_id"`
+	MissingDep int `json:"missing_dep"`
+}
+
+// previewOrphanArchiveFix runs the SAME scan + filter logic as
+// applyOrphanArchiveFix but returns the would-be-scrubbed counts
+// and the per-ref details WITHOUT writing anything to disk. The
+// archive Save() call is the only difference between the two
+// paths — the dependency-pruning logic is identical so the
+// preview is honest about what the real fix would do.
+//
+// Returns:
+//   - count: total individual dangling refs that would be scrubbed
+//     (one archive task with two dangling deps counts as 2,
+//     matching the warning granularity in checkArchiveOrphans).
+//   - refs:  per-ref detail rows for the human REPAIRS block,
+//     sorted ascending by (task_id, missing_dep) for
+//     determinism.
+//   - err:   nil on success, non-nil if the archive can't be
+//     loaded (mirrors applyOrphanArchiveFix's error contract).
+//
+// Side effects: NONE — no Save, no .bak rotation, no in-memory
+// store mutations are persisted. The in-memory report's stale
+// orphan_archive_dep warnings are intentionally left in place
+// (in the apply path we'd strip them as part of the repair; the
+// preview path lets them stand because the dry-run did NOT
+// actually fix anything yet).
+//
+// Same "no archive file → 0, nil" policy as applyOrphanArchiveFix
+// for consistency: a missing archive sibling isn't an error,
+// there's just nothing to preview.
+func previewOrphanArchiveFix(cmd *cobra.Command, report *DoctorReport) (int, []OrphanArchiveRef, error) {
+	livePath := report.Path
+	if livePath == "" {
+		return 0, nil, nil
+	}
+	archivePath := archiveSiblingPath(livePath)
+	if _, err := os.Stat(archivePath); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil, nil
+		}
+		return 0, nil, fmt.Errorf("stat archive %s: %w", archivePath, err)
+	}
+	liveStore, err := store.Load(livePath)
+	if err != nil {
+		return 0, nil, fmt.Errorf("reload live %s: %w", livePath, err)
+	}
+	archStore, err := store.Load(archivePath)
+	if err != nil {
+		return 0, nil, fmt.Errorf("reload archive %s: %w", archivePath, err)
+	}
+
+	resolvable := make(map[int]bool, len(liveStore.Tasks)+len(archStore.Tasks))
+	for _, t := range liveStore.Tasks {
+		if t.ID > 0 {
+			resolvable[t.ID] = true
+		}
+	}
+	for _, t := range archStore.Tasks {
+		if t.ID > 0 {
+			resolvable[t.ID] = true
+		}
+	}
+
+	refs := make([]OrphanArchiveRef, 0)
+	for _, t := range archStore.Tasks {
+		for _, dep := range t.DependsOn {
+			if !resolvable[dep] {
+				refs = append(refs, OrphanArchiveRef{TaskID: t.ID, MissingDep: dep})
+			}
+		}
+	}
+	// Deterministic ordering by (task_id, missing_dep) so the
+	// preview output is reproducible across runs — critical for
+	// CI pipelines diffing the output to detect new orphans.
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].TaskID != refs[j].TaskID {
+			return refs[i].TaskID < refs[j].TaskID
+		}
+		return refs[i].MissingDep < refs[j].MissingDep
+	})
+	return len(refs), refs, nil
+}
