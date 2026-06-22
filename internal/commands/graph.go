@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -79,6 +80,7 @@ func newGraphCmd() *cobra.Command {
 		highlightTag string
 		dim          string
 		dimTag       string
+		asJSON       bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -158,6 +160,8 @@ Examples:
   tsk graph --open                       # only show what's still blocking
   tsk graph --reachable 7                # the subgraph rooted at #7 (downstream)
   tsk graph --upstream-of 7              # the subgraph WAITING on #7 (upstream)
+  tsk graph --reachable 7 --json         # scripted impact-analysis (downstream)
+  tsk graph --upstream-of 7 --json       # scripted impact-analysis (upstream)
   tsk graph --reachable 7 --open         # …filtered to active work
   tsk graph --format dot | dot -Tpng -o deps.png
   tsk graph --format dot --highlight 7   # draw the eye to #7
@@ -189,6 +193,9 @@ Examples:
 			}
 			if dimTag != "" && fmtChoice != "dot" {
 				return usageErrorf("--dim-tag only applies to --format dot (got %s)", fmtChoice)
+			}
+			if asJSON && reachable == 0 && upstreamOf == 0 {
+				return usageErrorf("--json only applies to --reachable or --upstream-of (the per-root subgraph paths)")
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -226,6 +233,9 @@ Examples:
 				rootDisplay = upstreamOf
 				rootKind = "upstream-of"
 			}
+			if asJSON {
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open)
+			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
 	}
@@ -237,6 +247,7 @@ Examples:
 	cmd.Flags().StringVar(&highlightTag, "highlight-tag", "", "(DOT only) comma-separated tag list; spotlight every task carrying any of them (case-insensitive)")
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT only) comma-separated task ids to render in a quiet gray fill+dashed border")
 	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT only) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
 	return cmd
 }
 
@@ -823,4 +834,111 @@ func truncateForDOT(s string, max int) string {
 		return s
 	}
 	return string(runes[:max-1]) + "…"
+}
+
+// subgraphNode is one node in the JSON subgraph envelope. Stable
+// schema — id + title + done flag, all a script needs to fan out
+// per-task lookups. Matches the field shape used by `tsk show
+// --json` and `tsk wip --json` so users with existing jq pipelines
+// can reuse selector patterns.
+type subgraphNode struct {
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	Done  bool   `json:"done"`
+}
+
+// subgraphEdge is one directed dep edge in the JSON subgraph
+// envelope. from depends on to (i.e. from -> to means "from is
+// blocked on to"), matching the tsk DependsOn convention.
+type subgraphEdge struct {
+	From int `json:"from"`
+	To   int `json:"to"`
+}
+
+// subgraphDoc is the JSON envelope for `tsk graph --reachable <id>
+// --json` and `tsk graph --upstream-of <id> --json`. Stable schema:
+//   - root_id     : the id the subgraph was rooted at
+//   - direction   : "reachable" (downstream) or "upstream-of" (upstream)
+//   - nodes       : every task that appears in the subgraph, sorted
+//     asc by id for determinism
+//   - edges       : every dep edge in the subgraph, sorted by
+//     (from asc, then to asc) for determinism
+//   - filter      : "open" when --open was passed (so a consumer can
+//     tell whether done-task noise was filtered) or
+//     omitted otherwise
+//
+// Empty nodes/edges are emitted as empty arrays (not null) so jq
+// pipelines iterating them don't crash. The root node ALWAYS
+// appears in nodes even when there are no edges (the user asked
+// about THIS root; \"nothing depends on it\" is itself a useful
+// answer for the impact-analysis use case).
+type subgraphDoc struct {
+	RootID    int            `json:"root_id"`
+	Direction string         `json:"direction"`
+	Nodes     []subgraphNode `json:"nodes"`
+	Edges     []subgraphEdge `json:"edges"`
+	Filter    string         `json:"filter,omitempty"`
+}
+
+// emitSubgraphJSON renders the stable JSON envelope for the
+// --reachable/--upstream-of subgraph extractors. Designed for
+// scripted impact-analysis: a single command yields the complete
+// "what depends on X" or "what does X depend on" answer in a
+// machine-readable shape, so pre-commit hooks, CI gates, and
+// release-impact tools don't have to parse DOT or ASCII output.
+//
+// The root node is always included, even when edges is empty —
+// the user asked about this specific root; the answer "no other
+// tasks are involved" is itself useful (empty nodes would be a
+// confusing degenerate case). Sorting is deterministic: nodes by
+// id ascending, edges by (from, to) ascending — matches the
+// ordering printGraphASCII uses.
+//
+// rootKind is the subgraph direction ("reachable" or "upstream-of")
+// — it surfaces as direction in the envelope so a downstream
+// consumer can tell which question the preview answers without
+// having to know which CLI flag was passed.
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open bool) error {
+	// Collect every node that appears (sources + targets), plus
+	// the root itself (so the empty-edges case still yields a
+	// useful one-node response).
+	used := make(map[int]bool)
+	used[rootID] = true
+	for _, e := range edges {
+		used[e.from] = true
+		used[e.to] = true
+	}
+	ids := make([]int, 0, len(used))
+	for id := range used {
+		ids = append(ids, id)
+	}
+	sort.Ints(ids)
+	nodes := make([]subgraphNode, 0, len(ids))
+	for _, id := range ids {
+		t := s.ByID(id)
+		if t == nil {
+			// Dangling edge target/source — emit the node so the
+			// consumer sees that the id is referenced but missing,
+			// matching the ASCII path's "missing" labeling.
+			nodes = append(nodes, subgraphNode{ID: id, Title: "(missing)", Done: false})
+			continue
+		}
+		nodes = append(nodes, subgraphNode{ID: id, Title: t.Title, Done: t.Done})
+	}
+	jsonEdges := make([]subgraphEdge, 0, len(edges))
+	for _, e := range edges {
+		jsonEdges = append(jsonEdges, subgraphEdge{From: e.from, To: e.to})
+	}
+	doc := subgraphDoc{
+		RootID:    rootID,
+		Direction: rootKind,
+		Nodes:     nodes,
+		Edges:     jsonEdges,
+	}
+	if open {
+		doc.Filter = "open"
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
