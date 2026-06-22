@@ -289,24 +289,65 @@ plus a few new follow-ons sensible after this tick's work.
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation, mirror of `tsk note` for the title axis
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [x] `tsk archive --strategy quarterly` — coarse-grained sibling (Q1/Q2/Q3/Q4 buckets) (tick 2026-06-21/1831)
+- [x] `tsk archive --strategy yearly` — coarsest-grained sibling (one section per year) (tick 2026-06-21/1831)
+- [ ] `tsk archive --merge-into ~/work.archive.md --strategy daily` recipe doc — one-pager on shared project rollups
+- [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
+- [ ] `tsk topo --since <id> --depth N --json` recipe doc — composing depth-limited slices for review automation
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (would need a tiny embedded renderer)
+- [x] `tsk graph --format dot --highlight <id1,id2,...>` — multi-id highlight for "show me this whole subset" (tick 2026-06-21/1831)
+- [x] `tsk pause --all` — pause every in-progress task at once (end-of-day clear) (tick 2026-06-21/1831)
+- [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
+- [ ] `tsk archive --since <id>` — archive every Done task with id < N (alongside --older-than for the time axis)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI 'g'/'G' top/bottom navigation (vim-style)
+- [x] `tsk depend --remove-all <id>` — clear an id from every other task's DependsOn (useful for "this is gone now, unblock everyone") (tick 2026-06-21/1831)
+
+### Polish & DX (added 2026-06-21 tick #17)
+
+Fresh ideas so future ticks have ample sized work. With the bucketed
+archive family now complete (flat/daily/weekly/monthly/quarterly/
+yearly), multi-id graph highlighting shipped, pause --all + depend
+--remove-all closing the "bulk operations" cluster, this batch
+leans into still-unstarted long-tail: TUI work, recurring tasks
+(parking lot), config + multi-file (long-unstarted), plus a few
+new follow-ons that this tick's features make sensible.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
 - [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
 - [ ] `tsk wrap <id>` — split a long title with `>` continuation
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
-- [ ] `tsk archive --strategy quarterly` — coarse-grained sibling (Q1/Q2/Q3/Q4 buckets)
-- [ ] `tsk archive --strategy yearly` — coarsest-grained sibling (one section per year)
-- [ ] `tsk archive --merge-into ~/work.archive.md --strategy daily` recipe doc — one-pager on shared project rollups
+- [ ] `tsk archive --since <id>` — archive every Done task with id < N (the id axis alongside --older-than)
+- [ ] `tsk archive --merge-into ~/work.archive.md --strategy yearly` recipe doc — one-pager on multi-year rollups
+- [ ] `tsk archive --bucket-by <key>` — accept a user-supplied key expression (e.g. `tag:work`, `priority`) for project-specific layouts
 - [ ] `tsk lint --autofix-all --backup <path>` — explicit backup directory instead of in-place .bak (useful in pre-commit setups)
-- [ ] `tsk topo --since <id> --depth N --json` recipe doc — composing depth-limited slices for review automation
-- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (would need a tiny embedded renderer)
-- [ ] `tsk graph --format dot --highlight <id1,id2,...>` — multi-id highlight for "show me this whole subset"
-- [ ] `tsk pause --all` — pause every in-progress task at once (end-of-day clear)
+- [ ] `tsk graph --format svg` — emit SVG directly without piping through GraphViz (tiny embedded renderer)
+- [ ] `tsk graph --format dot --highlight-tag <name>` — spotlight every task with a given tag (broader than --highlight ids)
+- [ ] `tsk graph --format dot --dim <id1,id2>` — inverse of highlight: render named ids gray so others stand out
+- [ ] `tsk depend --remove-all --dry-run` — preview which tasks would be touched without writing (preflight before `tsk rm`)
+- [ ] `tsk depend --remove-all <id1,id2,...>` — multi-id sweep (current ships single-id; CSV would be the natural growth)
+- [ ] `tsk start --all` — sister of pause --all: bulk-start every task with a given filter (--tag, --priority)
 - [ ] `tsk preview --from <path> --watch N` — re-render every N seconds while a separate process mutates the file
-- [ ] `tsk archive --since <id>` — archive every Done task with id < N (alongside --older-than for the time axis)
+- [ ] `tsk preview --json | jq` recipe doc — one-pager showing pipeline patterns that benefit from no-side-effect parsing
+- [ ] `tsk topo --since <id> --depth N --json` recipe doc — composing depth-limited slices for review automation
+- [ ] `tsk justify --all --json | jq` recipe doc — chokepoint-finding patterns
+- [ ] `tsk lint --dep-cycles --json | jq -r` recipe doc — feeding cycle output back into `tsk depend --remove` automation
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
 - [ ] TUI 'g'/'G' top/bottom navigation (vim-style)
-- [ ] `tsk depend --remove-all <id>` — clear an id from every other task's DependsOn (useful for "this is gone now, unblock everyone")
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 
 ## Known footguns the loop has run into
 
@@ -1567,4 +1608,125 @@ Process notes:
 This is the fourth batch shipped DIRECTLY ON MAIN. The quality
 gate ran clean before push; every commit on origin/main remains
 a single revertible feature slice.
+
+### 2026-06-21 18:31 PT (tick #17)
+
+Shipped 5 features from the "Polish & DX (added tick #16)" backlog
+— a sweep of the bulk-operations + archive-family-completion
+cluster. Together: pause's end-of-day shortcut (--all), the two
+remaining bucketed archive strategies (quarterly + yearly,
+completing the family with flat/daily/weekly/monthly), multi-id
+graph highlighting for cluster-spotlight reviews, and the global
+dep-scrub verb for "this task is going away, unblock everyone".
+
+All single-commit, all tests passing (44 new test cases across
+the 5 features), full gate green (gofmt + vet + build + go test
+./...) before push. Pushed a22f9be..7e86892 to origin/main;
+verified landed.
+
+- `pause --all`                  — a22f9be feat(pause): clear every in-progress task at once
+- `archive --strategy quarterly` — 6c4f294 feat(archive): Q1/Q2/Q3/Q4 sections
+- `archive --strategy yearly`    — 29f5ead feat(archive): one section per calendar year
+- `graph --highlight csv`        — 6d12a34 feat(graph): comma-separated id list for multi-spotlight
+- `depend --remove-all`          — 7e86892 feat(depend): global scrub of id from every dep list
+
+Notable choices:
+
+- `pause --all`: rejects positional ids when --all is set (combining
+  them would hide a typo like `tsk pause --all 3` plausibly meaning
+  "everything except 3"). The inProgressIDs helper resolves the set
+  inside the store and runStartStop(false, nil) is the same body
+  `tsk stop` uses — any future enforcement ("done tasks reject
+  pause") applies automatically. Empty wip = "no in-progress
+  tasks", same message `tsk wip` uses, so the two verbs answer
+  the empty case consistently.
+
+- `archive --strategy quarterly`: builds on tick #14/#15's
+  writeBucketedArchive + bucketFn scaffolding. Quarter math is
+  (monthInt-1)/3 + 1 → Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep,
+  Q4=Oct-Dec. SortKey is year*10+quarter so 2025-Q4 (20254) sorts
+  before 2026-Q1 (20261). Section header "YYYY-Q#" keeps the
+  leading year for chronological scan. Three pre-existing tests
+  used "quarterly" as their bogus-value probe; swapped to
+  "nonsense" so they keep passing.
+
+- `archive --strategy yearly`: coarsest sibling, one bucket per
+  calendar year. Section header "YYYY" (no decoration since the
+  year IS the key). SortKey is the year itself (already int,
+  already sorts chronologically). Trivial year-boundary safety
+  because the bucket boundary IS the year.
+
+- `graph --highlight csv`: --highlight changes from int to string
+  CSV. Single "7" still works; multi "7,3,5" newly does; "#1,#2"
+  tolerated for hash-prefix muscle memory; duplicates collapse.
+  New parseHighlightCSV helper returns map[int]bool (set) so
+  printGraphDOT membership lookup is O(1) — linear scan over a
+  multi-id slice would balloon to O(N*M) on big graphs.
+  emitGraph + printGraphDOT signatures change in lockstep; three
+  callers (graph, reachable, export-graphdot) updated together.
+  Per-id validation at flag layer surfaces typos early; silently
+  rendering a graph with no spotlight on a typo would be hostile.
+  Multi-id sets render every member with the SAME spotlight so
+  the cluster reads as ONE highlighted group, not per-node noise.
+
+- `depend --remove-all <id>`: global SWEEP that drops <id> from
+  every OTHER task's DependsOn in a single Save. Use case: <id>
+  is going away (about to be removed/merged) and you want every
+  dependent to forget about it without spelunking the store.
+  Preserves the relative order of remaining deps (no re-sort, no
+  dedupe). Mutually exclusive with every other mutation flag
+  (--on/--add/--remove/--clear) and every read-only flag
+  (--tree/--justify/--upstream/--list/--pending) — each is a
+  different scope or intent. Missing-id is a no-op (vacuously
+  "nothing depends on a missing id"), matching `tsk rm`'s
+  liberal acceptance of already-gone ids. JSON shape:
+  {"id": N, "touched": [<ids>]} — array (already ascending via
+  iteration order), empty case = [] not null so
+  `jq '.touched | length'` reads zero without crashing.
+  Single-Save invariant test confirms .bak after run matches
+  pre-run state byte-for-byte (no per-task save churn).
+
+Roadmap status:
+- "Polish & DX (added tick #16)" subsection: 0/24 → 5/24
+  (pause --all, archive quarterly, archive yearly, multi-id
+  highlight, depend --remove-all).
+- Added "Polish & DX (added 2026-06-21 tick #17)" subsection
+  with 28 fresh items — leans into the still-unstarted TUI work
+  (5 items), recurring tasks (parking lot), config + multi-file
+  (long-unstarted), plus new follow-ons sensible from this tick:
+  archive --since, archive --bucket-by (user-supplied key),
+  graph --highlight-tag (broader than ids), graph --dim
+  (inverse of highlight), depend --remove-all --dry-run,
+  depend --remove-all CSV, start --all (sister of pause --all),
+  and recipe docs for the dep-debugging cluster.
+
+Per-feature test counts: pause --all 6, archive quarterly 6,
+archive yearly 6 (+1 boundary unit-test stripped out of the
+quarterly batch), graph --highlight multi 10, depend --remove-all
+9. Total 37 new tests on top of the existing suite, all green.
+(Existing suite ~780 cases also still green after the
+validateDependFlags signature change, the depend/runDependRemoveAll
+addition, the emitGraph/printGraphDOT/exportGraphDOT signature
+changes from int to map[int]bool, the parseHighlightCSV helper
+addition, the archive --strategy switch + bucketByQuarter/
+bucketByYear functions, and the runPauseAll/inProgressIDs
+additions — verified via full repo gate before push.)
+
+Process notes:
+- No fixups or amends needed this tick; each feature landed as
+  a single clean commit on the first pass. The discipline of
+  writing tests against the public CLI surface first kept the
+  iteration loops tight.
+- Two pre-existing tests used "quarterly" as their bogus-strategy
+  probe (TestArchiveStrategyWeeklyRejectsBogusValue and
+  TestArchiveStrategyBogusValueErrorMentionsMonthly). Swapped
+  to "nonsense" so they keep passing now that quarterly is a
+  real option — folded into the quarterly feature commit, not
+  carved off as a separate commit, since the swap is meaningless
+  outside the context of shipping quarterly.
+
+This is the fifth batch shipped DIRECTLY ON MAIN. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The bucketed archive family
+is now complete: flat, daily, weekly, monthly, quarterly, yearly.
 
