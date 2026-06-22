@@ -18,6 +18,7 @@ type Keymap struct {
 	Confirm, Cancel   key.Binding
 	Section           key.Binding
 	Reload            key.Binding
+	ReloadClear       key.Binding
 	Clone             key.Binding
 }
 
@@ -43,6 +44,7 @@ func DefaultKeymap() Keymap {
 		Cancel:        key.NewBinding(key.WithKeys("esc", "n")),
 		Section:       key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "collapse section")),
 		Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
+		ReloadClear:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reload+clear filter")),
 		Clone:         key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "clone")),
 	}
 }

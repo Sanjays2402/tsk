@@ -173,6 +173,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.toggleSection()
 	case matches(m, a.keys.Reload):
 		a.reloadFromDisk()
+	case matches(m, a.keys.ReloadClear):
+		a.reloadFromDiskClearingFilter()
 	case matches(m, a.keys.Clone):
 		a.cloneCurrent()
 	}
@@ -242,6 +244,41 @@ func (a *App) reloadFromDisk() {
 		a.selection = 0
 	}
 	a.status = "reloaded"
+}
+
+// reloadFromDiskClearingFilter is the uppercase-R sister of
+// reloadFromDisk: same disk re-read mechanics, but ALSO clears
+// any active search filter so the user lands on the full
+// untrimmed list after the reload.
+//
+// Use case: the user has been narrowing the visible set with `/`
+// to focus on one slice, picks up an external edit, and wants
+// to see the WHOLE new state without first hitting `/` then Esc.
+// Lowercase `r` preserves the filter (steady-state "refresh,
+// keep my view"), uppercase `R` resets it (escape hatch
+// "refresh and show me everything"). Same convention as the
+// `g` / `G` (top / bottom) keymap.
+//
+// Selection-by-id behavior matches reloadFromDisk: if the
+// previously-selected task still exists, the cursor snaps to it
+// (now in the FULL list, not the filtered subset, so the
+// position number may shift); otherwise falls back to 0.
+//
+// The clear is unconditional: if no filter was active, this is
+// equivalent to lowercase `r` (a small surprise minimizer — the
+// user never sees the filter "appear" cleared when nothing was
+// there). The status footer says "reloaded (filter cleared)"
+// so the user knows uppercase did the extra work.
+func (a *App) reloadFromDiskClearingFilter() {
+	a.filter = ""
+	a.reloadFromDisk()
+	// Override the status message reloadFromDisk just set so the
+	// uppercase action is distinguishable in the footer (helps the
+	// user notice when they meant to hit lowercase but capslock was
+	// on, or vice versa).
+	if a.status == "reloaded" {
+		a.status = "reloaded (filter cleared)"
+	}
 }
 
 // cloneCurrent duplicates the currently-selected task in place,
