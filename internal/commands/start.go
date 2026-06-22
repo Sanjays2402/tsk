@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -42,10 +43,43 @@ import (
 //
 // `tsk done` clears Started on completion (Completed is the more
 // useful timestamp at that point — the task moved past in-progress).
+//
+// --all is the bulk-start sibling of `tsk pause --all`. It REQUIRES
+// a scope flag (--tag or --priority) because "start every open
+// task in the store" is almost never what a user wants — that
+// would flood `tsk wip` with dozens of irrelevant rows. Forcing
+// a filter is the only way to keep the verb honest:
+//
+//	tsk start --all --tag standup     # start every open standup task
+//	tsk start --all --priority urgent # start every open urgent task
+//	tsk start --all --tag x --priority high  # the AND of both
+//
+// Done tasks are excluded (start/done is meaningless once a task
+// is done — same guard runStartStop enforces per-id). Already-
+// started tasks are silently skipped (idempotent, matching the
+// per-id contract). Empty result set ("no open tasks match")
+// is a clean no-op with a clear message, NOT an error — a typo
+// in --tag should surface as "no matches", not as a non-zero
+// exit; the user knows quickly to fix the filter.
+//
+// Why a required scope rather than allowing `tsk start --all`
+// to mean "literally everything"? The pause sister has the
+// natural scope of "every wip task", which is usually a small
+// set the user just curated themselves. start --all has no
+// such natural scope — the "every open task" interpretation
+// would start dozens of items the user has no current context
+// for, which is the opposite of what start: is for. Requiring
+// a filter forces the verb to mean what it should: "start a
+// curated subset I'm about to focus on".
 func newStartCmd() *cobra.Command {
-	var reset bool
+	var (
+		reset     bool
+		all       bool
+		startTag  string
+		startPrio string
+	)
 	cmd := &cobra.Command{
-		Use:   "start <id>...",
+		Use:   "start [<id>...]",
 		Short: "Mark tasks as in-progress (stamp started:<now>)",
 		Long: `Mark one or more tasks as in-progress. Stamps started:<now> into
 the task's meta block, persisted alongside other metadata.
@@ -59,16 +93,111 @@ The "in-progress" state sits between open and done. Pair with:
 By default, starting an already-started task is a no-op so you can
 re-run safely. Pass --reset to bump started: to right now.
 
+Pass --all with --tag and/or --priority to start every open task
+matching the filter. Sister of ` + "`tsk pause --all`" + `: bulk-start
+a curated subset rather than typing ids one at a time. Requires
+at least one filter (no "start literally every open task" form).
+
 Examples:
   tsk start 3
-  tsk start 3 5 7              # several at once
-  tsk start 3 --reset          # bump started: even if already started
+  tsk start 3 5 7                          # several at once
+  tsk start 3 --reset                      # bump started: even if already started
+  tsk start --all --tag standup            # start every open standup task
+  tsk start --all --priority urgent        # start every open urgent task
+  tsk start --all --tag work --priority high
 `,
-		Args: cobra.MinimumNArgs(1),
-		RunE: runStartStop(true, &reset),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				if len(args) > 0 {
+					return usageErrorf("--all takes no positional ids (resolves the filtered set internally)")
+				}
+				return runStartAll(cmd, startTag, startPrio, reset)
+			}
+			if len(args) == 0 {
+				return usageErrorf("missing <id> (or pass --all with --tag/--priority)")
+			}
+			return runStartStop(true, &reset)(cmd, args)
+		},
 	}
 	cmd.Flags().BoolVar(&reset, "reset", false, "bump started: to now even if the task is already started")
+	cmd.Flags().BoolVar(&all, "all", false, "start every open task matching --tag and/or --priority")
+	cmd.Flags().StringVar(&startTag, "tag", "", "for --all: only start tasks carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&startPrio, "priority", "", "for --all: only start tasks at this priority (low/medium/high/urgent)")
 	return cmd
+}
+
+// runStartAll resolves the open-task set matching the requested
+// filter scope and dispatches to runStartStop for the actual
+// transition. Keeps the runStartStop body the single source of
+// truth so future invariants (e.g. "don't start tasks past a wait
+// date") get applied uniformly.
+//
+// Requires at least one filter — see the doc comment on newStartCmd
+// for why. The empty-set case ("no open tasks match") is a clean
+// no-op so a typo in --tag exits 0 with a clear message rather
+// than firing a non-zero exit that could trip a wrapper script.
+func runStartAll(cmd *cobra.Command, tag, prioRaw string, reset bool) error {
+	tag = strings.TrimSpace(tag)
+	prio, prioActive, err := parsePendingPriority(prioRaw)
+	if err != nil {
+		return err
+	}
+	if tag == "" && !prioActive {
+		return usageErrorf("--all requires --tag and/or --priority (refusing to start every open task in the store)")
+	}
+	s, err := resolveStore(cmd, true)
+	if err != nil {
+		return err
+	}
+	ids := filterStartAllIDs(s.Tasks, tag, prio, prioActive)
+	if len(ids) == 0 {
+		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
+		pf(cmd.OutOrStdout(), "no open tasks match (%s)\n", filters)
+		return nil
+	}
+	args := make([]string, len(ids))
+	for i, id := range ids {
+		args[i] = fmt.Sprintf("%d", id)
+	}
+	return runStartStop(true, &reset)(cmd, args)
+}
+
+// filterStartAllIDs returns the sorted-ascending ids of every OPEN
+// task matching the filter. Done tasks are excluded (start/done
+// is meaningless); already-started tasks STAY in the set so the
+// idempotent-skip in runStartStop covers them with the standard
+// "no change" message (no special-casing here).
+func filterStartAllIDs(tasks []model.Task, tag string, prio model.Priority, prioActive bool) []int {
+	ids := make([]int, 0)
+	for _, t := range tasks {
+		if t.Done {
+			continue
+		}
+		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if prioActive && t.Priority != prio {
+			continue
+		}
+		ids = append(ids, t.ID)
+	}
+	sort.Ints(ids)
+	return ids
+}
+
+// buildStartAllFilterSummary mirrors the depend --pending filter
+// summary shape so the two bulk-action verbs read the same way
+// when they print an empty-result line. Deterministic ordering:
+// tag first, then priority.
+func buildStartAllFilterSummary(tag, prioRaw string, prioActive bool) string {
+	parts := make([]string, 0, 2)
+	if tag != "" {
+		parts = append(parts, "tag="+tag)
+	}
+	if prioActive {
+		parts = append(parts, "priority="+strings.ToLower(strings.TrimSpace(prioRaw)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // newStopCmd implements `tsk stop <id>`: clear the started: timestamp.
