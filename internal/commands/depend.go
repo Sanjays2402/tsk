@@ -27,6 +27,11 @@ import (
 //   - `tsk depend <id> --remove 3`   drop specific ids
 //   - `tsk depend <id> --clear`      drop them all (alias for --remove
 //     everything; ergonomic)
+//   - `tsk depend <id> --remove-all` GLOBAL sweep: scrub <id> out of
+//     every OTHER task's DependsOn. Use when <id> is going away
+//     (about to be removed/merged) and you want every dependent to
+//     forget about it in one shot. Pairs cleanly with `tsk rm` /
+//     `tsk merge` so callers don't have to spelunk for dependents.
 //   - `tsk depend <id>`              (no flags) prints the current
 //     DependsOn list and the OPEN
 //     subset (the actual blockers)
@@ -50,6 +55,7 @@ func newDependCmd() *cobra.Command {
 		addCSV          string
 		removeCSV       string
 		clear           bool
+		removeAll       bool
 		list            bool
 		tree            bool
 		justify         bool
@@ -71,6 +77,7 @@ Set/replace:    tsk depend <id> --on 3,5
 Add ids:        tsk depend <id> --add 7
 Remove ids:     tsk depend <id> --remove 3
 Clear all:      tsk depend <id> --clear
+Remove globally:tsk depend <id> --remove-all  (scrub <id> from every other task)
 Inspect one:    tsk depend <id>
 Inspect tree:   tsk depend <id> --tree         (recursive prereq chain)
 Justify block:  tsk depend <id> --justify      (why is this blocked?)
@@ -118,6 +125,7 @@ Examples:
   tsk depend 7 --add 9          # 7 also needs 9
   tsk depend 7 --remove 3       # 3 no longer required
   tsk depend 7 --clear          # 7 is fully unblocked
+  tsk depend 7 --remove-all     # GLOBAL: scrub #7 from every other task
   tsk depend 7                  # show the chain
   tsk depend 7 --tree           # recursive prereq chain, indented
   tsk depend 7 --justify        # plain-English reason chain
@@ -133,7 +141,7 @@ Examples:
 `,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, list, tree, justify, upstream, pending); err != nil {
+			if err := validateDependFlags(args, onCSV, addCSV, removeCSV, clear, removeAll, list, tree, justify, upstream, pending); err != nil {
 				return err
 			}
 			s, err := resolveStore(cmd, true)
@@ -149,6 +157,9 @@ Examples:
 			id, err := parseSingleID(args[0])
 			if err != nil {
 				return err
+			}
+			if removeAll {
+				return runDependRemoveAll(cmd.OutOrStdout(), s, id, asJSON)
 			}
 			t := s.ByID(id)
 			if t == nil {
@@ -174,6 +185,7 @@ Examples:
 	cmd.Flags().StringVar(&addCSV, "add", "", "add the given ids to DependsOn")
 	cmd.Flags().StringVar(&removeCSV, "remove", "", "remove the given ids from DependsOn")
 	cmd.Flags().BoolVar(&clear, "clear", false, "drop all dependencies")
+	cmd.Flags().BoolVar(&removeAll, "remove-all", false, "GLOBAL: scrub this id from every other task's DependsOn")
 	cmd.Flags().BoolVar(&list, "list", false, "list every blocked task in the store")
 	cmd.Flags().BoolVar(&tree, "tree", false, "print the recursive prerequisite chain (depth-first, indented)")
 	cmd.Flags().BoolVar(&justify, "justify", false, "explain why a task is blocked via a chain of reasons")
@@ -188,7 +200,7 @@ Examples:
 
 // validateDependFlags rejects nonsensical combinations up-front so the
 // user sees a precise error instead of weird half-applied state.
-func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, list, tree, justify, upstream, pending bool) error {
+func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, removeAll, list, tree, justify, upstream, pending bool) error {
 	mutexCount := 0
 	if onCSV != "" {
 		mutexCount++
@@ -219,6 +231,28 @@ func validateDependFlags(args []string, onCSV, addCSV, removeCSV string, clear, 
 	}
 	if readOnlyCount > 1 {
 		return usageErrorf("--tree, --justify, --upstream are mutually exclusive (each shows a different view)")
+	}
+	if removeAll {
+		// --remove-all is the global sweep of <id> from every other
+		// task. It needs a positional id (the id to scrub) but
+		// rejects every other mutation flag and every read-only
+		// flag — each one represents a different intent.
+		if len(args) == 0 {
+			return usageErrorf("--remove-all requires an <id> to scrub from every other task's DependsOn")
+		}
+		if mutexCount > 0 {
+			return usageErrorf("--remove-all is mutually exclusive with --on, --add, --remove, --clear (different scopes)")
+		}
+		if readOnlyCount > 0 {
+			return usageErrorf("--remove-all is mutually exclusive with --tree, --justify, --upstream (different intents)")
+		}
+		if list {
+			return usageErrorf("--remove-all is mutually exclusive with --list (different shapes)")
+		}
+		if pending {
+			return usageErrorf("--remove-all is mutually exclusive with --pending (different intents)")
+		}
+		return nil
 	}
 	if list {
 		if len(args) > 0 {
@@ -408,6 +442,86 @@ func runDependInspect(w io.Writer, s *store.Store, t *model.Task, asJSON bool) e
 	} else {
 		pf(w, "  open blockers: %s\n", formatBlockerIDs(blockers))
 	}
+	return nil
+}
+
+// runDependRemoveAll sweeps the given id out of EVERY task's
+// DependsOn list. The use case: id is being removed/merged/deleted
+// and you want every dependent task to forget about it in one shot
+// rather than spelunking the store for dependents and editing one
+// at a time.
+//
+// Algorithm:
+//  1. Iterate every task in the store.
+//  2. For each task whose DependsOn contains id, drop it (preserve
+//     the order of the remaining ids — no re-sort, no dedupe; the
+//     caller's other invariants are unchanged).
+//  3. Save ONCE if anything changed. Skip Save on a no-op so the
+//     .bak chain doesn't grow for nothing.
+//  4. Report a count of touched tasks plus the ids that were
+//     changed so the user can audit.
+//
+// Idempotent: running on an id that nothing depends on is a no-op
+// with a clear message. Running on a missing id (not present in
+// the store) is ALSO treated as a no-op rather than an error —
+// the intent is "make sure nothing depends on this id", and a
+// missing id satisfies that vacuously. (This matches `tsk rm`'s
+// liberal acceptance of already-gone ids; rejecting the
+// "scrub a freshly-removed task" case would force callers to
+// existence-check first, defeating the ergonomic gain.)
+//
+// JSON shape: {"id": N, "touched": [<task ids>...]} — array (not
+// object map) because the order is the iteration order of the
+// store, which is already id-ascending; callers can index/count
+// without re-sorting. Empty case = {"id": N, "touched": []} so
+// `jq '.touched | length'` reads zero without crashing.
+//
+// Why a separate runner instead of folding into runDependMutate?
+// The shapes are too different: runDependMutate operates on ONE
+// task's list (curate per-task); --remove-all is a global SWEEP
+// (curate the whole store via one id). Folding them would require
+// runDependMutate to accept an "operate on every task" flag, which
+// is a different mental model that would muddle the per-task code.
+func runDependRemoveAll(w io.Writer, s *store.Store, id int, asJSON bool) error {
+	touched := make([]int, 0)
+	for i := range s.Tasks {
+		t := &s.Tasks[i]
+		if !t.HasDependencies() {
+			continue
+		}
+		filtered := make([]int, 0, len(t.DependsOn))
+		dropped := false
+		for _, dep := range t.DependsOn {
+			if dep == id {
+				dropped = true
+				continue
+			}
+			filtered = append(filtered, dep)
+		}
+		if dropped {
+			t.DependsOn = filtered
+			touched = append(touched, t.ID)
+		}
+	}
+	if len(touched) > 0 {
+		if err := s.Save(); err != nil {
+			return err
+		}
+	}
+	if asJSON {
+		doc := struct {
+			ID      int   `json:"id"`
+			Touched []int `json:"touched"`
+		}{ID: id, Touched: orEmpty(touched)}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(doc)
+	}
+	if len(touched) == 0 {
+		pf(w, "no tasks depend on #%d (nothing to scrub)\n", id)
+		return nil
+	}
+	pf(w, "scrubbed #%d from %d task(s): %s\n", id, len(touched), formatBlockerIDs(touched))
 	return nil
 }
 
