@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -171,4 +173,62 @@ func hasRoundTrippableFindings(r LintReport) bool {
 		}
 	}
 	return false
+}
+
+// lintAutofixDoc is the JSON envelope for `tsk lint --autofix-all
+// --json`. Stable schema combining BOTH the read-side findings
+// scan AND the write-side repair summary in one document, so a
+// pre-commit / CI hook reads a single coherent signal:
+//
+//   - path             : the .tsk.md that was scanned/repaired
+//   - findings_count   : how many issues the scan found
+//   - findings         : the full LintFinding list (same shape
+//     as plain --json so consumers of the
+//     read-only path can reuse selectors)
+//   - repairs_applied  : how many repairs the autofix-all pass
+//     wrote (0 when findings was empty)
+//   - backup_dir       : the explicit backup directory if --backup
+//     was set; omitted otherwise. Useful so a
+//     post-hook can locate the rollback handle
+//     without re-parsing argv.
+//
+// Empty findings emits `findings: []` (not null) so jq pipelines
+// don't crash. repairs_applied is always emitted even when zero
+// (it's the headline number; omitting it would hide success).
+type lintAutofixDoc struct {
+	Path           string        `json:"path"`
+	FindingsCount  int           `json:"findings_count"`
+	Findings       []LintFinding `json:"findings"`
+	RepairsApplied int           `json:"repairs_applied"`
+	BackupDir      string        `json:"backup_dir,omitempty"`
+}
+
+// emitLintAutofixJSON renders the combined findings+repairs envelope
+// for `tsk lint --autofix-all --json`. The schema is one document
+// so the entire pre-commit signal can be consumed by a single jq
+// pass — no need to interleave the read-only --json output and
+// the per-line "autofixed: ... (N repair(s) applied)" summary,
+// which would require fragile text-parsing on the consumer side.
+//
+// findings is the PRE-fix list — what the scan saw before the
+// repair pass ran. That's the useful signal for CI: \"the file
+// had these problems and we auto-corrected them.\" Re-scanning
+// after the fix would yield an empty list (the point of fix is
+// to clear the report), which would be a less useful surface for
+// pre-commit verification.
+func emitLintAutofixJSON(w io.Writer, report LintReport, applied int, backupDir string) error {
+	findings := report.Findings
+	if findings == nil {
+		findings = []LintFinding{}
+	}
+	doc := lintAutofixDoc{
+		Path:           report.Path,
+		FindingsCount:  len(findings),
+		Findings:       findings,
+		RepairsApplied: applied,
+		BackupDir:      backupDir,
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }

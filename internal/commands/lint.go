@@ -90,7 +90,12 @@ pre-commit users typically have the commit itself as the
 rollback handle, so the trade is an opt-in.
 
 Pass --json for a stable machine-readable report (CI / pre-commit
-hook friendly).
+hook friendly). When combined with --autofix-all, the envelope
+folds findings + repairs_applied + backup_dir into a SINGLE JSON
+document so a hook can read one coherent signal — the pre-fix
+findings list plus the count of repairs that were written. The
+read-only --json (without --autofix-all) keeps its existing shape
+for backward compat: just the findings list.
 
 Pass --dep-cycles to scan the DependsOn graph for 3+ node cycles
 via Tarjan's strongly-connected-components algorithm. The depend
@@ -116,6 +121,25 @@ not fixed, 2 bad invocation.
 			if depCycles {
 				appendDepCycleFindings(&report, path)
 			}
+			if backup != "" && !autofixAll {
+				return usageErrorf("--backup only applies to --autofix-all (the writing-fix path)")
+			}
+			// --autofix-all --json: emit one coherent envelope with
+			// findings + repairs_applied + backup_dir so the entire
+			// pre-commit / CI signal is machine-readable in a single
+			// document. The legacy --json (without --autofix-all)
+			// path is preserved below — it emits just the findings
+			// list and is the read-only check shape.
+			if autofixAll && asJSON {
+				applied := 0
+				if len(report.Findings) > 0 {
+					applied, err = applyLintAutofixAll(path, report, backup)
+					if err != nil {
+						return err
+					}
+				}
+				return emitLintAutofixJSON(cmd.OutOrStdout(), report, applied, backup)
+			}
 			if asJSON {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", "  ")
@@ -124,9 +148,6 @@ not fixed, 2 bad invocation.
 				}
 			} else {
 				printLintReport(cmd.OutOrStdout(), report)
-			}
-			if backup != "" && !autofixAll {
-				return usageErrorf("--backup only applies to --autofix-all (the writing-fix path)")
 			}
 			if autofixAll && len(report.Findings) > 0 {
 				applied, err := applyLintAutofixAll(path, report, backup)

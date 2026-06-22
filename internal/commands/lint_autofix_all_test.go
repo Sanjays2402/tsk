@@ -169,8 +169,11 @@ func TestLintAutofixAllIdempotent(t *testing.T) {
 }
 
 // TestLintAutofixAllJSONReportShape: --autofix-all + --json
-// produces the JSON report THEN applies fixes — the JSON output
-// must come first (so consumers can capture pre-fix state).
+// emits a SINGLE coherent envelope — findings + repairs_applied
+// in one JSON document — rather than the legacy interleaved
+// "JSON-then-text-summary" shape (which would break jq pipelines).
+// Consumers always see pre-fix findings plus the repair count in
+// one parse pass.
 func TestLintAutofixAllJSONReportShape(t *testing.T) {
 	dir := t.TempDir()
 	writeRawFile(t, dir, "# tasks\n\n- [ ] x <!-- id:1 prio:medium -->\n")
@@ -178,14 +181,17 @@ func TestLintAutofixAllJSONReportShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("autofix-all --json: %v", err)
 	}
-	// First non-empty content must be the JSON object (it always
-	// starts with '{' for LintReport). The "autofixed:" message
-	// follows.
+	// Output starts with the JSON envelope.
 	trimmed := strings.TrimLeft(stdout, " \n")
 	if !strings.HasPrefix(trimmed, "{") {
-		t.Fatalf("expected JSON to come first in --json mode, got:\n%s", stdout)
+		t.Fatalf("expected JSON envelope, got:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "autofixed:") {
-		t.Fatalf("autofix summary should still print after JSON, got:\n%s", stdout)
+	// NO trailing "autofixed:" line — the envelope IS the summary now.
+	if strings.Contains(stdout, "autofixed:") {
+		t.Fatalf("--json mode should not also print 'autofixed:' line (jq pipelines would break), got:\n%s", stdout)
+	}
+	// Envelope must include the new fields.
+	if !strings.Contains(stdout, `"repairs_applied"`) {
+		t.Fatalf("envelope missing repairs_applied, got:\n%s", stdout)
 	}
 }
