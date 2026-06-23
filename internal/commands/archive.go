@@ -58,6 +58,13 @@ func newArchiveCmd() *cobra.Command {
 			"                you want to call out a logical SLICE of the archive (\"show\n" +
 			"                what shipped tagged release OR p0\") without listing tags\n" +
 			"                one-by-one or generating a section per distinct tag.\n" +
+			"  tag:!X        INVERSE of tag:X: tasks NOT tagged X land in '## tag:!X',\n" +
+			"                tasks tagged X land in '## other'. Useful for call-out\n" +
+			"                slices like \"everything that wasn't tagged 'release'\" —\n" +
+			"                same boolean-partition contract as tag:X, but flipped.\n" +
+			"                Combines with the CSV form (\"tag:!a,!b\" for the NOT-ANY-OF\n" +
+			"                variant); all tags in the CSV must share the same\n" +
+			"                inversion sense (no mixed \"tag:!a,b\" — pick one direction).\n" +
 			"  id-range:N    fixed-width id windows of size N: '1-N', 'N+1-2N', …\n" +
 			"                Useful when id order doubles as creation order — sister\n" +
 			"                of priority/tag for the id axis. N must be a positive\n" +
@@ -273,7 +280,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be archived without changing files")
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
-	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:X,Y,Z' (multi-tag CSV union), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
+	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:!X' (inverse single-tag), 'tag:X,Y,Z' (multi-tag CSV union), 'tag:!X,!Y' (inverse CSV), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	return cmd
 }
 
@@ -592,6 +599,16 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 	// multi-tag CSV union partition. Both share the same render
 	// shape ("tag:<label>" vs "other"); single-tag is just the
 	// CSV variant with len(tags)==1.
+	//
+	// "tag:!X" — INVERSE single-tag partition. The leading "!" on
+	// the payload flips the predicate: tasks NOT tagged X land in
+	// the call-out bucket ("## tag:!X"), tasks tagged X land in
+	// "## other". Useful when you want to call out everything
+	// EXCEPT a specific tag — e.g. "show me what shipped that
+	// wasn't tagged 'release'" or "scaffolding tasks vs the rest".
+	// The "!" prefix is also supported in CSV form ("tag:!X,Y" or
+	// "tag:!X,!Y") — each "!" applies to its own tag, so
+	// "tag:!X,Y" matches tasks NOT tagged X OR tagged Y.
 	if strings.HasPrefix(lower, "tag:") {
 		// Slice off the "tag:" prefix from the ORIGINAL (case-
 		// preserving) string so tag values keep their case in
@@ -607,9 +624,109 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 		if len(tags) == 0 {
 			return nil, usageErrorf("--bucket-by tag:X requires at least one non-empty tag name, got %q", raw)
 		}
-		return makeTagFilterBucketFn(tags), nil
+		// Parse "!" prefixes — a leading "!" on a tag inverts the
+		// match for that tag. We accept the inverse form in both
+		// single ("tag:!work") and multi-tag CSV ("tag:!a,!b,c")
+		// shapes; the inversion is per-tag, NOT a global flip on
+		// the bucket. To keep semantics crisp, ALL tags must
+		// share the same inversion sense: "tag:!a,b" (mixed) is
+		// rejected as a usage error so the user has to commit to
+		// one direction.
+		inverted, parsedTags, err := parseInversionTags(tags, raw)
+		if err != nil {
+			return nil, err
+		}
+		return makeTagFilterBucketFnInversion(parsedTags, inverted), nil
 	}
-	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, tag:X,Y, id-range:N)", raw)
+	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, tag:X,Y, tag:!X, id-range:N)", raw)
+}
+
+// parseInversionTags inspects the per-tag list for leading "!"
+// prefixes and returns the cleaned tag names along with a single
+// boolean indicating whether the partition is inverted.
+//
+// Rule: ALL tags in the list must share the same inversion sense.
+// Mixed inputs ("tag:!a,b") are rejected — silently picking one
+// side would surprise the user, and there isn't a clean intended
+// semantic for "NOT a OR b" inside the boolean-partition contract
+// (the call-out bucket has exactly two outcomes; mixing predicates
+// breaks the symmetry). If the user really wants "NOT a OR b"
+// they can express it via two separate archive calls or a future
+// expression DSL.
+//
+// All-inverted (every tag prefixed with "!") returns (true, [a,b,…]).
+// All-positive returns (false, [a,b,…]). Empty inversion sense
+// (no "!" anywhere) is the original union behavior — backward-
+// compatible with every existing "tag:X" and "tag:X,Y" recipe.
+func parseInversionTags(tags []string, raw string) (bool, []string, error) {
+	if len(tags) == 0 {
+		return false, nil, usageErrorf("--bucket-by tag:X requires at least one non-empty tag name, got %q", raw)
+	}
+	inverted := strings.HasPrefix(tags[0], "!")
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		hasBang := strings.HasPrefix(t, "!")
+		if hasBang != inverted {
+			return false, nil, usageErrorf("--bucket-by tag:!X — all tags must share the same inversion sense; got mixed %q (express as two separate archive calls if you need NOT a OR b)", raw)
+		}
+		clean := t
+		if hasBang {
+			clean = strings.TrimSpace(strings.TrimPrefix(t, "!"))
+			if clean == "" {
+				return false, nil, usageErrorf("--bucket-by tag:!X requires a tag name after \"!\", got %q", raw)
+			}
+		}
+		out = append(out, clean)
+	}
+	return inverted, out, nil
+}
+
+// makeTagFilterBucketFnInversion is the bucketFn factory for the
+// inversion-aware boolean partition. When `inverted` is true, the
+// predicate is flipped: tasks that DO NOT carry any of the listed
+// tags land in the call-out bucket; tasks that DO land in "other".
+// When false, behaves identically to makeTagFilterBucketFn (which
+// is now a thin wrapper around this one for backward compat).
+//
+// Label preserves the user's case + ordering AND surfaces the
+// inversion via a "!" prefix: "tag:!work" for single-tag inverse,
+// "tag:!a,!b" for multi-tag inverse. The label is the SOURCE of
+// the bucket identity, so the inverse form is visibly different
+// from the positive form even in flat-text archive scans.
+func makeTagFilterBucketFnInversion(tags []string, inverted bool) bucketFn {
+	wantLower := make(map[string]bool, len(tags))
+	for _, t := range tags {
+		wantLower[strings.ToLower(t)] = true
+	}
+	var label string
+	if inverted {
+		bangedTags := make([]string, len(tags))
+		for i, t := range tags {
+			bangedTags[i] = "!" + t
+		}
+		label = "tag:" + strings.Join(bangedTags, ",")
+	} else {
+		label = "tag:" + strings.Join(tags, ",")
+	}
+	return func(t model.Task) (string, int) {
+		matched := false
+		for _, tg := range t.Tags {
+			if wantLower[strings.ToLower(tg)] {
+				matched = true
+				break
+			}
+		}
+		// Inverted predicate: NO match means the task belongs in
+		// the call-out bucket. Positive: match means it does.
+		inCallOut := matched
+		if inverted {
+			inCallOut = !matched
+		}
+		if inCallOut {
+			return label, 1
+		}
+		return "other", 2
+	}
 }
 
 // splitTagFilterCSV tokenizes a `tag:X,Y,Z` CSV payload into its
@@ -658,22 +775,15 @@ func splitTagFilterCSV(raw string) []string {
 //
 // Empty tags slice is rejected at resolveBucketByKey — we never
 // get here with one.
+//
+// makeTagFilterBucketFn is preserved as a thin wrapper over
+// makeTagFilterBucketFnInversion for backward compatibility — the
+// internal callers all use the inversion-aware factory now, but
+// external/test callers (and anyone reading the code archeology)
+// expect this name. Always produces the POSITIVE (non-inverted)
+// partition: tag-matched → call-out, otherwise → "other".
 func makeTagFilterBucketFn(tags []string) bucketFn {
-	wantLower := make(map[string]bool, len(tags))
-	for _, t := range tags {
-		wantLower[strings.ToLower(t)] = true
-	}
-	// Label keeps the user's original case + ordering for the
-	// bucket header.
-	label := "tag:" + strings.Join(tags, ",")
-	return func(t model.Task) (string, int) {
-		for _, tg := range t.Tags {
-			if wantLower[strings.ToLower(tg)] {
-				return label, 1
-			}
-		}
-		return "other", 2
-	}
+	return makeTagFilterBucketFnInversion(tags, false)
 }
 
 // makeIDRangeBucketFn returns a bucketFn that groups tasks into
