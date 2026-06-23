@@ -54,21 +54,22 @@ import (
 // `toggle.go` via unmetBlockers — depend just curates the list.
 func newDependCmd() *cobra.Command {
 	var (
-		onCSV           string
-		addCSV          string
-		removeCSV       string
-		clear           bool
-		removeAll       bool
-		removeAllDry    bool
-		list            bool
-		tree            bool
-		justify         bool
-		upstream        bool
-		pending         bool
-		pendingSince    string
-		pendingTag      string
-		pendingPriority string
-		asJSON          bool
+		onCSV               string
+		addCSV              string
+		removeCSV           string
+		clear               bool
+		removeAll           bool
+		removeAllDry        bool
+		list                bool
+		tree                bool
+		justify             bool
+		upstream            bool
+		pending             bool
+		pendingSince        string
+		pendingTag          string
+		pendingStrictAndTag string
+		pendingPriority     string
+		asJSON              bool
 	)
 	cmd := &cobra.Command{
 		Use:   "depend [<id>]",
@@ -125,6 +126,13 @@ with --priority to focus the feed on just the urgent/high pull
 "what's freshly unblocked AND on fire?" view). --tag and
 --priority compose — they intersect, not union.
 
+For multi-tag intersection use --strict-and-tag (CSV of all-of)
+instead of --tag (single-tag): ` + "`tsk depend --pending --strict-and-tag work,p0`" + `
+narrows the feed to tasks carrying BOTH 'work' AND 'p0'. The two
+tag selectors are mutually exclusive (each is a different
+operator on the tag axis). --strict-and-tag composes with
+--priority the same way --tag does.
+
 Examples:
   tsk depend 7 --on 3,5         # 7 needs 3 and 5 done first
   tsk depend 7 --add 9          # 7 also needs 9
@@ -141,6 +149,7 @@ Examples:
   tsk depend --pending          # what just became actionable?
   tsk depend --pending --since 7d
   tsk depend --pending --tag work --since 7d  # narrow by tag
+  tsk depend --pending --strict-and-tag work,p0  # intersection of two tags
   tsk depend --pending --priority urgent      # only urgent freshly-unblocked
   tsk depend --pending --tag work --priority high  # tag AND priority
 `,
@@ -157,7 +166,7 @@ Examples:
 				return runDependList(cmd.OutOrStdout(), s, asJSON)
 			}
 			if pending {
-				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, pendingPriority, asJSON)
+				return runDependPending(cmd.OutOrStdout(), s, pendingSince, pendingTag, pendingStrictAndTag, pendingPriority, asJSON)
 			}
 			if removeAll {
 				// --remove-all accepts a single id OR a comma-
@@ -210,6 +219,7 @@ Examples:
 	cmd.Flags().BoolVar(&pending, "pending", false, "list open tasks whose prereqs were recently completed")
 	cmd.Flags().StringVar(&pendingSince, "since", "24h", "for --pending: how recent the unblocking completion must be (e.g. 1h, 7d)")
 	cmd.Flags().StringVar(&pendingTag, "tag", "", "for --pending: restrict to tasks carrying this tag")
+	cmd.Flags().StringVar(&pendingStrictAndTag, "strict-and-tag", "", "for --pending: restrict to tasks carrying ALL listed tags (CSV; intersection). Sister of --tag's union-style single-tag filter: --tag work narrows to tasks carrying 'work'; --strict-and-tag work,urgent narrows to tasks carrying BOTH 'work' AND 'urgent'. Mutually exclusive with --tag (each is a different selector axis). Composes with --priority as AND (the same intersection semantic --tag uses).")
 	cmd.Flags().StringVar(&pendingPriority, "priority", "", "for --pending: restrict to tasks at this priority (low/medium/high/urgent)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON")
 	return cmd

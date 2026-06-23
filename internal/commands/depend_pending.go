@@ -63,7 +63,16 @@ import (
 // Each row annotates which prereq's completion was the unblocking
 // trigger (the most-recent done dep's id + when), so the user
 // understands the "why now?" without a follow-up.
-func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag, priorityRaw string, asJSON bool) error {
+//
+// strictAndTagsRaw is the new CSV intersection-style tag filter
+// (sister of --tag's union-style single-tag): a non-empty CSV
+// restricts the queue to tasks carrying ALL listed tags. Mutually
+// exclusive with the single-tag --tag (each is a different
+// selector axis — combining them would muddle which logical
+// operator applies to which tag). Empty value = no intersection
+// filter (mirroring --tag's "empty value behaves like no filter"
+// defensive stance against an unset shell variable).
+func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag, strictAndTagsRaw, priorityRaw string, asJSON bool) error {
 	sinceDur, err := parsePendingSince(sinceRaw)
 	if err != nil {
 		return err
@@ -72,12 +81,16 @@ func runDependPending(w io.Writer, s *store.Store, sinceRaw, tag, priorityRaw st
 	if err != nil {
 		return err
 	}
+	strictAndTags := splitTagCSV(strictAndTagsRaw)
+	if tag != "" && len(strictAndTags) > 0 {
+		return usageErrorf("--tag and --strict-and-tag are mutually exclusive (each is a different tag-selector axis; --tag is single-tag, --strict-and-tag is intersection over a CSV)")
+	}
 	now := time.Now()
-	rows := collectPendingRows(s, now, sinceDur, tag, prio, prioActive)
+	rows := collectPendingRows(s, now, sinceDur, tag, strictAndTags, prio, prioActive)
 	if asJSON {
 		return emitPendingJSON(w, rows)
 	}
-	return emitPendingPlain(w, rows, sinceDur, tag, priorityRaw, prioActive)
+	return emitPendingPlain(w, rows, sinceDur, tag, strictAndTagsRaw, priorityRaw, prioActive)
 }
 
 // parsePendingSince validates and parses the --since flag value.
@@ -144,10 +157,15 @@ type pendingRow struct {
 // collectPendingRows scans the store and returns every task that
 // matches the pending criteria, sorted newest trigger first. When
 // tag is non-empty, results are restricted to tasks carrying that
-// tag (case-insensitive via Task.HasTag). When prioActive is true,
-// results are further narrowed to tasks at exactly prio (the
-// canonical exact-match on priority — same semantics ls/top use).
-func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag string, prio model.Priority, prioActive bool) []pendingRow {
+// tag (case-insensitive via Task.HasTag). When strictAndTags has
+// any entries, results are restricted to tasks carrying ALL of
+// them (intersection; sister of tag's union-style single-tag).
+// tag and strictAndTags are mutually exclusive — the caller
+// validates this; this function applies whichever is set. When
+// prioActive is true, results are further narrowed to tasks at
+// exactly prio (the canonical exact-match on priority — same
+// semantics ls/top use).
+func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag string, strictAndTags []string, prio model.Priority, prioActive bool) []pendingRow {
 	cutoff := now.Add(-since)
 	tag = strings.TrimSpace(tag)
 	out := make([]pendingRow, 0)
@@ -162,6 +180,9 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag 
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if len(strictAndTags) > 0 && !taskHasAllTags(&t, strictAndTags) {
 			continue
 		}
 		if prioActive && t.Priority != prio {
@@ -228,9 +249,9 @@ func collectPendingRows(s *store.Store, now time.Time, since time.Duration, tag 
 // Active filters are reflected in the header AND in the empty
 // message so the user understands WHY they got a narrower or
 // empty result — silent filter-induced emptiness is hostile.
-func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag, priorityRaw string, prioActive bool) error {
+func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag, strictAndTagsRaw, priorityRaw string, prioActive bool) error {
 	tag = strings.TrimSpace(tag)
-	filters := buildPendingFilterSummary(tag, priorityRaw, prioActive)
+	filters := buildPendingFilterSummary(tag, strictAndTagsRaw, priorityRaw, prioActive)
 	if len(rows) == 0 {
 		if filters != "" {
 			pf(w, "no tasks freshly unblocked in the last %s (%s)\n", humanizeDuration(since), filters)
@@ -254,20 +275,46 @@ func emitPendingPlain(w io.Writer, rows []pendingRow, since time.Duration, tag, 
 
 // buildPendingFilterSummary produces the "tag=X, priority=Y" trailer
 // that appears in headers and empty-state messages. Order is
-// deterministic (tag, then priority) so output is reproducible
-// across invocations. Empty → empty string (no trailing comma).
+// deterministic (tag, then strict-and-tag, then priority) so output
+// is reproducible across invocations. Empty → empty string (no
+// trailing comma).
 //
 // Lowercases the priority for display so output is consistent
 // regardless of how the user typed it on the command line.
-func buildPendingFilterSummary(tag, priorityRaw string, prioActive bool) string {
-	parts := make([]string, 0, 2)
+//
+// strict-and-tag renders as "tag=a&b" (the &-separated form) so a
+// scan-by-eye distinguishes "tag=a" (union, single) from
+// "tag=a&b" (intersection, CSV) without checking the original
+// flag name. This is the same disambiguation marker `tsk archive
+// --bucket-by tag:&a,b`'s flat-text label uses, so the two
+// surfaces read symmetrically.
+func buildPendingFilterSummary(tag, strictAndTagsRaw, priorityRaw string, prioActive bool) string {
+	parts := make([]string, 0, 3)
 	if tag != "" {
 		parts = append(parts, "tag="+tag)
+	}
+	if strict := splitTagCSV(strictAndTagsRaw); len(strict) > 0 {
+		parts = append(parts, "tag="+strings.Join(strict, "&"))
 	}
 	if prioActive {
 		parts = append(parts, "priority="+strings.ToLower(strings.TrimSpace(priorityRaw)))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// taskHasAllTags reports whether t carries every tag in the list
+// (case-insensitive, via Task.HasTag). Empty list returns true so
+// the caller doesn't have to branch on "filter inactive" — the
+// canonical short-circuit pattern. Used by --strict-and-tag for
+// the pending notification queue's intersection filter; the union
+// case is handled by the single-tag --tag path's HasTag check.
+func taskHasAllTags(t *model.Task, tags []string) bool {
+	for _, want := range tags {
+		if !t.HasTag(want) {
+			return false
+		}
+	}
+	return true
 }
 
 // emitPendingJSON renders the rows array verbatim. Empty stays `[]`
