@@ -86,6 +86,7 @@ func newGraphCmd() *cobra.Command {
 		asJSON       bool
 		outputPath   string
 		jsonCompact  bool
+		jsonAppend   bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -186,6 +187,7 @@ Examples:
   tsk graph --reachable 7 --json --output impact.json   # JSON envelope -> file
   tsk graph --reachable 7 --json --compact-json         # single-line JSON (JSONL-friendly)
   tsk graph --reachable 7 --json --compact-json --output snap.json   # compact write
+  tsk graph --reachable 7 --json --output snap.jsonl --append       # JSONL append (one record per call)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -212,6 +214,22 @@ Examples:
 			}
 			if jsonCompact && !asJSON {
 				return usageErrorf("--compact-json only applies to --json (the JSON envelope path)")
+			}
+			if jsonAppend {
+				if !asJSON {
+					return usageErrorf("--append only applies to --json (the JSON envelope path)")
+				}
+				if outputPath == "" {
+					return usageErrorf("--append requires --output <path> (the file to append to)")
+				}
+				// --append implies compact mode: each call adds
+				// ONE record to a JSONL stream, and indented JSON
+				// across multiple records would corrupt every
+				// consumer that splits on \n. Quietly upgrading
+				// rather than rejecting keeps the most common
+				// invocation (`tsk graph --reachable 7 --json
+				// --output snap.jsonl --append`) ergonomic.
+				jsonCompact = true
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -278,12 +296,38 @@ Examples:
 			// follows).
 			if outputPath != "" {
 				if asJSON {
-					if err := validateGraphOutputJSONExtension(outputPath); err != nil {
+					if err := validateGraphOutputJSONExtension(outputPath, jsonAppend); err != nil {
 						return err
 					}
 					var buf bytes.Buffer
 					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact); err != nil {
 						return err
+					}
+					if jsonAppend {
+						// Append-mode: open the file in O_APPEND, write the
+						// single compact record (already terminated with a
+						// trailing newline by json.Encoder), close. If the
+						// file doesn't exist we create it with the same
+						// 0644 mode the truncating-write path uses, so the
+						// first append creates a fresh JSONL file
+						// transparently. The atomic-write contract is
+						// weaker here than the rest of tsk's I/O (a
+						// concurrent reader could see a partial write of
+						// a single record on a non-POSIX filesystem), but
+						// JSONL by design is append-friendly: most
+						// filesystems guarantee atomicity for writes
+						// under 4KB, which our compact envelope easily
+						// fits.
+						f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+						if err != nil {
+							return fmt.Errorf("--append: open %s: %w", outputPath, err)
+						}
+						defer f.Close()
+						if _, err := f.Write(buf.Bytes()); err != nil {
+							return fmt.Errorf("--append: write %s: %w", outputPath, err)
+						}
+						pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+						return nil
 					}
 					if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
 						return fmt.Errorf("--output: write %s: %w", outputPath, err)
@@ -320,7 +364,8 @@ Examples:
 	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT/SVG) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
 	cmd.Flags().BoolVar(&jsonCompact, "compact-json", false, "for --json: emit a single-line, no-indent JSON record (JSONL-friendly). Useful when appending impact-analysis snapshots to a log file where each line must be a self-contained record (`tsk graph --reachable 7 --json --compact-json --output snap.jsonl` appends one record per call).")
-	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
+	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> instead of overwriting (JSONL semantics). Each call adds exactly one record to the file (creating it if missing); the file builds up a history of impact-analysis snapshots over time. Implies --compact-json so the on-disk shape is true JSONL. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
+	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
 
@@ -756,27 +801,41 @@ func validateGraphOutputExtension(path, format string) error {
 
 // validateGraphOutputJSONExtension surfaces a clear usage error
 // when --json + --output point at a path whose extension isn't
-// .json. Catches the silent-footgun case where a user types
-// `--reachable 7 --json --output impact.svg`: without this check,
-// the file lands containing JSON bytes under a `.svg` name, which
-// breaks every downstream tool inspecting it by extension (an
-// SVG viewer would refuse to render it; a JSON-typed pipeline
-// would skip it).
+// .json (or, in --append mode, also .jsonl). Catches the silent-
+// footgun case where a user types `--reachable 7 --json --output
+// impact.svg`: without this check, the file lands containing JSON
+// bytes under a `.svg` name, which breaks every downstream tool
+// inspecting it by extension (an SVG viewer would refuse to render
+// it; a JSON-typed pipeline would skip it).
 //
-// Case-insensitive on the extension so `.JSON` passes. Bare paths
-// (no extension) are REJECTED — JSON has a real on-disk convention
-// worth enforcing, and extensionless dumps usually mean a typo
-// (the user almost certainly meant `--output impact.json`).
-// This is stricter than ASCII's "extensionless OK" because the
-// JSON content has no inherent text-fallback identity.
+// Case-insensitive on the extension so `.JSON` / `.JSONL` pass.
+// Bare paths (no extension) are REJECTED — JSON / JSONL have a real
+// on-disk convention worth enforcing, and extensionless dumps usually
+// mean a typo (the user almost certainly meant `--output impact.json`
+// or `--output snap.jsonl`). This is stricter than ASCII's
+// "extensionless OK" because the JSON content has no inherent
+// text-fallback identity.
+//
+// appendMode flips the matrix: when set, .jsonl is the CANONICAL
+// extension (JSONL = "JSON Lines", one record per line — every
+// streaming JSON pipeline uses this convention). .json is still
+// accepted in append mode for users who already named their file
+// that way — the on-disk shape is functionally JSONL either
+// extension, but .jsonl is the more honest label.
 //
 // Future format gains slot in via validateGraphOutputExtension's
 // switch + a sibling helper here; the helpers stay narrow so
 // drift between flag-help and validation can't sneak in.
-func validateGraphOutputJSONExtension(path string) error {
+func validateGraphOutputJSONExtension(path string, appendMode bool) error {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext == ".json" {
 		return nil
+	}
+	if appendMode && ext == ".jsonl" {
+		return nil
+	}
+	if appendMode {
+		return usageErrorf("--json --output --append expects path ending in .json or .jsonl, got %q", ext)
 	}
 	return usageErrorf("--json --output expects path ending in .json, got %q", ext)
 }

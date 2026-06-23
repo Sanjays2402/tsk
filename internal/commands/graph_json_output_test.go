@@ -208,7 +208,7 @@ func TestValidateGraphOutputJSONExtensionMatrix(t *testing.T) {
 		{"foo.dot", true},
 	}
 	for _, c := range cases {
-		err := validateGraphOutputJSONExtension(c.path)
+		err := validateGraphOutputJSONExtension(c.path, false)
 		if (err != nil) != c.wantErr {
 			t.Errorf("path=%q: wantErr=%v got %v", c.path, c.wantErr, err)
 		}
