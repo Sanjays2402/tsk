@@ -3794,11 +3794,11 @@ follow-ons sensible from this tick's features.
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
-- [ ] `tsk start --all --strict-and-tag a,b` — intersection variant for the inverse bulk verb (sister of pause --all --strict-and-tag shipped this tick; same flag name)
+- [ ] `tsk start --all --strict-and-tag a,b` — intersection variant for the inverse bulk verb (sister of pause --all --strict-and-tag shipped this tick; same flag name) — SHIPPED tick #28 (see tick #28 notes)
 - [ ] `tsk depend --pending --json --strict-and-tag a,b` recipe doc — one-pager showing the structured intersection-filter JSON shape
 - [ ] `tsk graph --json --include-priority --include-tags --include-due` recipe doc — one-pager showing the full-fat envelope and a multi-axis jq selector
-- [ ] `tsk graph --json --include-completed` — fourth opt-in field carrying the Completed timestamp (would let CI gates correlate impact-analysis with completion velocity)
-- [ ] `tsk graph --json --include-started` — fifth opt-in field carrying the in-progress Started timestamp (sister of --include-completed for the open side)
+- [ ] `tsk graph --json --include-completed` — fourth opt-in field carrying the Completed timestamp (would let CI gates correlate impact-analysis with completion velocity) — SHIPPED tick #28 (see tick #28 notes)
+- [ ] `tsk graph --json --include-started` — fifth opt-in field carrying the in-progress Started timestamp (sister of --include-completed for the open side) — SHIPPED tick #28 (see tick #28 notes)
 - [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring (combine the streaming + watcher patterns)
 - [ ] `tsk archive --json --append --rotate N` — auto-rotate the JSONL file when it exceeds N records (sister of `tsk graph --json --append --rotate`)
 - [ ] `tsk archive --json --output snap.jsonl --append | jq` recipe doc — one-pager showing the velocity-tracking pipeline pattern
@@ -3812,4 +3812,254 @@ follow-ons sensible from this tick's features.
 - [ ] TUI sticky header with `tsk wip` count
 - [ ] TUI '?' enter help overlay also shows the active filter / sort state
 - [ ] TUI status footer auto-clears after N seconds
-- [ ] TUI 'Y' yank ALL visible tasks (multi-task variant; sister of 'y')
+- [ ] TUI 'Y' yank ALL visible tasks (multi-task variant; sister of 'y') — SHIPPED tick #28 (see tick #28 notes)
+
+
+### 2026-06-23 09:41 PT (tick #28)
+
+Five features shipped, full quality gate green (gofmt + go vet
++ go build + go test ./...; all packages clean across
+internal/commands, internal/tui, internal/store, internal/model,
+internal/dateparse, internal/util), committed cleanly to main as
+five separate revertible commits, pushed and verified on
+origin/main.
+
+Features shipped this batch:
+
+1. `tsk graph --json --include-completed` (commit b64fe6e)
+   FOURTH opt-in node field in the graph JSON envelope, sister of
+   --include-priority / --include-tags / --include-due (shipped
+   ticks #26-27). Adds a per-node `completed` field carrying the
+   RFC3339 timestamp of when each task was completed. Open tasks
+   leave the field absent (omitempty drops the empty string).
+   Useful for completion-velocity analysis on dep chains (what
+   fraction has shipped?), recently-completed sibling detection
+   (which prereqs finished in the last 24h?), and CI gates that
+   need to know how much of a chain has shipped. RFC3339 matches
+   `tsk show --json` and `tsk wip --json` so jq pipelines can
+   correlate envelopes with per-task lookups without parsing a
+   different shape. Composes with all other --include-* opt-ins,
+   --compact-json (single-line), --append (JSONL streaming), and
+   --upstream-of (inverse direction).
+
+2. `tsk graph --json --include-started` (commit 4dc02d7)
+   FIFTH opt-in node field, sister of --include-completed for the
+   OPEN side of the work-state pair: completed surfaces finish
+   time, started surfaces work-began time. Adds a per-node
+   `started` field carrying the RFC3339 timestamp of when each
+   task was last started (via `tsk start`). Tasks that have never
+   been started leave the field absent. Useful for elapsed-time
+   analysis on currently-working tasks, "what's in flight in this
+   dep chain?" gates, and pomodoro/timer integrations. Honors the
+   done semantics: `tsk done` clears Started (the existing model
+   contract), so a task that transitioned started -> done shows
+   up with `completed` set but `started` absent in the envelope
+   (regression-tested explicitly). Same composition surface as
+   --include-completed.
+
+3. `tsk start --all --strict-and-tag a,b` (commit 179ab11)
+   CSV intersection-style tag filter for the bulk-start verb.
+   Sister of `tsk pause --all --strict-and-tag` (tick #27) and
+   `tsk depend --pending --strict-and-tag` (tick #26) — the same
+   flag now applies to ALL THREE bulk-action surfaces so the
+   tag-axis intersection filter reads symmetrically across the
+   verbs (the three rollouts of the same primitive: pending feed,
+   bulk pause, bulk start). Mutually exclusive with --tag (each
+   is a different selector axis). Composes with --priority as
+   AND. The "requires a filter" guard now accepts strict-and-tag
+   as a valid scope alongside --tag and --priority. Filter
+   summary renders with the &-form ("tag=a&b") to distinguish
+   intersection from union ("tag=a"), same disambiguation marker
+   pause and depend use.
+
+4. `tsk` TUI 'Y' yank-all-visible (commit bd6f9d3)
+   Uppercase 'Y' is the multi-task sister of lowercase 'y'
+   (shipped tick #26). Where 'y' copies one task to the terminal
+   clipboard via OSC52, 'Y' copies EVERY currently-visible task
+   as a single self-contained block — the "standup / retro /
+   weekly review" keystroke that produces a pasteable transcript
+   of the view in one go. Respects every active narrowing (search
+   filter, section collapse, pinned-focus) because the user's
+   mental model is "what's on my screen right now". Status footer
+   reports both task count and approximate payload size in human
+   units ("yanked 5 tasks (842B)" / "yanked 50 tasks (4.2KB)").
+   Edge cases handled: empty visible set (no write, clear status
+   so the clipboard isn't clobbered with an empty payload),
+   write failure (error surfaces in footer), form input
+   shadowing (while add form is open 'Y' lands in the value).
+
+5. `tsk graph --json --include-all` (commit 7983705)
+   Ergonomic shortcut that flips on EVERY opt-in node field at
+   once (priority, tags, due, completed, started). Equivalent to
+   passing all five --include-* flags individually — produces
+   literally byte-identical envelope output (regression-tested).
+   Use case: pre-commit dashboards, comprehensive snapshot tests,
+   completion-velocity + elapsed-time analyses that join
+   multiple axes in one jq query (e.g. `select(.priority ==
+   "urgent" and .due < "2026-07-01" and .completed == null)`).
+   Idempotent when combined with individual flags (true OR true).
+   Default stays minimal — opt-in only activates with the flag.
+
+Files added this tick:
+- internal/commands/graph_json_include_completed_test.go (7 tests)
+- internal/commands/graph_json_include_started_test.go  (9 tests)
+- internal/commands/start_all_strict_and_tag_test.go    (9 tests)
+- internal/tui/yank_all_test.go                         (10 tests)
+- internal/commands/graph_json_include_all_test.go      (8 tests)
+
+Files modified:
+- internal/commands/graph.go (includeCompleted +
+  includeStarted + includeAll flag declarations + validation;
+  emitSubgraphJSON sig grows by Completed/Started args; node
+  body adds Completed/Started writes; subgraphNode struct grows
+  Completed/Started string fields with omitempty; --include-all
+  block flips every flag on after validation; time import
+  added; Examples list adds three new lines)
+- internal/commands/start.go (startStrictAndTag flag
+  declaration + dispatch arg + flag registration; runStartAll
+  sig grows by strictAndTagsRaw; mutex check between --tag and
+  --strict-and-tag; filterStartAllIDs applies taskHasAllTags
+  filter; buildStartAllFilterSummary renders "tag=a&b" form;
+  startAllDryRunDoc gains StrictAndTag field;
+  emitStartAllDryRunJSON threads the new arg; cmd.RunE checks
+  --tag/--strict-and-tag/--priority for non --all path; Long
+  doc and Examples list both gain the new flag)
+- internal/tui/keys.go (YankAll binding + struct field)
+- internal/tui/app.go (yankAllVisible method, dispatch wiring,
+  footer hint adds "Y yank-all", helpView gains "Y" + "yank
+  ALL visible" row, comment whitespace)
+
+Per-feature test counts:
+  graph --include-completed         7 new (presence on done +
+                                    absence on open via byte-
+                                    level check, default-is-absent
+                                    backward compat, requires-json
+                                    usage error, composition with
+                                    all prior --include-* opt-ins,
+                                    compact-json single-line shape,
+                                    upstream-of direction symmetry,
+                                    dangling-node field omission
+                                    via json.Marshal, RFC3339
+                                    format validation)
+  graph --include-started           9 new (presence on started +
+                                    absence on not-started via
+                                    byte-level check, default-is-
+                                    absent, requires-json, all-
+                                    five --include-* saturation,
+                                    compact-json, dangling-node
+                                    omission, started-then-done
+                                    state transition clears,
+                                    upstream-of, append JSONL
+                                    streaming)
+  start --all --strict-and-tag      9 new (intersection requires
+                                    all tags, mutex with --tag,
+                                    single-element CSV identity,
+                                    composes with --priority,
+                                    dry-run preview without
+                                    writes, --dry-run --json
+                                    envelope with strict_and_tag
+                                    field, empty-result message
+                                    with filter summary, CSV-
+                                    whitespace tolerance, error
+                                    message mentions new axis)
+  TUI 'Y' yank-all                 10 new (OSC52 shape with
+                                    multi-task payload, status
+                                    count + size report, empty-
+                                    set no-op, filter-respect,
+                                    form-input shadowing, byte-
+                                    units scale, blank-line
+                                    separator byte-exact
+                                    stability, help + footer
+                                    mention, render-order
+                                    preservation, regression
+                                    guard lowercase 'y' still
+                                    single-yanks)
+  graph --include-all               8 new (every-field activation,
+                                    byte-equivalent to long-form
+                                    individual flags, requires-
+                                    json, idempotent with
+                                    individual flags, compact-
+                                    json carries all fields
+                                    inline, append JSONL
+                                    streaming with all fields,
+                                    upstream-of, default-is-no-
+                                    op, --help discoverability)
+  TOTAL                            43 new test cases on top of
+                                    the existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each commit is independently revertible.
+- The graph JSON envelope path now has its full FIVE-axis filter
+  trinity (priority + tags + due + completed + started), plus
+  the ergonomic --include-all shortcut. The opt-in modular
+  design holds at full saturation — composability tests confirm
+  every pairwise + full-stack combination works without
+  interference.
+- The strict-and-tag flag now applies to ALL THREE bulk-action
+  surfaces (`tsk depend --pending`, `tsk pause --all`, and
+  `tsk start --all`). The tag-axis intersection primitive is
+  surface-complete across the bulk verbs.
+- The TUI gains its first MULTI-OBJECT clipboard primitive
+  ('Y'), pairing with the single-task 'y' shipped tick #26 in
+  the same lowercase/uppercase convention already used for
+  g/G top-bottom, r/R reload, p/P priority cycle.
+- One small post-tick fixup: gofmt aligned a comment block in
+  app.go after the yank-all addition; folded into the yank-all
+  commit via `git rebase --autosquash` so the history stays
+  one-commit-per-feature.
+
+This is the fifteenth batch shipped directly on main. The graph
+JSON envelope reaches full-fat (five opt-in fields + the
+include-all shortcut); strict-and-tag becomes a complete
+primitive across all three bulk-verb surfaces; the TUI gains its
+first multi-object clipboard primitive. The next ticks have
+ample sized work in the long-tail (recipe docs, recurring tasks,
+config files, multi-file aggregation, watch modes, the still-
+unstarted TUI structural features like detail pane / pomodoro
+overlay / multi-field add form).
+
+
+### Polish & DX (added 2026-06-23 tick #28)
+
+Fresh ideas so future ticks have ample sized work. With the
+graph JSON envelope now reaching full-fat saturation (five opt-
+in fields, --include-all shortcut), the strict-and-tag flag
+surface-complete across all three bulk verbs, and the TUI
+gaining its first multi-object clipboard primitive, this batch
+leans into the still-unstarted long-tail and fresh follow-ons
+sensible from this tick's features.
+
+- [ ] `tsk graph --json --include-all --output snapshot.jsonl --append` recipe doc — one-pager showing the full-fat snapshot-history pattern
+- [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates (writes to <path>)
+- [ ] `tsk graph --json --append --rotate N` — auto-rotate the JSONL file when it exceeds N records
+- [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring
+- [ ] `tsk archive --json --append --rotate N` — auto-rotate the archive JSONL file (sister of graph rotate)
+- [ ] `tsk depend --pending --watch N` — re-render the notification queue every N seconds (live triage)
+- [ ] `tsk top --watch N` — live priority-ranked view
+- [ ] `tsk show <id> --watch N` — live detail view (paired with pomodoro/timer integrations)
+- [ ] `tsk start --since <date>` — emit every task started after a checkpoint ("what did I touch this week?")
+- [ ] `tsk pause --since <date>` — sister of start --since (what did I put down this week?)
+- [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
+- [ ] `tsk graph --json --filter-completed-since <date>` — restrict the JSON envelope to nodes completed after a date
+- [ ] `tsk graph --json --filter-started-since <date>` — restrict to nodes started after a date (recently-touched chain)
+- [ ] `tsk wip --filter-elapsed-over <duration>` — list in-progress tasks running longer than a threshold (24h+ stale-WIP alert)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur branch)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop
+- [ ] `tsk rules` — declarative auto-mutation rules
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' help overlay also shows the active filter / sort state
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'g<id>' jump-to-task-id (vim-style by id, paired with the existing 'N' jump-to-next-unblocked)
+- [ ] TUI '/' search supports tag prefix (e.g. `/tag:work`) for in-TUI tag filter
+- [ ] TUI 'Y' yank-all with section header — render the section label before each group ("# Overdue", "# Today", etc.)
