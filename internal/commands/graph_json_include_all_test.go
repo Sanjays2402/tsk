@@ -83,7 +83,7 @@ func TestGraphJSONIncludeAllEquivalentToIndividualFlags(t *testing.T) {
 		t.Fatalf("start: %v", err)
 	}
 	gotIndividual, _, err := runCmd(t, dir, "graph", "--reachable", "2", "--json",
-		"--include-priority", "--include-tags", "--include-due", "--include-completed", "--include-started")
+		"--include-priority", "--include-tags", "--include-due", "--include-completed", "--include-started", "--include-pinned")
 	if err != nil {
 		t.Fatalf("graph individual: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestGraphJSONIncludeAllDefaultIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("graph: %v", err)
 	}
-	for _, forbidden := range []string{"\"priority\"", "\"tags\"", "\"due\"", "\"completed\"", "\"started\""} {
+	for _, forbidden := range []string{"\"priority\"", "\"tags\"", "\"due\"", "\"completed\"", "\"started\"", "\"pinned\""} {
 		if strings.Contains(stdout, forbidden) {
 			t.Errorf("default envelope should NOT contain %s, got:\n%s", forbidden, stdout)
 		}

@@ -95,6 +95,7 @@ func newGraphCmd() *cobra.Command {
 		includeDue       bool
 		includeCompleted bool
 		includeStarted   bool
+		includePinned    bool
 		includeAll       bool
 	)
 	cmd := &cobra.Command{
@@ -201,7 +202,8 @@ Examples:
   tsk graph --reachable 7 --json --include-priority                 # JSON envelope with per-node priority
   tsk graph --reachable 7 --json --include-completed                # add per-node 'completed' RFC3339 timestamp (done tasks only)
   tsk graph --reachable 7 --json --include-started                  # add per-node 'started' RFC3339 timestamp (in-progress tasks only)
-  tsk graph --reachable 7 --json --include-all                      # full-fat envelope: every opt-in field (priority+tags+due+completed+started)
+  tsk graph --reachable 7 --json --include-pinned                   # add per-node 'pinned' boolean (high-importance bookmark axis)
+  tsk graph --reachable 7 --json --include-all                      # full-fat envelope: every opt-in field (priority+tags+due+completed+started+pinned)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -244,6 +246,9 @@ Examples:
 			if includeStarted && !asJSON {
 				return usageErrorf("--include-started only applies to --json (the JSON envelope path)")
 			}
+			if includePinned && !asJSON {
+				return usageErrorf("--include-pinned only applies to --json (the JSON envelope path)")
+			}
 			if includeAll && !asJSON {
 				return usageErrorf("--include-all only applies to --json (the JSON envelope path)")
 			}
@@ -257,6 +262,7 @@ Examples:
 				includeDue = true
 				includeCompleted = true
 				includeStarted = true
+				includePinned = true
 			}
 			if jsonAppend {
 				if !asJSON {
@@ -355,7 +361,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -433,7 +439,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -455,7 +461,8 @@ Examples:
 	cmd.Flags().BoolVar(&includeDue, "include-due", false, "for --json: add a per-node 'due' field to the envelope (canonical YYYY-MM-DD date string; field is omitted when the task has no due date). Sister of --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag impact-analysis chains where something is due this week (e.g. `select(.due < \"2026-07-01\")`) without a per-node `tsk show --json <id>` round-trip. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read due from.")
 	cmd.Flags().BoolVar(&includeCompleted, "include-completed", false, "for --json: add a per-node 'completed' field to the envelope (canonical RFC3339 timestamp string; field is omitted when the task isn't done). Sister of --include-due / --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for completion-velocity analysis (`jq '[.nodes[] | select(.completed != null)] | length / (.nodes | length)'`), recently-completed sibling detection (which prereqs finished in the last 24h?), and CI gates that gate on \"this dependency chain is N% done\". Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read completed from.")
 	cmd.Flags().BoolVar(&includeStarted, "include-started", false, "for --json: add a per-node 'started' field to the envelope (canonical RFC3339 timestamp string; field is omitted when the task isn't in-progress). Sister of --include-completed for the OPEN side of the work-state pair: --include-completed surfaces finish time, --include-started surfaces work-began time. Useful for elapsed-time analysis on currently-working tasks (`jq '.nodes[] | select(.started != null) | .id'`), \"what's in flight in this dep chain?\" gates, and pomodoro/timer integrations that need to know the start instant. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes omit the field since we don't have a task to read started from.")
-	cmd.Flags().BoolVar(&includeAll, "include-all", false, "for --json: turn on EVERY --include-* opt-in field at once (priority, tags, due, completed, started). Ergonomic shortcut for \"give me the full-fat envelope\" use cases — pre-commit dashboards, comprehensive snapshot tests, completion-velocity + elapsed-time analyses that need every axis. Equivalent to passing --include-priority --include-tags --include-due --include-completed --include-started together; setting --include-all alongside the individual flags is idempotent (true OR true == true). The default stays minimal so existing snapshot fixtures and jq pipelines that don't need the extra fields keep their byte-identical historical shape. Useful when scripting `jq` queries that join multiple axes (e.g. `select(.priority == \"urgent\" and .due < \"2026-07-01\" and .completed == null)`) without remembering each opt-in flag name.")
+	cmd.Flags().BoolVar(&includePinned, "include-pinned", false, "for --json: add a per-node 'pinned' field to the envelope (boolean: true when the task is pinned via `tsk pin`, false otherwise; field is OMITTED when the flag isn't set). Sister of --include-priority / --include-tags / --include-due / --include-completed / --include-started — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag pinned tasks in an impact chain (e.g. `.nodes[] | select(.pinned)`), \"is anything important still blocking this release?\" gates, and CI scripts that want to spotlight pinned dependencies. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes omit the field since we don't have a task to read pinned from. Modeled as a *bool with omitempty so 'flag off' (field absent) and 'flag on, task not pinned' (field present and false) are distinguishable in the JSON output — same pattern --include-tags uses for its '[]' vs 'no field' distinction.")
+	cmd.Flags().BoolVar(&includeAll, "include-all", false, "for --json: turn on EVERY --include-* opt-in field at once (priority, tags, due, completed, started, pinned). Ergonomic shortcut for \"give me the full-fat envelope\" use cases — pre-commit dashboards, comprehensive snapshot tests, completion-velocity + elapsed-time analyses that need every axis. Equivalent to passing --include-priority --include-tags --include-due --include-completed --include-started --include-pinned together; setting --include-all alongside the individual flags is idempotent (true OR true == true). The default stays minimal so existing snapshot fixtures and jq pipelines that don't need the extra fields keep their byte-identical historical shape. Useful when scripting `jq` queries that join multiple axes (e.g. `select(.priority == \"urgent\" and .due < \"2026-07-01\" and .completed == null and .pinned)`) without remembering each opt-in flag name.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
@@ -1297,6 +1304,7 @@ type subgraphNode struct {
 	Due       string    `json:"due,omitempty"`
 	Completed string    `json:"completed,omitempty"`
 	Started   string    `json:"started,omitempty"`
+	Pinned    *bool     `json:"pinned,omitempty"`
 }
 
 // subgraphEdge is one directed dep edge in the JSON subgraph
@@ -1405,7 +1413,7 @@ type subgraphDoc struct {
 // started surfaces work-began time. Useful for elapsed-time
 // analysis on currently-working tasks and "what's in flight in
 // this chain?" gates. Composes with all other --include-* opt-ins.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted bool) error {
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1477,6 +1485,26 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 			// in-progress signal). Tasks that have never
 			// been started leave the field absent.
 			node.Started = t.Started.Format(time.RFC3339)
+		}
+		if includePinned {
+			// Pinned is the sixth opt-in field, the "high-
+			// importance bookmark" axis. Modeled as a *bool so
+			// the JSON encoder can DISTINGUISH "field
+			// intentionally omitted (flag off)" — nil pointer
+			// drops the field via omitempty — from "field
+			// present and false" (flag on, task not pinned) —
+			// non-nil pointer to false. A plain bool with
+			// omitempty would drop the false case (collapsing
+			// both meanings into "no field"), which would hide
+			// the fact that the flag is active for unpinned
+			// tasks. The pattern matches Tags's *[]string
+			// modeling that landed in tick #27 for the same
+			// reason. Useful for jq pipelines that need to
+			// flag pinned tasks in an impact chain (`.nodes[]
+			// | select(.pinned)`) without a per-node
+			// `tsk show --json <id>` round-trip.
+			pinned := t.Pinned
+			node.Pinned = &pinned
 		}
 		nodes = append(nodes, node)
 	}
