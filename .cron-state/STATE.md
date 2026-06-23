@@ -4032,20 +4032,253 @@ sensible from this tick's features.
 
 - [ ] `tsk graph --json --include-all --output snapshot.jsonl --append` recipe doc — one-pager showing the full-fat snapshot-history pattern
 - [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates (writes to <path>)
-- [ ] `tsk graph --json --append --rotate N` — auto-rotate the JSONL file when it exceeds N records
+- [x] `tsk graph --json --append --rotate N` — auto-rotate the JSONL file when it exceeds N records (tick 2026-06-23/1322)
 - [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring
-- [ ] `tsk archive --json --append --rotate N` — auto-rotate the archive JSONL file (sister of graph rotate)
+- [x] `tsk archive --json --append --rotate N` — auto-rotate the archive JSONL file (sister of graph rotate) (tick 2026-06-23/1322)
 - [ ] `tsk depend --pending --watch N` — re-render the notification queue every N seconds (live triage)
 - [ ] `tsk top --watch N` — live priority-ranked view
 - [ ] `tsk show <id> --watch N` — live detail view (paired with pomodoro/timer integrations)
 - [ ] `tsk start --since <date>` — emit every task started after a checkpoint ("what did I touch this week?")
 - [ ] `tsk pause --since <date>` — sister of start --since (what did I put down this week?)
 - [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
-- [ ] `tsk graph --json --filter-completed-since <date>` — restrict the JSON envelope to nodes completed after a date
+- [x] `tsk graph --json --filter-completed-since <date>` — restrict the JSON envelope to nodes completed after a date (tick 2026-06-23/1322)
 - [ ] `tsk graph --json --filter-started-since <date>` — restrict to nodes started after a date (recently-touched chain)
-- [ ] `tsk wip --filter-elapsed-over <duration>` — list in-progress tasks running longer than a threshold (24h+ stale-WIP alert)
+- [x] `tsk wip --filter-elapsed-over <duration>` — list in-progress tasks running longer than a threshold (shipped as `tsk wip --stale <duration>` for the more intuitive verb) (tick 2026-06-23/1322)
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV (storage/model backlog item still unstarted)
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur branch)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop
+- [ ] `tsk rules` — declarative auto-mutation rules
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' help overlay also shows the active filter / sort state
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'g<id>' jump-to-task-id (vim-style by id, paired with the existing 'N' jump-to-next-unblocked)
+- [ ] TUI '/' search supports tag prefix (e.g. `/tag:work`) for in-TUI tag filter
+
+
+### 2026-06-23 13:22 PT (tick #29)
+
+Five features shipped, full quality gate green (gofmt + go vet
++ go build + go test ./... — all packages clean across
+internal/commands, internal/tui, internal/store, internal/model,
+internal/dateparse, internal/util). Five separate revertible
+commits pushed and verified on origin/main:
+
+1. `tsk graph --json --output --append --rotate N` (commit ebf533c)
+   FIFO eviction primitive for the JSONL streaming-snapshot path.
+   --rotate N caps the file to the most-recent N records, dropping
+   the oldest after each append. Closes the unbounded-growth gap
+   on long-running cron-driven impact-analysis history loops and
+   pre-commit dashboards where the JSONL file would otherwise
+   grow indefinitely. Semantics: default 0 = no rotation (back-
+   compat); positive N = sliding window; negative = usage error;
+   --rotate without --append = usage error (vacuous on the
+   overwriting --output path); rotation happens AFTER the append
+   so a fresh write is always retained even at N=1 full file;
+   atomic via shared rotateJSONLFile helper (write-to-.tmp +
+   rename) so a crash mid-rotation leaves the previous file
+   intact; status footer reports drop count when rotation
+   actually trimmed lines.
+
+2. `tsk archive --json --output --append --rotate N` (commit eb7846b)
+   Sister of the graph version (shipped same tick): same FIFO
+   eviction primitive applied to the archive-run history JSONL
+   stream. Same semantics, same shared rotateJSONLFile helper,
+   same crash-safe atomic-rename contract. Useful for daily
+   archive cron loops that want a rolling 90-day window
+   (--rotate 90) of archive manifests for completion-velocity
+   tracking and bucket-distribution drift detection. The bulk-
+   verb append envelope surface is now symmetric across the
+   graph + archive pair on the rotate axis (both have
+   --output, --append, --rotate with identical contracts).
+
+3. `tsk wip --stale <duration>` (commit 4750f00)
+   Adds a staleness filter to `tsk wip` / `tsk in-progress`:
+   --stale 24h surfaces only the in-progress tasks running
+   longer than the threshold. The "I've been working on this
+   too long" alert mode — perfect for cron-driven standup,
+   pre-commit, and stale-WIP notification pipelines. Empty
+   value = no filter (back-compat); positive duration = only
+   tasks with elapsed > threshold appear; zero/negative =
+   usage error; composes with --json so scripted alerts get a
+   clean array (or `[]` when nothing's stale). Same duration
+   parser as `tsk log --since`, `tsk depend --pending --since`,
+   `tsk stats --since`. Plain output gains an explicit message
+   on empty result naming the threshold, and a header line on
+   populated result so the filter activity is visible.
+
+4. `tsk graph --json --include-pinned` (commit 7699226)
+   SIXTH opt-in node field for the graph JSON envelope, sister
+   of priority / tags / due / completed / started (the existing
+   five). Adds a per-node `pinned` boolean carrying the task's
+   pin state. Modeled as a *bool with omitempty so the encoder
+   can DISTINGUISH "flag off" (field absent) from "flag on,
+   task not pinned" (field present, false) — same pattern
+   --include-tags uses for its `[]` vs no-field distinction.
+   Useful for jq pipelines that flag pinned tasks in an impact
+   chain (`.nodes[] | select(.pinned)`), "is anything important
+   still blocking this release?" gates, and CI scripts that
+   spotlight pinned dependencies. --include-all updated to flip
+   on pinned alongside the other five — the ergonomic shortcut
+   continues to mean "every opt-in field at once".
+
+5. `tsk graph --json --filter-completed-since <duration>` (commit a7e3d93)
+   Recency-based subgraph filter: --filter-completed-since 7d
+   trims the impact-analysis envelope to nodes whose task was
+   completed within the last 7 days, dropping older completions
+   and any edges that touch them. Companion to --include-completed
+   (read the timestamp) — this one filters BY the timestamp. Root
+   id is always preserved (the consumer asked about THIS root).
+   Open / never-completed / dangling nodes are filtered out under
+   any active window. Envelope gains a top-level
+   `filter_completed_since` field carrying the humanized window
+   when active, so scripts can distinguish a filtered from
+   un-filtered envelope. Composes naturally with --reachable /
+   --upstream-of (both directions), --compact-json, --append (each
+   record reflects the filter at call time, useful in long-running
+   snapshot loops), and every --include-* opt-in.
+
+Files added this tick:
+- internal/commands/graph_json_append_rotate_test.go      (9 tests)
+- internal/commands/archive_json_append_rotate_test.go    (8 tests)
+- internal/commands/wip_stale_test.go                    (10 tests)
+- internal/commands/graph_json_include_pinned_test.go     (9 tests)
+- internal/commands/graph_filter_completed_since_test.go (11 tests)
+
+Files modified:
+- internal/commands/graph.go (jsonRotate var; rotateJSONLFile
+  helper with atomic-replace semantics; includePinned + Pinned
+  *bool field; filterCompletedSince + FilterCompletedSince
+  envelope field; emitSubgraphJSON sig grows by 3 args; node-
+  filter + edge-filter for completed-since; flag declarations
+  + Examples lines + Long doc updates)
+- internal/commands/archive.go (jsonRotate var; emitArchiveJSON
+  sig grows by rotateN; post-append rotation call via shared
+  rotateJSONLFile; flag declaration mirrors graph's wording)
+- internal/commands/start.go (staleRaw var; --stale parsing
+  + validation; filter loop; empty-set + header messaging;
+  Long doc + Examples)
+- internal/commands/graph_json_include_all_test.go (existing
+  saturation tests updated to include the new --include-pinned
+  flag in their per-axis lists and forbidden-on-default list)
+
+Per-feature test counts:
+  graph --append --rotate           9 new (FIFO eviction order,
+                                    drop-count report, no-trim
+                                    under cap, requires-append,
+                                    negative rejection, --rotate
+                                    0 explicit disable, atomic
+                                    .tmp cleanup, --rotate 1
+                                    rolling-single, direct helper
+                                    unit-test for four branches,
+                                    --rotate 0 leaves oversize
+                                    file alone)
+  archive --append --rotate         8 new (FIFO eviction order
+                                    via per-run total_count,
+                                    drop-count report, no-trim
+                                    under cap, requires-append,
+                                    negative rejection, --rotate
+                                    0 disable, --rotate 1 single,
+                                    atomic .tmp cleanup)
+  wip --stale                      10 new (fresh tasks filtered,
+                                    old tasks surfaced via
+                                    hand-edited Started, JSON
+                                    composition, empty-array
+                                    shape, invalid duration
+                                    rejection, zero rejection,
+                                    negative rejection, empty
+                                    value no-filter back-compat,
+                                    sort-order preservation,
+                                    near-zero elapsed edge case,
+                                    --help mention)
+  graph --include-pinned            9 new (true on pinned task,
+                                    false on unpinned with byte-
+                                    level check, default-absent
+                                    back-compat, requires-json,
+                                    --include-all activation,
+                                    composition with --include-
+                                    priority, dangling-edge
+                                    omission, --compact-json
+                                    single-line, --help mention,
+                                    --upstream-of direction parity)
+  graph --filter-completed-since   11 new (old node trim,
+                                    root always preserved, edge
+                                    filter drops cross-refs,
+                                    fresh node within-window
+                                    survives, envelope marker
+                                    field present, default-absent
+                                    back-compat, requires-json,
+                                    invalid duration rejection,
+                                    zero rejection, composition
+                                    with --include-completed,
+                                    empty value no-op)
+  TOTAL                            47 new test cases on top of
+                                    the existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each commit is independently revertible.
+- The graph JSON envelope now has SIX opt-in fields (added
+  pinned) plus the --include-all shortcut + a recency-filter
+  axis (--filter-completed-since). The envelope path is now
+  the most-mature surface in the codebase.
+- Both --append paths (graph + archive) gain rotation parity
+  via the shared rotateJSONLFile helper — the bulk JSONL
+  streaming surface is fully symmetric.
+- `tsk wip` gains its first filter flag (--stale). Sister
+  patterns suggest future --priority / --tag filters on the
+  same verb (parking lot for a future tick).
+- Quality gate ran ONCE for the whole batch; all 62.4s of
+  internal/commands tests + the other 4 packages all green.
+
+This is the sixteenth batch shipped directly on main. The
+graph JSON envelope reaches a new milestone: six opt-in fields,
+recency-based slicing, JSONL rotation. The archive subcommand
+matches the graph version's --append --rotate surface. tsk wip
+gains its first filter primitive. The next ticks have ample
+sized work in the long-tail (recipe docs, recurring tasks,
+config files, multi-file aggregation, watch modes, the still-
+unstarted TUI structural features, plus follow-on filter ideas
+from this tick like --filter-started-since and wip --priority /
+wip --tag).
+
+
+### Polish & DX (added 2026-06-23 tick #29)
+
+Fresh ideas so future ticks have ample sized work. With the
+graph JSON envelope now sporting SIX opt-in fields and a
+recency-based filter, both --append paths sharing the rotate
+primitive via a shared helper, and `tsk wip` gaining its first
+filter flag, this batch leans into the still-unstarted long-
+tail and fresh follow-ons sensible from this tick's features.
+
+- [ ] `tsk graph --json --filter-started-since <date>` — sister of --filter-completed-since for in-progress recency (recently-touched chain)
+- [ ] `tsk graph --json --filter-completed-since <d> --filter-started-since <d>` recipe doc — combined recency window for "what's actively moving?" reports
+- [ ] `tsk wip --priority <p>` — filter the WIP list by priority (sister of --stale's filtering axis)
+- [ ] `tsk wip --tag <t>` — filter the WIP list by single tag (sister of --priority)
+- [ ] `tsk wip --strict-and-tag a,b` — intersection-style multi-tag (parity with the bulk-verb cluster)
+- [ ] `tsk wip --stale 24h --json | jq` recipe doc — one-pager showing stale-WIP alert pipelines for cron / telegram
+- [ ] `tsk graph --json --append --rotate N --max-bytes B` — secondary cap on file size (in addition to record count) for safety in pathological cases
+- [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates
+- [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring
+- [ ] `tsk depend --pending --watch N` — re-render the notification queue every N seconds (live triage)
+- [ ] `tsk top --watch N` — live priority-ranked view
+- [ ] `tsk show <id> --watch N` — live detail view (paired with pomodoro/timer integrations)
+- [ ] `tsk start --since <date>` — emit every task started after a checkpoint ("what did I touch this week?")
+- [ ] `tsk pause --since <date>` — sister of start --since (what did I put down this week?)
+- [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
+- [ ] `tsk graph --json --filter-completed-since 7d --include-completed | jq` recipe doc — completion-velocity dashboard pattern
+- [ ] `tsk graph --json --include-pinned --filter-completed-since 7d | jq '.nodes[] | select(.pinned)'` recipe doc — pinned-only impact pattern
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
 - [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
 - [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
