@@ -602,12 +602,12 @@ from this tick's features.
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk graph --output <path> --watch N` — re-render every N seconds while a separate process mutates (follow-on to this tick's --output)
-- [ ] `tsk graph --reachable <id> --json --output <path>` — extend --output to the JSON envelope path
+- [x] `tsk graph --reachable <id> --json --output <path>` — extend --output to the JSON envelope path (tick 2026-06-22/1839)
 - [ ] `tsk graph --format svg --output <path> --highlight <id>` recipe doc — one-pager on the "render this view, save it for a doc" workflow
 - [ ] `tsk pause --all --tag X --priority Y --dry-run` recipe doc — composing the curated bulk-pause preview
 - [ ] `tsk archive --bucket-by tag:X,Y,Z --merge-into <file>` recipe doc — multi-tag rollup pattern
-- [ ] `tsk archive --bucket-by tag:!X` — INVERSE single-tag partition (everything NOT tagged X lands in the call-out bucket)
-- [ ] `tsk archive --bucket-by tag:X,Y --strict-and` — require ALL tags (intersection) vs ANY (union; current default)
+- [x] `tsk archive --bucket-by tag:!X` — INVERSE single-tag partition (everything NOT tagged X lands in the call-out bucket) (tick 2026-06-22/1839)
+- [x] `tsk archive --bucket-by tag:X,Y --strict-and` — require ALL tags (intersection) vs ANY (union; current default) (tick 2026-06-22/1839)
 - [ ] `tsk doctor --fix-orphans --dry-run --json` — already works via existing JSON path; recipe doc for CI preflight
 - [ ] `tsk doctor --fix-orphans --dry-run --merge-into <file>` — extend dry-run to a project-rollup archive
 - [ ] `tsk doctor --fix-orphans --interactive` — prompt per-ref before scrubbing (the "review then apply" middle ground)
@@ -621,9 +621,54 @@ from this tick's features.
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 - [ ] TUI status-bar elapsed-time render for in-progress tasks
 - [ ] TUI sticky header with `tsk wip` count
-- [ ] TUI 'N' jump to next-unblocked task (the "what should I do next" hotkey paired with `tsk next` CLI)
-- [ ] TUI 'F' focus-on-pinned (filter to pinned tasks only — sister of `tsk top --pinned-only`)
+- [x] TUI 'N' jump to next-unblocked task (the "what should I do next" hotkey paired with `tsk next` CLI) (tick 2026-06-22/1839)
+- [x] TUI 'F' focus-on-pinned (filter to pinned tasks only — sister of `tsk top --pinned-only`) (tick 2026-06-22/1839)
 - [ ] TUI 'X' archive-current-task (sister of `tsk archive` CLI verb)
+
+
+### Polish & DX (added 2026-06-22 tick #24)
+
+Fresh ideas so future ticks have ample sized work. With the
+archive bucket-by tag axis now offering all four logical
+combinations (positive union, positive intersection, inverse
+union, inverse intersection — via tag:X,Y / --strict-and / tag:!X
+/ tag:!X,!Y --strict-and), the graph --json envelope writable
+to disk (closing the last gap in the --output cluster), and the
+TUI gaining its first "smart selection" hotkey ('N' next-unblocked)
+plus a toggle-filter primitive ('F' pin-focus), this batch leans
+into the still-unstarted long tail: TUI work (5 items left after
+N/F shipped), recurring tasks (parking lot), config + multi-file
+(long-unstarted), plus follow-ons sensible from this tick's
+features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --output <path> --watch N` — re-render every N seconds while a separate process mutates
+- [ ] `tsk archive --bucket-by tag:!X --strict-and` recipe doc — "everything that didn't ship with ALL these tags" pattern (combines the two CSV-tag axes shipped this tick)
+- [ ] `tsk archive --bucket-by tag:X,Y --strict-and --inverse-output` — emit BOTH the call-out AND the other bucket as separate file outputs (a structured "diff" of the partition)
+- [ ] `tsk graph --reachable <id> --json --output <path> --pretty=false` — opt out of the indented JSON for compact one-line writes (jsonl-friendly)
+- [ ] `tsk graph --reachable <id> --json --output <path> --append` — append to an existing JSON file as a JSONL stream (history of impact-analysis snapshots over time)
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI 'X' archive-current-task (sister of `tsk archive` CLI verb)
+- [ ] TUI 'P' priority-cycle-down (current 'p' cycles UP only; lowercase/uppercase pair like g/G, r/R)
+- [ ] TUI '*' toggle-pin-current-task (sister of `tsk pin` CLI; complements F focus-on-pinned by making it easy to BUILD the pinned set inside the TUI)
+- [ ] `tsk archive --bucket-by priority --strict-and` — currently --strict-and rejects non-tag axes; consider relaxing to "priority + tag intersection" (e.g. urgent tasks tagged 'release')
+- [ ] `tsk pause --all --tag X --strict-and-tag Y` — narrow bulk-pause by INTERSECTION of two tags (mirrors archive's strict-and surface)
+- [ ] `tsk depend --pending --strict-and-tag a,b` — intersection variant for the pending notification queue
+
 
 
 ## Known footguns the loop has run into
@@ -2961,3 +3006,209 @@ TUI r/R reload pair is complete (preserve vs. clear), and the C
 clone shortcut closes the "TUI mirrors CLI" gap for the clone
 verb.
 
+
+### 2026-06-22 18:39 PT (tick #24)
+
+Shipped 5 features. Full quality gate (gofmt + vet + build + go
+test ./...) green before push. Single revertible commit per feature.
+Landed 31111a4..a12497a on origin/main; verified via `git log
+origin/main | head`.
+
+- `archive --bucket-by tag:!X`             — 31111a4 feat(archive): --bucket-by tag:!X inverts the single-tag boolean partition
+- `archive --bucket-by tag:X,Y --strict-and` — 34a84f7 feat(archive): --bucket-by tag:X,Y --strict-and intersects instead of unions
+- `graph --json --output <path>`           — 961c5a0 feat(graph): --json --output writes the subgraph envelope to a file
+- TUI 'N' jump-next-unblocked              — bc92616 feat(tui): 'N' key jumps the cursor to the next-unblocked task
+- TUI 'F' focus-pinned toggle              — a12497a feat(tui): 'F' key toggles focus-on-pinned (sister of tsk top --pinned-only)
+
+Notable choices:
+
+- `--bucket-by tag:!X` introduces the "!" prefix on a per-tag
+  basis. Single ("tag:!work"), CSV-positive ("tag:a,b"), CSV-
+  inverse ("tag:!a,!b") all share the same parseInversionTags
+  helper, which REQUIRES all tags in a CSV to share the same
+  inversion sense — "tag:!a,b" (mixed) is rejected at exit 2.
+  The label preserves the user's case AND the "!" prefix
+  ("## tag:!Release"), so flat-text archive scans can visually
+  distinguish positive from inverse buckets. Backward-compat
+  is total: existing positive forms (tag:X, tag:X,Y) go through
+  the same inversion-aware factory with inverted=false, label
+  shape unchanged. The old makeTagFilterBucketFn is preserved
+  as a thin wrapper for internal/test name continuity.
+
+- `--strict-and` is the union-vs-intersection knob for the CSV-
+  tag forms. Without it, the historical UNION (any-of) semantic
+  applies. With it, INTERSECTION (all-of) — only tasks carrying
+  every listed tag land in the call-out bucket. Combines with
+  inversion: "tag:!a,!b --strict-and" = NOT (carries a AND b),
+  the four logical combinations cover all the partition shapes
+  users want. The bucket label gains a "&" marker for the
+  intersection variant ("## tag:&a,b" positive, "## tag:!&a,b"
+  inverse) so flat-text scans can tell union from intersection
+  sections. Single-tag forms get NO "&" marker (no union/
+  intersection distinction with one tag). --strict-and without
+  --bucket-by, or with a non-tag axis (priority, id-range), is
+  rejected at exit 2 — the flag has no meaning outside the
+  CSV-tag forms.
+
+- `graph --json --output <path>` lifts the prior outright mutex
+  between --json and --output. The subgraph envelope now writes
+  directly to disk when both flags are set, useful for CI gates
+  and snapshot tests that want a stable filename without shell
+  redirection. Extension validation requires `.json` (case-
+  insensitive); bare paths (no extension) are REJECTED — stricter
+  than ASCII's "extensionless OK" because JSON has no inherent
+  text-fallback identity. Same atomic-write contract as the
+  rendered-graph --output path: validation runs BEFORE encoding,
+  so a typo never deposits bytes under the wrong extension. The
+  bytes on disk are byte-identical to what stdout would emit
+  (regression-tested via TestGraphJSONOutputBytesMatchStdout).
+  The existing TestGraphOutputRejectsWithJSON was updated to
+  reflect the new contract (extension mismatch, not outright
+  mutex).
+
+- TUI 'N' is the FIRST "smart selection" hotkey: instead of
+  positional movement (g/G/j/k jump or step by row), it picks
+  the BEST candidate using the same pin > priority > due > id
+  tie-break as `tsk next --respect-deps`. The CLI's
+  unmetBlockers / isBetterNext helpers live in
+  internal/commands, which can't be imported from internal/tui
+  (cycle), so they're mirrored locally as tuiUnmetBlockers /
+  isBetterNextTUI — the two pairs stay in lockstep by
+  documented design. When every visible candidate is blocked,
+  cursor falls back to the highest-priority blocked one with a
+  "(blocked by #X)" annotation in the status footer (more
+  honest than going silent). Uppercase 'N' chosen over 'n'
+  because lowercase 'n' is the Cancel binding (Esc + n).
+
+- TUI 'F' is the first TOGGLE-style filter primitive: press F
+  to narrow to pinned-only, press F again to restore. The most
+  common workflow is "give me focus mode on my bookmark
+  tasks". Composes with the existing text filter via
+  INTERSECTION — F + / yields pinned AND text-match. Selection-
+  by-id preserved across the toggle when possible; snaps to 0
+  otherwise. Empty pinned set surfaces a helpful "no pinned
+  tasks" diagnostic in the status footer. Footer hint and help
+  view both gain mentions ("F pin-focus" / "F focus pinned
+  only"). The help view also gained rows for the previously-
+  bound-but-undocumented N, r/R, and C bindings.
+
+Files added this tick:
+- internal/commands/archive_bucket_by_tag_inverse_test.go (7 tests)
+- internal/commands/archive_strict_and_test.go (8 tests)
+- internal/commands/graph_json_output_test.go (7 tests)
+- internal/tui/jump_next_test.go (8 tests)
+- internal/tui/focus_pinned_test.go (8 tests)
+
+Files modified:
+- internal/commands/archive.go (parseInversionTags helper,
+  makeTagFilterBucketFnInversionMode factory, matchTagBucket
+  shared body, --strict-and flag wiring, archiveStrategyLabel
+  3-arg signature, help text + flag descriptions)
+- internal/commands/graph.go (validateGraphOutputJSONExtension
+  helper, --json + --output dispatch in RunE, flag help update,
+  Examples block)
+- internal/commands/graph_output_test.go (updated regression
+  test for the new --json + .json extension contract)
+- internal/tui/keys.go (JumpNext + FocusPinned bindings)
+- internal/tui/app.go (App.pinnedOnly bool, handleNavKey wiring
+  for N + F, jumpToNextUnblocked + tuiUnmetBlockers +
+  isBetterNextTUI helpers, toggleFocusPinned method,
+  visibleTasks + View pinnedOnly filter loops, footer hint
+  update, helpView gains N/F/r/R/C rows)
+
+Per-feature test counts:
+  archive --bucket-by tag:!X            7 new (single-tag, CSV
+                                        inverse, mixed-sense
+                                        rejection, bang-alone
+                                        rejection, case-
+                                        preserving label,
+                                        positive backward-
+                                        compat, summary label)
+  archive --strict-and intersection     8 new (intersection
+                                        membership, inverse
+                                        intersection, without-
+                                        bucket-by rejection,
+                                        with-priority rejection,
+                                        single-tag no-label-
+                                        change, union backward-
+                                        compat regression,
+                                        success summary, dry-
+                                        run summary)
+  graph --json --output                 7 new (reachable
+                                        envelope write,
+                                        upstream-of envelope
+                                        write, atomic ext-
+                                        rejection, requires-
+                                        root, case-insensitive
+                                        ext, bytes match
+                                        stdout, ext matrix
+                                        table-test) + updated
+                                        existing regression
+  TUI 'N' jump-next                     8 new (high-prio winner,
+                                        blocked-skip, all-
+                                        blocked fallback
+                                        annotation, done-skip,
+                                        empty-status, form-
+                                        input shadowing
+                                        regression, pinned-
+                                        beats-prio, real
+                                        fallback chain)
+  TUI 'F' focus-pinned                  8 new (hides unpinned,
+                                        toggle round-trip,
+                                        empty-pinned status,
+                                        selection-preserves-on-
+                                        pinned, selection-
+                                        snaps-when-gone,
+                                        composes with text
+                                        filter, footer + help
+                                        mention, form-input
+                                        shadowing regression)
+  TOTAL                                38 new test cases on top
+of the existing suite, all green. (Existing suite ~1000+ cases
+also still green after the archive bucket factory refactor + the
+strictAnd plumbing + the graph --output dispatch reshape + the
+TUI pinnedOnly filter additions — verified via full repo gate
+before push.)
+
+Process notes:
+- The original makeTagFilterBucketFn is preserved as a thin
+  wrapper around the inversion-aware factory rather than
+  removed. Even though no internal caller still uses it, the
+  function name appears in code archeology (the old tag:X CSV
+  shipped through it) and removing the symbol would break any
+  downstream consumer that imported it. Cheap to keep, costs
+  nothing in test coverage (the wrapper-style API surface still
+  goes through the same predicate body via the factory).
+- The previously-bound-but-undocumented N/F/r/R/C bindings now
+  all appear in helpView() — TestHelpViewIncludesGGRow already
+  guards g/G; the new N/F coverage adds TestFocusPinnedFooterAnd
+  HelpMention to lock those in. This catches the kind of drift
+  where a binding gets added to keys.go but nobody updates the
+  help table — caught it manually this tick and now have a
+  regression guard for the future.
+- The TUI's tuiUnmetBlockers / isBetterNextTUI are SAME-PACKAGE
+  duplicates of the CLI's commands.unmetBlockers / isBetterNext.
+  We can't import internal/commands from internal/tui (would
+  cycle). The duplication is small (15 lines each) and the
+  semantics are anchored in their commands-side originals via
+  doc comments saying "in lockstep with the CLI selector". A
+  future refactor extracting a shared internal/selector package
+  could collapse both surfaces; for now the duplication is the
+  cheapest path that doesn't shuffle package boundaries.
+- One commit identity bug caught: I almost lost the `func (a
+  *App) startEditTitle() {` declaration when extending the
+  toggleFocusPinned method (the patch matched too broadly). Re-
+  saved that one line via a targeted patch before the build
+  caught the syntax error, no remote impact.
+
+This is the twelfth batch shipped directly on main. The quality
+gate ran clean before push; every commit on origin/main remains
+a single revertible feature slice. The archive bucket-by tag axis
+is now complete in all four logical combinations (positive union,
+positive intersection via --strict-and, inverse union via tag:!X,
+inverse intersection via tag:!X,!Y --strict-and). The graph
+--output cluster is now complete (every render format + the JSON
+envelope all write to disk with extension safety). The TUI gains
+its first smart-selection hotkey ('N') and its first toggle-
+filter primitive ('F'), and the help table is now in sync with
+the keymap for the first time in several ticks.
