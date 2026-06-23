@@ -491,8 +491,21 @@ func runStartStop(starting bool, reset *bool) func(*cobra.Command, []string) err
 // currently being worked on (Started != nil && !Done), sorted by
 // most-recent start first. Designed for "what am I in the middle
 // of?" answers. Aliased `wip` for muscle memory.
+//
+// --stale <duration> narrows the list to tasks whose elapsed time
+// is GREATER than the threshold (e.g. --stale 24h surfaces only
+// the tasks that have been sitting in-progress for over a day).
+// The "I've been working on this too long" alert mode. Reuses the
+// same duration parser as `tsk log --since`/`tsk depend --pending
+// --since` (7d, 2w, 1h30m, 72h, etc.). Composes with --json so
+// scripted alerts can flag stale WIP without parsing humanized
+// strings. Zero/negative duration is a usage error — the threshold
+// MUST be positive to define a "stale-er than this" filter.
 func newInProgressCmd() *cobra.Command {
-	var asJSON bool
+	var (
+		asJSON   bool
+		staleRaw string
+	)
 	cmd := &cobra.Command{
 		Use:     "in-progress",
 		Aliases: []string{"wip", "inprogress"},
@@ -501,22 +514,57 @@ func newInProgressCmd() *cobra.Command {
 started: timestamp first, with the elapsed time shown so you can see
 which tasks are getting stale.
 
+Pass --stale <duration> to narrow the list to tasks running LONGER
+than the threshold — the "what's been sitting too long?" alert. The
+elapsed-time filter compares against (now - started:); anything at
+or below the threshold is dropped, only the stale-er rows surface.
+Useful in cron / pre-commit / standup loops to surface neglected
+work without manually scanning the full WIP list:
+
+  tsk wip --stale 24h          # only WIP running over a day
+  tsk wip --stale 4h --json    # scripted alert for half-day stale
+
 Examples:
   tsk in-progress
-  tsk wip                     # alias
+  tsk wip                       # alias
   tsk in-progress --json
+  tsk wip --stale 1d            # only tasks running > 1 day
+  tsk wip --stale 4h --json     # scripted half-day stale alert
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// --stale validation up-front so a typo doesn't waste
+			// the store-load cost. Empty value means no filter
+			// (defensive against an unset shell variable).
+			var staleDur time.Duration
+			staleActive := false
+			if strings.TrimSpace(staleRaw) != "" {
+				d, err := parseDurationLocal(strings.TrimSpace(staleRaw))
+				if err != nil {
+					return usageErrorf("invalid --stale %q: %v", staleRaw, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--stale must be a positive duration, got %q", staleRaw)
+				}
+				staleDur = d
+				staleActive = true
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
 			}
 			now := time.Now()
+			cutoff := now.Add(-staleDur) // tasks with Started.Before(cutoff) are "stale"
 			out := make([]model.Task, 0)
 			for _, t := range s.Tasks {
-				if t.IsInProgress() {
-					out = append(out, t)
+				if !t.IsInProgress() {
+					continue
 				}
+				if staleActive && !t.Started.Before(cutoff) {
+					// The task started AT or AFTER the cutoff →
+					// elapsed is <= threshold → not stale enough.
+					continue
+				}
+				out = append(out, t)
 			}
 			sort.SliceStable(out, func(i, j int) bool {
 				return out[i].Started.After(*out[j].Started)
@@ -530,8 +578,15 @@ Examples:
 				return enc.Encode(out)
 			}
 			if len(out) == 0 {
-				pln(cmd.OutOrStdout(), "no in-progress tasks")
+				if staleActive {
+					pf(cmd.OutOrStdout(), "no in-progress tasks running longer than %s\n", humanizeDuration(staleDur))
+				} else {
+					pln(cmd.OutOrStdout(), "no in-progress tasks")
+				}
 				return nil
+			}
+			if staleActive {
+				pf(cmd.OutOrStdout(), "in-progress and stale (over %s): %d task(s)\n", humanizeDuration(staleDur), len(out))
 			}
 			for _, t := range out {
 				elapsed := humanizeElapsed(now.Sub(*t.Started))
@@ -542,6 +597,7 @@ Examples:
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON array of in-progress tasks")
+	cmd.Flags().StringVar(&staleRaw, "stale", "", "filter to tasks running LONGER than this duration (e.g. 24h, 2d, 1w, 1h30m). Same duration parser as `tsk log --since` and `tsk depend --pending --since`. The 'I've been working on this too long' alert mode: pair with `--json` for scripted standup/cron-driven stale-WIP notifications without parsing humanized strings. Composes with `--json` for machine-readable output. Empty (default) = no filter (every in-progress task is listed).")
 	return cmd
 }
 
