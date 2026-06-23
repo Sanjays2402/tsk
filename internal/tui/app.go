@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/Sanjays2402/tsk/internal/dateparse"
 	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/Sanjays2402/tsk/internal/store"
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -68,6 +70,18 @@ type App struct {
 	filter     string
 	sortMode   string
 	pinnedOnly bool
+	// lastYank is the text payload most recently sent to the
+	// system clipboard via 'y' (OSC52). Captured so tests can
+	// verify what would be copied without needing a real TTY;
+	// also useful for "what did I just yank?" in the status
+	// footer (the title-line preview).
+	lastYank string
+	// yankWriter is the io.Writer the OSC52 escape sequence is
+	// emitted to. Defaults to os.Stderr (so the bubbletea
+	// renderer running on stdout doesn't get its frame buffer
+	// scrambled). Tests can override to a bytes.Buffer to
+	// inspect the exact escape sequence emitted.
+	yankWriter io.Writer
 }
 
 // inputBox is a tiny stand-in that abstracts textinput to avoid importing the
@@ -193,6 +207,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.moveCurrent(-1)
 	case matches(m, a.keys.MoveDown):
 		a.moveCurrent(1)
+	case matches(m, a.keys.Yank):
+		a.yankCurrent()
 	}
 }
 
@@ -949,6 +965,145 @@ func (a *App) moveCurrent(dir int) {
 	}
 }
 
+// yankCurrent copies a plain-text rendering of the currently-
+// selected task to the system clipboard via OSC52 — the terminal
+// escape sequence that delegates clipboard writes to the terminal
+// emulator itself. Works across iTerm2, Terminal.app, kitty,
+// alacritty, tmux, screen, and over SSH (no native OS clipboard
+// API or external `pbcopy` / `xclip` process call needed).
+//
+// The yank shape is a self-contained multi-line block suitable for
+// dropping into a Slack message, a Notes app, or a Jira ticket
+// description without further editing:
+//
+//	#<id> <title>
+//	priority: <name>      (only if non-low)
+//	due: <YYYY-MM-DD>     (only if set)
+//	tags: <#a #b #c>      (only if any)
+//	notes:                (only if non-empty)
+//	  <each note line indented>
+//
+// Empty/zero fields are omitted so the paste stays tight — a
+// no-priority task with no due/tags/notes yanks as just the one
+// header line. This keeps the format scannable when pasting
+// many tasks into a thread, and avoids "priority: low" clutter
+// when low is the implicit default.
+//
+// Implementation: writes the OSC52 escape sequence to yankWriter
+// (defaults to os.Stderr so the bubbletea renderer running on
+// stdout doesn't get its frame buffer scrambled). Tests inject
+// a bytes.Buffer to inspect the exact payload without needing a
+// real terminal.
+//
+// Status footer shows "yanked #N <title>" with a short preview
+// of the title (truncated if very long) so the user gets a
+// visible confirmation that the copy happened — terminal
+// clipboard sequences are silent by design and the user would
+// otherwise be left guessing.
+//
+// Edge cases:
+//   - empty store / no selection: status "yank: no task selected".
+//   - source not found (race): status "yank: source not found".
+//   - write failure (rare; only fires if yankWriter rejects the
+//     write): status carries the error so the user knows the
+//     terminal-level copy didn't go through.
+//
+// Why lowercase 'y' (not 'Y' or '^c')?
+//   - vim's 'yy' yanks the current line; lowercase 'y' is the
+//     conventional "yank/copy" verb in modal editors.
+//   - 'y' is already overloaded as the Confirm key for delete
+//     prompts, but Confirm only fires when a.confirm != 0 — the
+//     dispatch order in handleKey runs confirm-handling BEFORE
+//     nav-handling, so the two surfaces never collide. The
+//     delete-confirm path takes precedence (an in-flight
+//     destructive prompt is more important to resolve than a
+//     yank), then 'y' is free for yank in the steady-state nav
+//     mode.
+//   - Uppercase 'Y' is conventionally "yank to end of line" in
+//     vim — reserved for a future "yank the visible row INCLUDING
+//     metadata column" extension.
+//   - Ctrl+C is the conventional GUI copy, but it's already
+//     bound to Quit (and rebinding it would surprise users
+//     who hit it expecting to exit).
+func (a *App) yankCurrent() {
+	id := a.currentID()
+	if id == 0 {
+		a.status = "yank: no task selected"
+		return
+	}
+	t := a.store.ByID(id)
+	if t == nil {
+		a.status = "yank: source not found"
+		return
+	}
+	payload := formatTaskYank(*t)
+	a.lastYank = payload
+	w := a.yankWriter
+	if w == nil {
+		w = os.Stderr
+	}
+	if _, err := osc52.New(payload).WriteTo(w); err != nil {
+		a.status = "yank: write failed: " + err.Error()
+		return
+	}
+	// Title preview in the status — truncated to keep the footer
+	// readable when the user yanks a long-titled task. The full
+	// payload is on the clipboard; the status is just a confirmation
+	// it happened.
+	preview := t.Title
+	if len(preview) > 48 {
+		preview = preview[:47] + "…"
+	}
+	a.status = fmt.Sprintf("yanked #%d %s", id, preview)
+}
+
+// formatTaskYank renders a single task as a self-contained
+// multi-line text block suitable for pasting into Slack / a Notes
+// app / a Jira description. The format is intentionally minimal
+// (one header line + optional metadata + optional notes) so the
+// paste stays tight; empty/zero fields are omitted.
+//
+// Header:  "#<id> <title>"
+// Optional metadata (one per line, in display order):
+//   - "priority: <name>" (only if non-low — low is the implicit
+//     default; surfacing it would clutter every yank)
+//   - "due: <YYYY-MM-DD>"
+//   - "tags: <#a #b #c>" (alphabetized so two yanks of the same
+//     task always produce the same bytes — stability matters for
+//     diffing two pastes)
+//
+// Notes (only if non-empty) get a "notes:" header followed by
+// each line indented by 2 spaces — same shape `tsk show` uses,
+// so users with muscle memory for the CLI surface see the
+// familiar layout in their clipboard too.
+//
+// Trailing newline is INCLUDED so the paste has a clean
+// boundary — pasting into a multi-line context (Notes app
+// bullet list, Slack thread) shouldn't have to be followed by
+// a manual newline.
+func formatTaskYank(t model.Task) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "#%d %s\n", t.ID, t.Title)
+	if t.Priority != model.PriorityLow {
+		fmt.Fprintf(&b, "priority: %s\n", t.Priority.String())
+	}
+	if t.Due != nil {
+		fmt.Fprintf(&b, "due: %s\n", t.Due.Format(model.DateLayout))
+	}
+	if len(t.Tags) > 0 {
+		sorted := append([]string(nil), t.Tags...)
+		sort.Strings(sorted)
+		fmt.Fprintf(&b, "tags: #%s\n", strings.Join(sorted, " #"))
+	}
+	if strings.TrimSpace(t.Notes) != "" {
+		b.WriteString("notes:\n")
+		for _, line := range strings.Split(strings.TrimRight(t.Notes, "\n"), "\n") {
+			fmt.Fprintf(&b, "  %s\n", line)
+		}
+	}
+	return b.String()
+}
+
 func (a *App) startEditTitle() {
 	id := a.currentID()
 	if id == 0 {
@@ -1337,7 +1492,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · </> reorder · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · </> reorder · y yank · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -1389,6 +1544,7 @@ func (a *App) helpView() string {
 		{"*", "toggle pin on current task"},
 		{"<", "move task up in store order"},
 		{">", "move task down in store order"},
+		{"y", "yank task as text to clipboard (OSC52)"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}
