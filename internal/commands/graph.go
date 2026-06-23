@@ -94,6 +94,7 @@ func newGraphCmd() *cobra.Command {
 		includeDue       bool
 		includeCompleted bool
 		includeStarted   bool
+		includeAll       bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -198,6 +199,7 @@ Examples:
   tsk graph --reachable 7 --json --include-priority                 # JSON envelope with per-node priority
   tsk graph --reachable 7 --json --include-completed                # add per-node 'completed' RFC3339 timestamp (done tasks only)
   tsk graph --reachable 7 --json --include-started                  # add per-node 'started' RFC3339 timestamp (in-progress tasks only)
+  tsk graph --reachable 7 --json --include-all                      # full-fat envelope: every opt-in field (priority+tags+due+completed+started)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -239,6 +241,20 @@ Examples:
 			}
 			if includeStarted && !asJSON {
 				return usageErrorf("--include-started only applies to --json (the JSON envelope path)")
+			}
+			if includeAll && !asJSON {
+				return usageErrorf("--include-all only applies to --json (the JSON envelope path)")
+			}
+			// --include-all is the ergonomic shortcut for "turn on
+			// every opt-in node field at once". Flip every flag on
+			// when set; the individual flags can still be set
+			// alongside (idempotent — true OR true == true).
+			if includeAll {
+				includePriority = true
+				includeTags = true
+				includeDue = true
+				includeCompleted = true
+				includeStarted = true
 			}
 			if jsonAppend {
 				if !asJSON {
@@ -395,6 +411,7 @@ Examples:
 	cmd.Flags().BoolVar(&includeDue, "include-due", false, "for --json: add a per-node 'due' field to the envelope (canonical YYYY-MM-DD date string; field is omitted when the task has no due date). Sister of --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag impact-analysis chains where something is due this week (e.g. `select(.due < \"2026-07-01\")`) without a per-node `tsk show --json <id>` round-trip. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read due from.")
 	cmd.Flags().BoolVar(&includeCompleted, "include-completed", false, "for --json: add a per-node 'completed' field to the envelope (canonical RFC3339 timestamp string; field is omitted when the task isn't done). Sister of --include-due / --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for completion-velocity analysis (`jq '[.nodes[] | select(.completed != null)] | length / (.nodes | length)'`), recently-completed sibling detection (which prereqs finished in the last 24h?), and CI gates that gate on \"this dependency chain is N% done\". Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read completed from.")
 	cmd.Flags().BoolVar(&includeStarted, "include-started", false, "for --json: add a per-node 'started' field to the envelope (canonical RFC3339 timestamp string; field is omitted when the task isn't in-progress). Sister of --include-completed for the OPEN side of the work-state pair: --include-completed surfaces finish time, --include-started surfaces work-began time. Useful for elapsed-time analysis on currently-working tasks (`jq '.nodes[] | select(.started != null) | .id'`), \"what's in flight in this dep chain?\" gates, and pomodoro/timer integrations that need to know the start instant. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes omit the field since we don't have a task to read started from.")
+	cmd.Flags().BoolVar(&includeAll, "include-all", false, "for --json: turn on EVERY --include-* opt-in field at once (priority, tags, due, completed, started). Ergonomic shortcut for \"give me the full-fat envelope\" use cases — pre-commit dashboards, comprehensive snapshot tests, completion-velocity + elapsed-time analyses that need every axis. Equivalent to passing --include-priority --include-tags --include-due --include-completed --include-started together; setting --include-all alongside the individual flags is idempotent (true OR true == true). The default stays minimal so existing snapshot fixtures and jq pipelines that don't need the extra fields keep their byte-identical historical shape. Useful when scripting `jq` queries that join multiple axes (e.g. `select(.priority == \"urgent\" and .due < \"2026-07-01\" and .completed == null)`) without remembering each opt-in flag name.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
