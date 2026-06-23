@@ -60,11 +60,12 @@ import (
 // semantics so the two verbs read symmetrically.
 func newPauseCmd() *cobra.Command {
 	var (
-		all       bool
-		pauseTag  string
-		pausePrio string
-		dryRun    bool
-		asJSON    bool
+		all               bool
+		pauseTag          string
+		pauseStrictAndTag string
+		pausePrio         string
+		dryRun            bool
+		asJSON            bool
 	)
 	cmd := &cobra.Command{
 		Use:     "pause [<id>...]",
@@ -90,6 +91,15 @@ here (the wip set is usually small and "pause everything" is a
 sensible end-of-day default), unlike start --all where a filter is
 required.
 
+Pass --strict-and-tag <CSV> to narrow by INTERSECTION of multiple
+tags (the all-of variant). Sister of --tag's union-style
+single-tag filter: --tag work narrows to ONE tag,
+--strict-and-tag work,p0 narrows to tasks carrying BOTH 'work' AND
+'p0'. Mutually exclusive with --tag (each is a different selector
+axis). Mirrors ` + "`tsk depend --pending --strict-and-tag`" + ` so the
+bulk-pause and notification-queue tag-axis filters read
+symmetrically.
+
 Pass --dry-run with --all to preview which tasks WOULD be paused
 without actually clearing any started: timestamps. Writes nothing
 to disk; the .bak chain stays untouched. Useful for previewing a
@@ -99,6 +109,9 @@ tag/priority filter before committing to the bulk-pause (sister of
 Pass --json with --dry-run to emit a machine-readable preview
 (stable schema) for scripted pipelines — same shape as start
 --all --dry-run --json so both bulk verbs feed identical pipes.
+The --strict-and-tag filter surfaces in BOTH the structured
+"strict_and_tag" key and the human-readable "filter" summary
+(rendered as "tag=a&b") so jq pipelines have both axes.
 
 Idempotent: pausing a non-started task is a no-op with a "no change"
 message.
@@ -109,9 +122,11 @@ Examples:
   tsk hold 3                  # alias
   tsk pause --all             # pause everything currently in-progress
   tsk pause --all --tag work  # only pause in-progress tasks tagged work
+  tsk pause --all --strict-and-tag work,p0  # intersection of two tags
   tsk pause --all --priority urgent  # only pause in-progress urgent tasks
   tsk pause --all --dry-run   # preview without clearing started:
   tsk pause --all --tag work --dry-run  # preview a curated subset
+  tsk pause --all --strict-and-tag work,p0 --dry-run --json  # scripted intersection preview
   tsk pause --all --dry-run --json | jq '.would_pause[].id'  # scripted
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -119,10 +134,10 @@ Examples:
 				if len(args) > 0 {
 					return usageErrorf("--all takes no positional ids (pause every in-progress task)")
 				}
-				return runPauseAll(cmd, pauseTag, pausePrio, dryRun, asJSON)
+				return runPauseAll(cmd, pauseTag, pauseStrictAndTag, pausePrio, dryRun, asJSON)
 			}
-			if pauseTag != "" || pausePrio != "" {
-				return usageErrorf("--tag/--priority only apply to --all (single-id pause is already explicit)")
+			if pauseTag != "" || pausePrio != "" || pauseStrictAndTag != "" {
+				return usageErrorf("--tag/--strict-and-tag/--priority only apply to --all (single-id pause is already explicit)")
 			}
 			if dryRun {
 				return usageErrorf("--dry-run only applies to --all (single-id pause is already explicit)")
@@ -138,6 +153,7 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "pause every task currently in-progress (end-of-day clear)")
 	cmd.Flags().StringVar(&pauseTag, "tag", "", "for --all: only pause in-progress tasks carrying this tag (case-insensitive)")
+	cmd.Flags().StringVar(&pauseStrictAndTag, "strict-and-tag", "", "for --all: only pause in-progress tasks carrying ALL listed tags (CSV; intersection). Sister of --tag's union-style single-tag filter: --tag work narrows to tasks carrying 'work'; --strict-and-tag work,p0 narrows to tasks carrying BOTH 'work' AND 'p0'. Mutually exclusive with --tag (each is a different selector axis). Composes with --priority as AND (the same intersection semantic --tag uses). Mirrors `tsk depend --pending --strict-and-tag` so the bulk-pause and notification-queue filter axes read symmetrically.")
 	cmd.Flags().StringVar(&pausePrio, "priority", "", "for --all: only pause in-progress tasks at this priority (low/medium/high/urgent)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "for --all: print which tasks would be paused without writing")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --all --dry-run: emit JSON preview (stable schema for scripted pipelines)")
@@ -147,11 +163,11 @@ Examples:
 // runPauseAll resolves the in-progress set inside the store and
 // dispatches to runStartStop with those ids. Keeps the runStartStop
 // body the single source of truth for the actual mutation (so any
-// future enforcement, e.g. \"done tasks reject pause\", applies here
+// future enforcement, e.g. "done tasks reject pause", applies here
 // too without a parallel guard).
 //
-// Empty in-progress set is reported with the same \"no in-progress
-// tasks\" line `tsk wip` uses, so the empty case is consistent across
+// Empty in-progress set is reported with the same "no in-progress
+// tasks" line `tsk wip` uses, so the empty case is consistent across
 // the two verbs (the user sees the same answer whether they checked
 // first or just ran pause --all).
 //
@@ -161,6 +177,16 @@ Examples:
 // shapes mirror start --all's: tag/priority compose as AND, the
 // empty-result wording mirrors start --all's empty message ("no
 // in-progress tasks match (<filter>)").
+//
+// --strict-and-tag is the CSV intersection-style sister of --tag's
+// union-style single-tag filter: --tag work narrows by ONE tag,
+// --strict-and-tag work,p0 narrows by ALL listed tags
+// (intersection). The two are mutually exclusive (each is a
+// different selector axis — combining them would muddle which
+// logical operator applies to which tag). Mirrors the same flag
+// `tsk depend --pending --strict-and-tag` exposes on the
+// notification-queue surface (shipped tick #26), so the
+// bulk-pause and pending-feed tag-axis filters read symmetrically.
 //
 // --dry-run short-circuits BEFORE the runStartStop dispatch: it
 // prints the would-be-paused ids and exits without writing. Critical
@@ -174,11 +200,15 @@ Examples:
 // the would-pause list, total counts, and the filter summary. Sister
 // of start --all --dry-run --json so the two bulk-verb previews feed
 // identical jq pipelines.
-func runPauseAll(cmd *cobra.Command, tag, prioRaw string, dryRun, asJSON bool) error {
+func runPauseAll(cmd *cobra.Command, tag, strictAndTagsRaw, prioRaw string, dryRun, asJSON bool) error {
 	tag = strings.TrimSpace(tag)
 	prio, prioActive, err := parsePendingPriority(prioRaw)
 	if err != nil {
 		return err
+	}
+	strictAndTags := splitTagCSV(strictAndTagsRaw)
+	if tag != "" && len(strictAndTags) > 0 {
+		return usageErrorf("--tag and --strict-and-tag are mutually exclusive (each is a different tag-selector axis; --tag is single-tag, --strict-and-tag is intersection over a CSV)")
 	}
 	if asJSON && !dryRun {
 		return usageErrorf("--json only applies to --all --dry-run (the preview path)")
@@ -187,7 +217,7 @@ func runPauseAll(cmd *cobra.Command, tag, prioRaw string, dryRun, asJSON bool) e
 	if err != nil {
 		return err
 	}
-	ids := filterPauseAllIDs(s.Tasks, tag, prio, prioActive)
+	ids := filterPauseAllIDs(s.Tasks, tag, strictAndTags, prio, prioActive)
 	if len(ids) == 0 {
 		// Two distinct empty cases:
 		//   1. No tasks are in-progress at all — same "no in-progress
@@ -204,21 +234,21 @@ func runPauseAll(cmd *cobra.Command, tag, prioRaw string, dryRun, asJSON bool) e
 			}
 		}
 		if dryRun && asJSON {
-			return emitPauseAllDryRunJSON(cmd.OutOrStdout(), s, nil, tag, prioRaw, prioActive)
+			return emitPauseAllDryRunJSON(cmd.OutOrStdout(), s, nil, tag, strictAndTagsRaw, prioRaw, prioActive)
 		}
-		if !anyWip || (tag == "" && !prioActive) {
+		if !anyWip || (tag == "" && !prioActive && len(strictAndTags) == 0) {
 			pln(cmd.OutOrStdout(), "no in-progress tasks")
 			return nil
 		}
-		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
+		filters := buildPauseAllFilterSummary(tag, strictAndTagsRaw, prioRaw, prioActive)
 		pf(cmd.OutOrStdout(), "no in-progress tasks match (%s)\n", filters)
 		return nil
 	}
 	if dryRun {
 		if asJSON {
-			return emitPauseAllDryRunJSON(cmd.OutOrStdout(), s, ids, tag, prioRaw, prioActive)
+			return emitPauseAllDryRunJSON(cmd.OutOrStdout(), s, ids, tag, strictAndTagsRaw, prioRaw, prioActive)
 		}
-		filters := buildStartAllFilterSummary(tag, prioRaw, prioActive)
+		filters := buildPauseAllFilterSummary(tag, strictAndTagsRaw, prioRaw, prioActive)
 		if filters == "" {
 			pf(cmd.OutOrStdout(), "[dry-run] would pause %d task(s):\n", len(ids))
 		} else {
@@ -255,12 +285,18 @@ type pauseAllDryRunRow struct {
 // would_pause[] (per-task rows) + counts + filter summary. Empty
 // result emits would_pause: [] (not null) so consumers iterating
 // the array don't crash.
+//
+// StrictAndTag is the CSV intersection-style sister of Tag (when
+// used). When both are empty the field omits entirely; when set
+// it serializes as the raw CSV string the user passed so the JSON
+// preview echoes back exactly what filter they asked for.
 type pauseAllDryRunDoc struct {
-	WouldPause []pauseAllDryRunRow `json:"would_pause"`
-	TotalCount int                 `json:"total_count"`
-	Filter     string              `json:"filter,omitempty"`
-	Tag        string              `json:"tag,omitempty"`
-	Priority   string              `json:"priority,omitempty"`
+	WouldPause   []pauseAllDryRunRow `json:"would_pause"`
+	TotalCount   int                 `json:"total_count"`
+	Filter       string              `json:"filter,omitempty"`
+	Tag          string              `json:"tag,omitempty"`
+	StrictAndTag string              `json:"strict_and_tag,omitempty"`
+	Priority     string              `json:"priority,omitempty"`
 }
 
 // emitPauseAllDryRunJSON renders the stable preview shape for the
@@ -268,7 +304,14 @@ type pauseAllDryRunDoc struct {
 // as an empty array, not null, so jq pipelines that iterate don't
 // crash on a no-match case. Filter fields are omitted when not set
 // so the JSON stays minimal for the bare-pause-all preview.
-func emitPauseAllDryRunJSON(w io.Writer, s *store.Store, ids []int, tag, prioRaw string, prioActive bool) error {
+//
+// strictAndTagsRaw is the user-supplied CSV (already-trimmed) for
+// the new intersection filter. Empty means the filter isn't in
+// use; the field is omitempty so the JSON stays minimal in that
+// case. When set, the field surfaces in BOTH the structured
+// "strict_and_tag" key and the human-readable "filter" summary
+// (rendered as "tag=a&b") so scripted pipelines have both axes.
+func emitPauseAllDryRunJSON(w io.Writer, s *store.Store, ids []int, tag, strictAndTagsRaw, prioRaw string, prioActive bool) error {
 	rows := make([]pauseAllDryRunRow, 0, len(ids))
 	for _, id := range ids {
 		t := s.ByID(id)
@@ -279,10 +322,11 @@ func emitPauseAllDryRunJSON(w io.Writer, s *store.Store, ids []int, tag, prioRaw
 		rows = append(rows, pauseAllDryRunRow{ID: id, Title: title})
 	}
 	doc := pauseAllDryRunDoc{
-		WouldPause: rows,
-		TotalCount: len(rows),
-		Filter:     buildStartAllFilterSummary(tag, prioRaw, prioActive),
-		Tag:        tag,
+		WouldPause:   rows,
+		TotalCount:   len(rows),
+		Filter:       buildPauseAllFilterSummary(tag, strictAndTagsRaw, prioRaw, prioActive),
+		Tag:          tag,
+		StrictAndTag: strictAndTagsRaw,
 	}
 	if prioActive {
 		doc.Priority = strings.ToLower(strings.TrimSpace(prioRaw))
@@ -296,13 +340,21 @@ func emitPauseAllDryRunJSON(w io.Writer, s *store.Store, ids []int, tag, prioRaw
 // PROGRESS task matching the filter. When both tag and prioActive
 // are empty/false, this is equivalent to inProgressIDs (every wip
 // task) — backward compatible with the pre-filter behavior.
-func filterPauseAllIDs(tasks []model.Task, tag string, prio model.Priority, prioActive bool) []int {
+//
+// strictAndTags is the CSV intersection filter: when non-empty, a
+// task must carry ALL listed tags to qualify (taskHasAllTags
+// short-circuit). Mutually exclusive with tag (the caller already
+// validated this; the function just applies whichever is set).
+func filterPauseAllIDs(tasks []model.Task, tag string, strictAndTags []string, prio model.Priority, prioActive bool) []int {
 	ids := make([]int, 0)
 	for _, t := range tasks {
 		if !t.IsInProgress() {
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if len(strictAndTags) > 0 && !taskHasAllTags(&t, strictAndTags) {
 			continue
 		}
 		if prioActive && t.Priority != prio {
@@ -312,6 +364,37 @@ func filterPauseAllIDs(tasks []model.Task, tag string, prio model.Priority, prio
 	}
 	sort.Ints(ids)
 	return ids
+}
+
+// buildPauseAllFilterSummary produces the "tag=X, priority=Y"
+// trailer that appears in pause --all empty/dry-run messages.
+// Deterministic ordering: tag first, then strict-and-tag, then
+// priority. Empty → empty string (no trailing comma).
+//
+// strict-and-tag renders as "tag=a&b" (the &-separated form) so a
+// scan-by-eye distinguishes "tag=a" (union, single) from
+// "tag=a&b" (intersection, CSV) without checking the original
+// flag name — same disambiguation marker `tsk depend --pending
+// --strict-and-tag` and `tsk archive --bucket-by tag:&a,b` use,
+// so the surfaces read symmetrically.
+//
+// Mirrors buildPendingFilterSummary's three-part structure (tag /
+// strict-and-tag / priority) so the bulk-pause and pending-feed
+// filter summaries share the same convention. Each surface owns
+// its own builder rather than reusing buildPendingFilterSummary
+// to keep the two callable trees independently revertible.
+func buildPauseAllFilterSummary(tag, strictAndTagsRaw, prioRaw string, prioActive bool) string {
+	parts := make([]string, 0, 3)
+	if tag != "" {
+		parts = append(parts, "tag="+tag)
+	}
+	if strict := splitTagCSV(strictAndTagsRaw); len(strict) > 0 {
+		parts = append(parts, "tag="+strings.Join(strict, "&"))
+	}
+	if prioActive {
+		parts = append(parts, "priority="+strings.ToLower(strings.TrimSpace(prioRaw)))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // inProgressIDs returns the sorted-ascending ids of every task with
