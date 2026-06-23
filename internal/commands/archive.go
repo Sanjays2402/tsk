@@ -2,7 +2,9 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,6 +35,7 @@ func newArchiveCmd() *cobra.Command {
 		mergeInto string
 		bucketBy  string
 		strictAnd bool
+		asJSON    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -224,11 +227,34 @@ func newArchiveCmd() *cobra.Command {
 			}
 
 			if len(archived) == 0 {
+				if asJSON {
+					return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, nil, kept, archived, nil)
+				}
 				pf(out, "no tasks to archive\n")
 				return nil
 			}
 
 			if dryRun {
+				if asJSON {
+					// Dry-run JSON: simulate the archive-id assignment
+					// so the envelope mirrors the real-run shape, but
+					// don't touch disk. The archive store is loaded
+					// only to read its current max id; nothing is
+					// written.
+					nextSim := 1
+					if archForRead, loadErr := store.Load(archivePath); loadErr == nil {
+						nextSim = maxTaskID(archForRead.Tasks) + 1
+					}
+					activeIDsSim := make([]int, len(archived))
+					simulated := make([]model.Task, len(archived))
+					for i, t := range archived {
+						copyT := t
+						activeIDsSim[i] = copyT.ID
+						copyT.ID = nextSim + i
+						simulated[i] = copyT
+					}
+					return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, simulated, activeIDsSim)
+				}
 				summary := strategy
 				if bucketBy != "" {
 					summary = fmt.Sprintf("bucket-by=%s", bucketBy)
@@ -253,7 +279,13 @@ func newArchiveCmd() *cobra.Command {
 				arch.Header = archiveHeader
 			}
 			next := maxTaskID(arch.Tasks) + 1
+			// Capture the active-store ids BEFORE the loop rewrites
+			// them to archive ids — the JSON envelope needs both
+			// (the user's mental model is "task #N became archive
+			// #M") and we'd lose the active id otherwise.
+			activeIDs := make([]int, len(archived))
 			for i := range archived {
+				activeIDs[i] = archived[i].ID
 				archived[i].ID = next
 				next++
 			}
@@ -296,6 +328,9 @@ func newArchiveCmd() *cobra.Command {
 				return fmt.Errorf("save active: %w", err)
 			}
 
+			if asJSON {
+				return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, archived, activeIDs)
+			}
 			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, archiveStrategyLabel(strategy, bucketBy, strictAnd))
 			pf(out, "active tasks: %d\n", len(kept))
 			return nil
@@ -309,6 +344,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
 	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:!X' (inverse single-tag), 'tag:X,Y,Z' (multi-tag CSV union), 'tag:!X,!Y' (inverse CSV), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	cmd.Flags().BoolVar(&strictAnd, "strict-and", false, "for --bucket-by tag:X,Y (CSV-tag variant): require ALL listed tags on a task (intersection) instead of the default ANY (union). Combines with the inverse form (tag:!X,!Y --strict-and = NOT carrying ALL listed tags). The bucket label gains a '&' marker so flat-text archive scans can distinguish union vs intersection sections.")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit a stable JSON envelope describing the archive run (which tasks landed in which buckets, per-task archive id assignments, the resolved archive path, and the strategy/bucket-by summary). Works with --dry-run too — the dry-run JSON simulates the archive-id assignment without writing anything. Useful for scripted CI gates and post-archive notifications that need a machine-readable manifest rather than parsing the plain-text summary.")
 	return cmd
 }
 
@@ -1128,4 +1164,138 @@ func renderArchiveMeta(t model.Task) string {
 		parts = append(parts, fmt.Sprintf("depends:%s", strings.Join(ids, ",")))
 	}
 	return strings.Join(parts, " ")
+}
+
+// archivedRow is one task in the JSON archive envelope. The shape
+// keeps the most useful per-task identity:
+//   - active_id   : the id the task carried in the active store
+//   - archive_id  : the id it received in the archive (continuing
+//     the archive's max+1; differs from active_id since the
+//     archive has its own monotonic sequence). For --dry-run the
+//     archive_id is the SIMULATED id (what a real run would
+//     assign), so the envelope shape stays stable across dry vs.
+//     real runs.
+//   - title       : the task's title (unchanged across the move)
+//   - priority    : canonical string form (low/medium/high/urgent)
+//   - bucket      : the section/key the task landed in (matches
+//     the section header rendered in the archive file; empty
+//     string for flat strategy where there are no sections)
+type archivedRow struct {
+	ActiveID  int    `json:"active_id"`
+	ArchiveID int    `json:"archive_id"`
+	Title     string `json:"title"`
+	Priority  string `json:"priority"`
+	Bucket    string `json:"bucket,omitempty"`
+}
+
+// archiveDoc is the JSON envelope for `tsk archive --json`. Stable
+// schema:
+//   - archive_path : the resolved file the run wrote to (or would
+//     write to, in --dry-run mode)
+//   - strategy     : "flat" by default, or the user's --strategy
+//     value (daily/weekly/monthly/quarterly/yearly)
+//   - bucket_by    : the user-supplied --bucket-by axis (priority/
+//     tag/tag:X/tag:X,Y/tag:!X/id-range:N) or empty
+//   - strict_and   : whether --strict-and was set (only meaningful
+//     for CSV-tag bucket-by forms)
+//   - dry_run      : true when --dry-run was set (so consumers can
+//     tell preview from real run without re-checking flags)
+//   - total_count  : len(archived) — convenience field for jq
+//     `.total_count` without a `.archived | length`
+//   - active_count : len(kept) — the active store's post-archive
+//     task count (useful for "did this drop us below N?" CI gates)
+//   - archived     : per-task rows; always emitted as an array
+//     (empty array, not null, when no tasks qualified) so jq
+//     iteration works on every case
+type archiveDoc struct {
+	ArchivePath string        `json:"archive_path"`
+	Strategy    string        `json:"strategy"`
+	BucketBy    string        `json:"bucket_by,omitempty"`
+	StrictAnd   bool          `json:"strict_and,omitempty"`
+	DryRun      bool          `json:"dry_run"`
+	TotalCount  int           `json:"total_count"`
+	ActiveCount int           `json:"active_count"`
+	Archived    []archivedRow `json:"archived"`
+}
+
+// emitArchiveJSON renders the stable archive-run envelope. Called
+// from three exit paths:
+//
+//  1. "no tasks to archive" — archived is empty, totals reflect
+//     that, archive_path still points at the resolved target so
+//     consumers see WHERE a real run would have written.
+//
+//  2. --dry-run — archived carries SIMULATED archive_ids (the
+//     archive store is read for its current max id; nothing is
+//     written). The envelope shape is identical to a real run so
+//     scripted pipelines that consume the JSON behave the same
+//     way across preview and real-run modes.
+//
+//  3. Real run — archived carries the actually-assigned archive
+//     ids (the Save has already happened by the time this is
+//     called).
+//
+// activeIDs is the parallel slice of the tasks' pre-rewrite active-
+// store ids (the IDs they carried BEFORE the for-loop reassigned
+// them to archive_ids). The user's mental model is "task #N
+// became archive #M"; capturing both halves keeps that round-trip
+// visible in the JSON envelope. len(activeIDs) must equal
+// len(archived); when nil (only on the "no tasks" path) the rows
+// loop just doesn't run.
+//
+// The bucket field is computed from the resolution path that
+// matches the strategy/bucketBy combination — the same bucketFn
+// the writer uses for the on-disk grouping, so the JSON and the
+// on-disk file agree on which task landed in which section.
+//
+// For the flat strategy (no bucket axis) every row has bucket="";
+// omitempty drops the field so the JSON stays minimal.
+func emitArchiveJSON(w io.Writer, archivePath, strategy, bucketBy string, strictAnd, dryRun bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
+	// Resolve the time-based strategy to its bucketFn for the JSON
+	// path. The writer dispatches the same way in the switch above
+	// — we mirror that dispatch here so the JSON's "bucket" field
+	// agrees with the on-disk section header for every strategy.
+	rows := make([]archivedRow, 0, len(archived))
+	for i, t := range archived {
+		row := archivedRow{
+			ArchiveID: t.ID,
+			Title:     t.Title,
+			Priority:  t.Priority.String(),
+		}
+		if i < len(activeIDs) {
+			row.ActiveID = activeIDs[i]
+		}
+		key := ""
+		switch strategy {
+		case "daily":
+			key, _ = bucketByDay(t)
+		case "weekly":
+			key, _ = bucketByISOWeek(t)
+		case "monthly":
+			key, _ = bucketByMonth(t)
+		case "quarterly":
+			key, _ = bucketByQuarter(t)
+		case "yearly":
+			key, _ = bucketByYear(t)
+		default:
+			if bucketFunc != nil {
+				key, _ = bucketFunc(t)
+			}
+		}
+		row.Bucket = key
+		rows = append(rows, row)
+	}
+	doc := archiveDoc{
+		ArchivePath: archivePath,
+		Strategy:    strategy,
+		BucketBy:    bucketBy,
+		StrictAnd:   strictAnd,
+		DryRun:      dryRun,
+		TotalCount:  len(archived),
+		ActiveCount: len(kept),
+		Archived:    rows,
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(doc)
 }
