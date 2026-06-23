@@ -734,11 +734,11 @@ fresh follow-ons sensible from this tick's features.
 - [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
 - [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
-- [ ] `tsk archive --json --output <path>` — write the archive envelope to a file (sister of `tsk graph --json --output`; useful when piping the manifest into a CI commit-back step)
-- [ ] `tsk archive --json --append` — JSONL-style append-mode for archive history (one record per run; mirrors `tsk graph --json --append`)
-- [ ] `tsk graph --json --include-priority --include-tags` — extend the JSON envelope to also include the per-node tag list (next opt-in field after --include-priority; useful for jq pipelines that filter by tag without a `tsk show` round-trip)
-- [ ] `tsk graph --json --include-priority --include-due` — extend the envelope to also include due dates (would let CI gates flag "what depends on something due this week?" without a fan-out)
-- [ ] `tsk pause --all --strict-and-tag a,b` — narrow bulk-pause by INTERSECTION of two tags (sister of depend --pending --strict-and-tag shipped this tick; same flag name for surface consistency)
+- [x] `tsk archive --json --output <path>` — write the archive envelope to a file (sister of `tsk graph --json --output`; useful when piping the manifest into a CI commit-back step) (tick 2026-06-23/0503)
+- [x] `tsk archive --json --append` — JSONL-style append-mode for archive history (one record per run; mirrors `tsk graph --json --append`) (tick 2026-06-23/0503)
+- [x] `tsk graph --json --include-priority --include-tags` — extend the JSON envelope to also include the per-node tag list (next opt-in field after --include-priority; useful for jq pipelines that filter by tag without a `tsk show` round-trip) (tick 2026-06-23/0503)
+- [x] `tsk graph --json --include-priority --include-due` — extend the envelope to also include due dates (would let CI gates flag "what depends on something due this week?" without a fan-out) (tick 2026-06-23/0503)
+- [x] `tsk pause --all --strict-and-tag a,b` — narrow bulk-pause by INTERSECTION of two tags (sister of depend --pending --strict-and-tag shipped this tick; same flag name for surface consistency) (tick 2026-06-23/0503)
 - [ ] `tsk start --all --strict-and-tag a,b` — same intersection semantic for the inverse verb (bulk-start every task carrying ALL listed tags)
 - [ ] `tsk depend --pending --json` already exists; consider adding --strict-and-tag to the JSON envelope so the filter shows up in the structured output too
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
@@ -3769,3 +3769,47 @@ primitive. The next ticks have ample sized work in the long-
 tail (recipe docs, recurring tasks, config files, multi-file
 aggregation, the still-unstarted TUI structural features,
 plus the strict-and-tag flag rollout to pause/start --all).
+
+
+### Polish & DX (added 2026-06-23 tick #27)
+
+Fresh ideas so future ticks have ample sized work. With the
+archive subcommand gaining its first --output and --append (file
++ JSONL streaming, completing the surface parity with `tsk graph
+--json --output --append`), the graph JSON envelope gaining its
+SECOND and THIRD opt-in node fields (--include-tags +
+--include-due — joining --include-priority for a full filter
+trinity), and pause --all gaining its --strict-and-tag
+intersection filter (sister of depend --pending's same flag),
+this batch leans into the still-unstarted long-tail and fresh
+follow-ons sensible from this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk start --all --strict-and-tag a,b` — intersection variant for the inverse bulk verb (sister of pause --all --strict-and-tag shipped this tick; same flag name)
+- [ ] `tsk depend --pending --json --strict-and-tag a,b` recipe doc — one-pager showing the structured intersection-filter JSON shape
+- [ ] `tsk graph --json --include-priority --include-tags --include-due` recipe doc — one-pager showing the full-fat envelope and a multi-axis jq selector
+- [ ] `tsk graph --json --include-completed` — fourth opt-in field carrying the Completed timestamp (would let CI gates correlate impact-analysis with completion velocity)
+- [ ] `tsk graph --json --include-started` — fifth opt-in field carrying the in-progress Started timestamp (sister of --include-completed for the open side)
+- [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring (combine the streaming + watcher patterns)
+- [ ] `tsk archive --json --append --rotate N` — auto-rotate the JSONL file when it exceeds N records (sister of `tsk graph --json --append --rotate`)
+- [ ] `tsk archive --json --output snap.jsonl --append | jq` recipe doc — one-pager showing the velocity-tracking pipeline pattern
+- [ ] `tsk pause --all --strict-and-tag a,b --dry-run --json | jq '.would_pause | length'` recipe doc — bulk-pause preview-and-count pattern
+- [ ] `tsk graph --output <path> --watch N` — re-render every N seconds while a separate process mutates
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' enter help overlay also shows the active filter / sort state
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'Y' yank ALL visible tasks (multi-task variant; sister of 'y')
