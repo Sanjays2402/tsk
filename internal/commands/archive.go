@@ -32,6 +32,7 @@ func newArchiveCmd() *cobra.Command {
 		strategy  string
 		mergeInto string
 		bucketBy  string
+		strictAnd bool
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -65,6 +66,14 @@ func newArchiveCmd() *cobra.Command {
 			"                Combines with the CSV form (\"tag:!a,!b\" for the NOT-ANY-OF\n" +
 			"                variant); all tags in the CSV must share the same\n" +
 			"                inversion sense (no mixed \"tag:!a,b\" — pick one direction).\n" +
+			"  --strict-and  (for CSV-tag forms) flip the default union (any-of) to\n" +
+			"                intersection (all-of). A task lands in the call-out\n" +
+			"                bucket only if it carries ALL listed tags. The bucket\n" +
+			"                label gains a '&' marker (\"## tag:&a,b\" for positive,\n" +
+			"                \"## tag:!&a,b\" for inverse) so flat-text scans can\n" +
+			"                distinguish union from intersection sections. Has no\n" +
+			"                effect on single-tag forms (one tag has no union/\n" +
+			"                intersection distinction).\n" +
 			"  id-range:N    fixed-width id windows of size N: '1-N', 'N+1-2N', …\n" +
 			"                Useful when id order doubles as creation order — sister\n" +
 			"                of priority/tag for the id axis. N must be a positive\n" +
@@ -139,7 +148,22 @@ func newArchiveCmd() *cobra.Command {
 			if bucketBy != "" && strategy != "flat" {
 				return usageErrorf("--bucket-by and --strategy are mutually exclusive (each defines a different bucket axis)")
 			}
-			bucketFunc, err := resolveBucketByKey(bucketBy)
+			// --strict-and is meaningful ONLY in combination with
+			// the CSV-tag forms ("tag:X,Y" / "tag:!X,!Y"). For
+			// every other bucket axis (priority, single-tag,
+			// id-range, or no bucket-by at all) the flag has no
+			// applicable semantic — flagging it loudly is the
+			// right call so the user doesn't think it silently
+			// changed something.
+			if strictAnd {
+				if bucketBy == "" {
+					return usageErrorf("--strict-and requires --bucket-by tag:X,Y (CSV-tag variant); got no --bucket-by")
+				}
+				if !strings.HasPrefix(strings.ToLower(bucketBy), "tag:") {
+					return usageErrorf("--strict-and only applies to --bucket-by tag:X,Y (CSV-tag variant); got --bucket-by=%q", bucketBy)
+				}
+			}
+			bucketFunc, err := resolveBucketByKey(bucketBy, strictAnd)
 			if err != nil {
 				return err
 			}
@@ -208,6 +232,9 @@ func newArchiveCmd() *cobra.Command {
 				summary := strategy
 				if bucketBy != "" {
 					summary = fmt.Sprintf("bucket-by=%s", bucketBy)
+					if strictAnd {
+						summary += " (strict-and)"
+					}
 				}
 				pf(out, "would archive %d task(s) → %s (%s)\n", len(archived), archivePath, summary)
 				for _, t := range archived {
@@ -269,7 +296,7 @@ func newArchiveCmd() *cobra.Command {
 				return fmt.Errorf("save active: %w", err)
 			}
 
-			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, archiveStrategyLabel(strategy, bucketBy))
+			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, archiveStrategyLabel(strategy, bucketBy, strictAnd))
 			pf(out, "active tasks: %d\n", len(kept))
 			return nil
 		},
@@ -281,6 +308,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&strategy, "strategy", "flat", "archive layout: flat | daily | weekly | monthly | quarterly | yearly (one bucket per calendar year)")
 	cmd.Flags().StringVar(&mergeInto, "merge-into", "", "write to this archive file instead of the sibling .tsk.archive.md (~ expansion supported; created if missing)")
 	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:!X' (inverse single-tag), 'tag:X,Y,Z' (multi-tag CSV union), 'tag:!X,!Y' (inverse CSV), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
+	cmd.Flags().BoolVar(&strictAnd, "strict-and", false, "for --bucket-by tag:X,Y (CSV-tag variant): require ALL listed tags on a task (intersection) instead of the default ANY (union). Combines with the inverse form (tag:!X,!Y --strict-and = NOT carrying ALL listed tags). The bucket label gains a '&' marker so flat-text archive scans can distinguish union vs intersection sections.")
 	return cmd
 }
 
@@ -288,9 +316,18 @@ func newArchiveCmd() *cobra.Command {
 // message: "strategy=X" for the standard time/id bucketing, or
 // "bucket-by=Y" when the user opted into a custom axis. Single
 // helper so the dry-run and success paths print the same shape.
-func archiveStrategyLabel(strategy, bucketBy string) string {
+//
+// strictAnd appends "(strict-and)" when the user opted into the
+// intersection (all-of) form for a CSV-tag bucket-by — keeps the
+// summary self-documenting so scripts watching the output can tell
+// union from intersection without checking the user's exact flags.
+func archiveStrategyLabel(strategy, bucketBy string, strictAnd bool) string {
 	if bucketBy != "" {
-		return fmt.Sprintf("bucket-by=%s", bucketBy)
+		s := fmt.Sprintf("bucket-by=%s", bucketBy)
+		if strictAnd {
+			s += " (strict-and)"
+		}
+		return s
 	}
 	return strategy
 }
@@ -568,7 +605,15 @@ func bucketByFirstTag(t model.Task) (string, int) {
 // rejected with a usage error pointing at the expected shape.
 // Tasks with id == 0 (ID-less tasks created before the model gained
 // id assignment) all collapse into "id:0" so they're not lost.
-func resolveBucketByKey(raw string) (bucketFn, error) {
+//
+// strictAnd flips the multi-tag CSV semantic from UNION (any-of) to
+// INTERSECTION (all-of): when set, a task lands in the call-out
+// bucket only if it carries ALL listed tags. Default is the
+// historical union behavior so existing recipes keep working. Has
+// no effect on the single-tag form (one tag has no union/
+// intersection distinction). The caller validates that strictAnd
+// is only set when bucketBy starts with "tag:".
+func resolveBucketByKey(raw string, strictAnd bool) (bucketFn, error) {
 	trimmed := strings.TrimSpace(raw)
 	lower := strings.ToLower(trimmed)
 	switch lower {
@@ -636,7 +681,7 @@ func resolveBucketByKey(raw string) (bucketFn, error) {
 		if err != nil {
 			return nil, err
 		}
-		return makeTagFilterBucketFnInversion(parsedTags, inverted), nil
+		return makeTagFilterBucketFnInversionMode(parsedTags, inverted, strictAnd), nil
 	}
 	return nil, usageErrorf("unknown --bucket-by %q (supported: priority, tag, tag:X, tag:X,Y, tag:!X, id-range:N)", raw)
 }
@@ -693,40 +738,117 @@ func parseInversionTags(tags []string, raw string) (bool, []string, error) {
 // "tag:!a,!b" for multi-tag inverse. The label is the SOURCE of
 // the bucket identity, so the inverse form is visibly different
 // from the positive form even in flat-text archive scans.
+//
+// Always emits UNION (any-of) semantics for multi-tag inputs. For
+// the intersection (all-of) variant see
+// makeTagFilterBucketFnInversionMode, which exposes the strictAnd
+// flag.
 func makeTagFilterBucketFnInversion(tags []string, inverted bool) bucketFn {
+	return makeTagFilterBucketFnInversionMode(tags, inverted, false)
+}
+
+// makeTagFilterBucketFnInversionMode is the fully-parameterized
+// factory: both the inversion sense AND the union/intersection
+// mode are caller-controlled. When `strictAnd` is true, multi-tag
+// predicates require ALL listed tags to be present on the task
+// (intersection); false uses the historical union (any-of)
+// behavior. Has no effect on single-tag inputs (one tag has no
+// union/intersection distinction).
+//
+// Label decoration: the "& " marker after "tag:" announces the
+// intersection mode visually so flat-text archive scans can
+// distinguish "## tag:a,b" (union) from "## tag:&a,b"
+// (intersection). The marker is dropped for single-tag inputs
+// where the mode is moot.
+//
+// Why label-encode the mode? Because the same archive file can
+// hold rollups from different filter passes over time — without
+// a visible distinction, someone reviewing the archive months
+// later can't tell whether a "tag:a,b" section was the union or
+// the intersection. The label lets the bucket carry its own
+// provenance.
+//
+// Combines cleanly with inversion: "tag:!&a,b" is the inverse
+// intersection (tasks NOT carrying ALL of a AND b), and the
+// label preserves the "!&" prefix shape so the four combinations
+// (positive union, positive intersection, inverse union, inverse
+// intersection) are all visually distinct.
+func makeTagFilterBucketFnInversionMode(tags []string, inverted, strictAnd bool) bucketFn {
 	wantLower := make(map[string]bool, len(tags))
 	for _, t := range tags {
 		wantLower[strings.ToLower(t)] = true
 	}
+	// The intersection marker is meaningful only for multi-tag
+	// predicates; a single-tag list has no union/intersection
+	// distinction, so we drop the "&" to avoid label noise.
+	useAnd := strictAnd && len(tags) > 1
 	var label string
-	if inverted {
+	prefix := "tag:"
+	switch {
+	case inverted && useAnd:
+		prefix = "tag:!&"
+	case inverted:
+		prefix = "tag:!"
+		// "!" applied per-tag for the inverse multi-tag CSV
+		// shape (kept for backward-compat label parity with
+		// the previous inversion factory).
 		bangedTags := make([]string, len(tags))
 		for i, t := range tags {
 			bangedTags[i] = "!" + t
 		}
 		label = "tag:" + strings.Join(bangedTags, ",")
-	} else {
-		label = "tag:" + strings.Join(tags, ",")
+		return func(t model.Task) (string, int) {
+			return matchTagBucket(t, wantLower, true, false, label)
+		}
+	case useAnd:
+		prefix = "tag:&"
 	}
+	label = prefix + strings.Join(tags, ",")
 	return func(t model.Task) (string, int) {
-		matched := false
+		return matchTagBucket(t, wantLower, inverted, useAnd, label)
+	}
+}
+
+// matchTagBucket is the per-task predicate body shared between the
+// union, intersection, and inverse variants. Pulled out so the
+// factory's branch logic doesn't have to repeat the same return-
+// shape boilerplate for every combination.
+func matchTagBucket(t model.Task, wantLower map[string]bool, inverted, strictAnd bool, label string) (string, int) {
+	var matched bool
+	if strictAnd {
+		// Intersection: every listed tag must be present.
+		// Build the set of the task's tags (lower-cased) once,
+		// then check membership per listed tag.
+		taskTags := make(map[string]bool, len(t.Tags))
+		for _, tg := range t.Tags {
+			taskTags[strings.ToLower(tg)] = true
+		}
+		matched = true
+		for want := range wantLower {
+			if !taskTags[want] {
+				matched = false
+				break
+			}
+		}
+	} else {
+		// Union: any listed tag matches.
 		for _, tg := range t.Tags {
 			if wantLower[strings.ToLower(tg)] {
 				matched = true
 				break
 			}
 		}
-		// Inverted predicate: NO match means the task belongs in
-		// the call-out bucket. Positive: match means it does.
-		inCallOut := matched
-		if inverted {
-			inCallOut = !matched
-		}
-		if inCallOut {
-			return label, 1
-		}
-		return "other", 2
 	}
+	// Inverted predicate: NO match means the task belongs in the
+	// call-out bucket. Positive: match means it does.
+	inCallOut := matched
+	if inverted {
+		inCallOut = !matched
+	}
+	if inCallOut {
+		return label, 1
+	}
+	return "other", 2
 }
 
 // splitTagFilterCSV tokenizes a `tag:X,Y,Z` CSV payload into its
