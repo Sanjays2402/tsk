@@ -662,12 +662,54 @@ features.
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 - [ ] TUI status-bar elapsed-time render for in-progress tasks
 - [ ] TUI sticky header with `tsk wip` count
-- [ ] TUI 'X' archive-current-task (sister of `tsk archive` CLI verb)
-- [ ] TUI 'P' priority-cycle-down (current 'p' cycles UP only; lowercase/uppercase pair like g/G, r/R)
-- [ ] TUI '*' toggle-pin-current-task (sister of `tsk pin` CLI; complements F focus-on-pinned by making it easy to BUILD the pinned set inside the TUI)
+- [x] TUI 'X' archive-current-task (sister of `tsk archive` CLI verb) (tick 2026-06-22/2154)
+- [x] TUI 'P' priority-cycle-down (current 'p' cycles UP only; lowercase/uppercase pair like g/G, r/R) (tick 2026-06-22/2154)
+- [x] TUI '*' toggle-pin-current-task (sister of `tsk pin` CLI; complements F focus-on-pinned by making it easy to BUILD the pinned set inside the TUI) (tick 2026-06-22/2154)
 - [ ] `tsk archive --bucket-by priority --strict-and` — currently --strict-and rejects non-tag axes; consider relaxing to "priority + tag intersection" (e.g. urgent tasks tagged 'release')
 - [ ] `tsk pause --all --tag X --strict-and-tag Y` — narrow bulk-pause by INTERSECTION of two tags (mirrors archive's strict-and surface)
 - [ ] `tsk depend --pending --strict-and-tag a,b` — intersection variant for the pending notification queue
+
+
+### Polish & DX (added 2026-06-22 tick #25)
+
+Fresh ideas so future ticks have ample sized work. With the
+TUI now closing its three biggest single-action gaps (X archive,
+* pin, P priority-cycle-down — completing the CLI-mirror set),
+and the graph JSON output cluster gaining its two streaming
+primitives (--compact-json for JSONL-shape records, --append
+for snapshot history accumulation), this batch leans into the
+still-unstarted long-tail and fresh follow-ons sensible from
+this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk graph --json --output snap.jsonl --append --watch N` — append a snapshot every N seconds for continuous monitoring (combine the streaming primitives with a watcher)
+- [ ] `tsk graph --json --output snap.jsonl --append --since <id> --json | jq` recipe doc — one-pager on the snapshot-history pattern
+- [ ] `tsk graph --json --compact-json --include-priority` — extend the JSON envelope to include task priority + done state in the nodes (currently just id+title+done; jq pipelines often need priority for filtering)
+- [ ] `tsk graph --json --output snap.jsonl --append --rotate N` — auto-rotate the JSONL file when it exceeds N records (the log-rotation sister of --append)
+- [ ] `tsk archive --strategy weekly --json` — JSON envelope of the archive run (which tasks landed in which buckets) for scripted CI gates
+- [ ] `tsk archive --bucket-by priority --strict-and` — currently --strict-and rejects non-tag axes; consider relaxing to "priority + tag intersection"
+- [ ] `tsk pause --all --tag X --strict-and-tag Y` — narrow bulk-pause by INTERSECTION of two tags (mirrors archive's strict-and surface)
+- [ ] `tsk depend --pending --strict-and-tag a,b` — intersection variant for the pending notification queue
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '<' / '>' move-task-up / move-task-down (sister of `tsk swap` CLI; manual reorder inside the TUI)
+- [ ] TUI '?' enter help overlay also shows the active filter / sort state (currently only shows the keybindings)
+- [ ] TUI 'y' yank task as text to clipboard (for cross-tool quotes / Slack pastes)
+- [ ] TUI status footer auto-clears after N seconds (currently sticky until the next action; can crowd-out unrelated context)
+
 
 
 
@@ -3212,3 +3254,217 @@ envelope all write to disk with extension safety). The TUI gains
 its first smart-selection hotkey ('N') and its first toggle-
 filter primitive ('F'), and the help table is now in sync with
 the keymap for the first time in several ticks.
+
+
+### 2026-06-22 21:54 PT (tick #25)
+
+Shipped 5 features. Full quality gate (gofmt + vet + build + go
+test ./...) green before push. Single revertible commit per
+feature. Landed 962ca56..226361b on origin/main; verified via
+`git log origin/main | head`.
+
+- TUI 'X' archive-current-task     — 962ca56 feat(tui): 'X' key archives the current done task to .tsk.archive.md
+- TUI '*' toggle-pin-current-task  — dfa82ac feat(tui): '*' key toggles pin on the current task
+- TUI 'P' priority-cycle-down      — f3c833f feat(tui): 'P' key cycles task priority in the reverse direction
+- `graph --json --compact-json`    — ab47078 feat(graph): --json --compact-json emits single-line JSON for JSONL pipelines
+- `graph --json --output --append` — 226361b feat(graph): --json --output --append writes a JSONL stream of impact snapshots
+
+Notable choices:
+
+- TUI 'X' completes the "TUI mirrors CLI single-action verb"
+  cluster: tick #20-24 shipped 'r/R' (reload/reload+clear), 'C'
+  (clone), 'N' (next-unblocked), 'F' (focus-pinned). 'X' was the
+  last single-action gap. DONE-only by design — archiving an open
+  task is a category error (the archive file is for completed
+  work), and refusing surfaces a clear status hint rather than a
+  silent no-op. Flat-strategy default (no --bucket-by, no
+  --merge-into) keeps the TUI shortcut focused on the single-task
+  quick action; the full CLI is still where bucketed strategies
+  live. Atomic-ish two-save: archive saved first (if it fails,
+  active is untouched), then active saved (if it fails after
+  archive succeeds, the task exists in both files momentarily —
+  surfaced clearly so the user knows to re-run). Dependents-aware:
+  refuses if any OPEN task names the to-be-archived id in its
+  DependsOn (would create a dangling ref in the active store,
+  which `tsk lint` would flag). Done dependents tolerated. Why
+  uppercase 'X' not 'x'? Lowercase 'x' reserved for vim's "delete
+  one character" convention (future single-character edit
+  primitive); uppercase 'X' is the conventional destructive bulk-
+  action key in modal editors.
+
+- TUI '*' completes the pin cluster started in tick #24: the 'F'
+  focus-pinned toggle gave users a FILTER but no way to BUILD
+  the pinned set inside the TUI. The workflow was "drop to
+  shell, run tsk pin <id>, come back, hit F" — the kind of
+  context switch a TUI is supposed to eliminate. With '*', the
+  whole pin/focus/unfocus cycle stays inside the TUI. Why '*'
+  not 'P' (the obvious lowercase/uppercase pair)? Two reasons:
+  '*' is the conventional "mark this row" key in modal editors
+  (vim search-current-word, mutt mark-message), and 'P' is
+  reserved for priority-cycle-down (this same tick). Composes
+  cleanly with focus-pinned: unpinning while pinnedOnly=true
+  removes the task from view; cursor snaps to the new last
+  visible row. Composes with N: pinned beats priority in tsk's
+  next-pick selector, so a freshly-pinned low-priority task
+  becomes the next pick (regression test confirms).
+
+- TUI 'P' adds the reverse direction to the priority-cycle
+  binding. Lowercase 'p' increments (low -> medium -> high ->
+  urgent -> low), which works for "bump it up" but is hostile
+  when the user overshoots — three more lowercase 'p' presses to
+  wrap. Uppercase 'P' decrements (urgent -> high -> medium ->
+  low -> urgent), so a single press steps back. The lowercase/
+  uppercase pair matches the convention the TUI's settled into
+  for direction-sensitive bindings (g/G, r/R, n/N). The math (x
+  - 1 + 4) % 4 keeps the result in [0, 4) for x in [0, 3]
+  including x=0 (wraps to 3 == urgent). The
+  TestCyclePriorityUpAndDownAreInverses regression guard
+  confirms p+P is a no-op for every starting priority — drift
+  in either direction's modulo math would break it.
+
+- `graph --json --compact-json` adds the opt-out for the
+  indented two-space JSON. Single-line "no whitespace, no
+  indent" form, useful for JSONL pipelines where each line must
+  be a self-contained record (a multi-line indented JSON would
+  corrupt every consumer that splits on \n). Backward compat:
+  indented is still the default. The
+  TestGraphJSONOutputBytesMatchStdout regression guard keeps
+  passing because the indent contract is only changed when
+  --compact-json is explicitly set. Validation: --compact-json
+  without --json is rejected at exit 2 (usage error). Composes
+  with --upstream-of, --output, --open. All four cross-cutting
+  combinations covered by tests.
+
+- `graph --json --output --append` adds the JSONL streaming
+  primitive: each call adds exactly ONE record to the target
+  file (creating it if missing). The on-disk shape is true
+  JSONL (one record per line, each line a self-contained
+  envelope) — so the file builds a chronological history of
+  impact-analysis snapshots over time. --append implies
+  --compact-json (indented across multiple records would
+  corrupt JSONL; the implicit upgrade keeps the file valid
+  even when the user forgets the explicit flag). Extension
+  matrix grows: .jsonl is the canonical streaming-JSON
+  convention and now accepted alongside .json. Bad extensions
+  (.svg / .dot / .txt / bare) still rejected with a clear
+  "expects .json or .jsonl" error. Per-record atomicity relies
+  on the underlying filesystem (POSIX guarantees writes under
+  4KB are atomic — well above our compact envelope size), since
+  wrapping in our broader atomic-tempfile-rename contract
+  would corrupt the JSONL stream (rename clobbers the existing
+  file). validateGraphOutputJSONExtension grows an appendMode
+  parameter so the matrix can include .jsonl conditionally;
+  the historical non-append path stays unchanged (regression
+  guarded by existing TestValidateGraphOutputJSONExtension
+  Matrix).
+
+Files added this tick:
+- internal/tui/archive_test.go (9 tests)
+- internal/tui/toggle_pin_test.go (9 tests)
+- internal/tui/cycle_priority_down_test.go (6 tests)
+- internal/commands/graph_json_compact_test.go (7 tests)
+- internal/commands/graph_json_append_test.go (10 tests)
+
+Files modified:
+- internal/tui/keys.go (ArchiveCurrent, TogglePin,
+  PriorityCycleDown bindings + struct field shape)
+- internal/tui/app.go (archiveCurrent + tuiArchivePath +
+  togglePinCurrent + cyclePriorityDown methods; handleNavKey
+  wiring for X, *, P; footer hint updates; helpView gains X,
+  *, p/P rows; filepath import added)
+- internal/commands/graph.go (jsonCompact + jsonAppend flags,
+  validation in RunE, --append dispatch path with
+  O_APPEND|O_CREATE write, validateGraphOutputJSONExtension
+  grows appendMode arg, emitSubgraphJSON signature change to
+  accept compact bool, SetIndent gating, flag registration,
+  three new Examples)
+- internal/commands/graph_json_output_test.go (one call site
+  updated for the new validateGraphOutputJSONExtension
+  signature)
+
+Per-feature test counts:
+  TUI X archive                       9 new (happy-path move,
+                                      open-refusal, blocking-
+                                      dependent-refusal, done-
+                                      dependent tolerance,
+                                      archive-id continuation,
+                                      empty-store hint, form-
+                                      input shadowing
+                                      regression, footer+help
+                                      mention, path resolver
+                                      unit)
+  TUI * toggle pin                    9 new (pin-from-
+                                      unpinned, unpin-from-
+                                      pinned, round-trip, e2e
+                                      with focus-pinned, unpin
+                                      shrinks focus list with
+                                      selection-snap, empty-
+                                      store hint, form-input
+                                      shadowing, footer+help
+                                      mention, composes-with-N)
+  TUI P priority-cycle-down           6 new (decrement one
+                                      notch, low->urgent wrap,
+                                      four-press full loop,
+                                      p+P inverse round-trip,
+                                      empty-store safety,
+                                      form-input shadowing,
+                                      footer+help mention)
+  graph --compact-json                7 new (single-line shape,
+                                      round-trip via file,
+                                      requires --json, default
+                                      stays indented, with
+                                      upstream-of, identical
+                                      parse, compose-with-filter)
+  graph --append                     10 new (fresh-file
+                                      creation, three-call
+                                      history accumulation,
+                                      implicit compact, requires-
+                                      json, requires-output,
+                                      both-extension acceptance,
+                                      bad-extension rejection,
+                                      append-matrix unit,
+                                      explicit-compact
+                                      composition, atomic on
+                                      extension mismatch)
+  TOTAL                              41 new test cases on top
+of the existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each feature's commit is independently revertible.
+- The TUI cluster (X / * / P) closes the long-standing "TUI
+  mirrors CLI single-action verb" gap that's been queued since
+  tick #20 (where the first set of TUI items were added —
+  reload, clone, jump-next, focus-pinned, archive, toggle-pin,
+  priority-down). Three of those shipped here; the remaining
+  TUI items in the long-tail (detail pane, pomodoro overlay,
+  task creation form, in-session undo, status-bar elapsed
+  render, sticky wip header) are larger structural changes
+  that don't fit the single-action mirror pattern.
+- The graph JSON output cluster gains its two streaming
+  primitives (--compact-json + --append) — both of which were
+  queued as follow-ons in tick #24's roadmap when --json
+  --output landed. The pair forms the foundation for the
+  snapshot-history pattern (`tsk graph --reachable 7 --json
+  --output snap.jsonl --append` builds a chronological record
+  of impact-analysis queries). A future --watch primitive
+  (queued in tick #25 backlog) would close the "continuous
+  monitoring" use case by appending a snapshot every N
+  seconds.
+- validateGraphOutputJSONExtension's signature change required
+  one call site update in graph_json_output_test.go — the only
+  cross-file ripple. Caught immediately by the build; no
+  surprise.
+
+This is the thirteenth batch shipped directly on main. The
+TUI now has its full set of single-action CLI-mirror shortcuts
+(X / * / P joining the existing C / N / F / r / R / g / G /
+j / k / a / e / d / D / p / t / / / s / tab / ? / q / space /
+enter / esc / y / n). The graph subgraph JSON envelope path
+gains its two streaming primitives, completing the on-disk
+output toolkit (truncating write + append-mode JSONL +
+compact-line shape). The next ticks have ample sized work in
+the long-tail (recipe docs, recurring tasks, config files,
+multi-file aggregation, the still-unstarted TUI structural
+features).
+
