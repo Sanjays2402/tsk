@@ -27,15 +27,16 @@ const archiveHeader = "# tsk archive\n"
 
 func newArchiveCmd() *cobra.Command {
 	var (
-		olderThan string
-		sinceID   int
-		all       bool
-		dryRun    bool
-		strategy  string
-		mergeInto string
-		bucketBy  string
-		strictAnd bool
-		asJSON    bool
+		olderThan  string
+		sinceID    int
+		all        bool
+		dryRun     bool
+		strategy   string
+		mergeInto  string
+		bucketBy   string
+		strictAnd  bool
+		asJSON     bool
+		outputPath string
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -228,7 +229,13 @@ func newArchiveCmd() *cobra.Command {
 
 			if len(archived) == 0 {
 				if asJSON {
-					return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, nil, kept, archived, nil)
+					if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+						return err
+					}
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, nil, kept, archived, nil)
+				}
+				if outputPath != "" {
+					return usageErrorf("--output requires --json (the JSON envelope path)")
 				}
 				pf(out, "no tasks to archive\n")
 				return nil
@@ -236,6 +243,9 @@ func newArchiveCmd() *cobra.Command {
 
 			if dryRun {
 				if asJSON {
+					if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+						return err
+					}
 					// Dry-run JSON: simulate the archive-id assignment
 					// so the envelope mirrors the real-run shape, but
 					// don't touch disk. The archive store is loaded
@@ -253,7 +263,10 @@ func newArchiveCmd() *cobra.Command {
 						copyT.ID = nextSim + i
 						simulated[i] = copyT
 					}
-					return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, simulated, activeIDsSim)
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, simulated, activeIDsSim)
+				}
+				if outputPath != "" {
+					return usageErrorf("--output requires --json (the JSON envelope path)")
 				}
 				summary := strategy
 				if bucketBy != "" {
@@ -329,7 +342,13 @@ func newArchiveCmd() *cobra.Command {
 			}
 
 			if asJSON {
-				return emitArchiveJSON(out, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, archived, activeIDs)
+				if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+					return err
+				}
+				return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, archived, activeIDs)
+			}
+			if outputPath != "" {
+				return usageErrorf("--output requires --json (the JSON envelope path)")
 			}
 			pf(out, "archived %d task(s) → %s (strategy=%s)\n", len(archived), archivePath, archiveStrategyLabel(strategy, bucketBy, strictAnd))
 			pf(out, "active tasks: %d\n", len(kept))
@@ -345,6 +364,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:!X' (inverse single-tag), 'tag:X,Y,Z' (multi-tag CSV union), 'tag:!X,!Y' (inverse CSV), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	cmd.Flags().BoolVar(&strictAnd, "strict-and", false, "for --bucket-by tag:X,Y (CSV-tag variant): require ALL listed tags on a task (intersection) instead of the default ANY (union). Combines with the inverse form (tag:!X,!Y --strict-and = NOT carrying ALL listed tags). The bucket label gains a '&' marker so flat-text archive scans can distinguish union vs intersection sections.")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit a stable JSON envelope describing the archive run (which tasks landed in which buckets, per-task archive id assignments, the resolved archive path, and the strategy/bucket-by summary). Works with --dry-run too — the dry-run JSON simulates the archive-id assignment without writing anything. Useful for scripted CI gates and post-archive notifications that need a machine-readable manifest rather than parsing the plain-text summary.")
+	cmd.Flags().StringVar(&outputPath, "output", "", "for --json: write the JSON envelope to this file instead of stdout (.json extension required; created if missing, overwritten if exists). Useful when you want to commit the manifest into the repo as a post-archive snapshot, or pipe an exact filename into a CI step without shell redirection. Sister of `tsk graph --json --output <path>`. Implies --json (passing --output without --json is a usage error).")
 	return cmd
 }
 
@@ -1250,7 +1270,21 @@ type archiveDoc struct {
 //
 // For the flat strategy (no bucket axis) every row has bucket="";
 // omitempty drops the field so the JSON stays minimal.
-func emitArchiveJSON(w io.Writer, archivePath, strategy, bucketBy string, strictAnd, dryRun bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
+//
+// outputPath when non-empty redirects the JSON envelope to a file
+// instead of stdout. The contents are byte-identical to what stdout
+// would have produced (same json.Encoder settings, same indent),
+// just landed at a stable filename — useful for committing the
+// manifest into the repo or piping it into a CI step without
+// shell redirection. Sister of `tsk graph --json --output <path>`:
+// same buffer-then-write contract (no partial file on render
+// failure), same .json extension enforcement (the caller validates
+// before we get here so the error surfaces cleanly). When stdout
+// also got something (it doesn't here — the file write is the
+// only output channel), we'd risk byte-doubling; the
+// "wrote N bytes to <path>" confirmation is the only thing that
+// lands on stdout in the file path.
+func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy string, strictAnd, dryRun bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
 	// Resolve the time-based strategy to its bucketFn for the JSON
 	// path. The writer dispatches the same way in the switch above
 	// — we mirror that dispatch here so the JSON's "bucket" field
@@ -1295,7 +1329,57 @@ func emitArchiveJSON(w io.Writer, archivePath, strategy, bucketBy string, strict
 		ActiveCount: len(kept),
 		Archived:    rows,
 	}
+	if outputPath != "" {
+		// Buffer the render before writing so a render failure
+		// leaves no partial file on disk (matches the
+		// atomic-write contract every other tsk write path follows).
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(doc); err != nil {
+			return err
+		}
+		if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("--output: write %s: %w", outputPath, err)
+		}
+		pf(w, "wrote %d bytes to %s (format=json)\n", buf.Len(), outputPath)
+		return nil
+	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(doc)
+}
+
+// validateArchiveOutputJSONFlags surfaces a clear usage error when
+// --output is set without a sensible extension. Mirrors the
+// extension-validation contract `tsk graph --json --output` uses:
+// .json is required (catches the silent-footgun case where a user
+// types `--json --output run.txt` and the file lands containing
+// JSON bytes under the wrong extension, breaking every downstream
+// tool inspecting it by extension). Bare paths (no extension) are
+// REJECTED — JSON has a real on-disk convention worth enforcing,
+// and extensionless dumps usually mean a typo. Case-insensitive on
+// the extension so `.JSON` passes.
+//
+// appendMode is reserved for the future --append feature (JSONL
+// snapshot history). When set, .jsonl also passes — the same matrix
+// `tsk graph --json --output --append` uses.
+//
+// When outputPath is empty (the bare --json path) this is a no-op:
+// the user is writing to stdout, no extension to validate.
+func validateArchiveOutputJSONFlags(path string, appendMode bool) error {
+	if path == "" {
+		return nil
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".json" {
+		return nil
+	}
+	if appendMode && ext == ".jsonl" {
+		return nil
+	}
+	if appendMode {
+		return usageErrorf("--json --output --append expects path ending in .json or .jsonl, got %q", ext)
+	}
+	return usageErrorf("--json --output expects path ending in .json, got %q", ext)
 }
