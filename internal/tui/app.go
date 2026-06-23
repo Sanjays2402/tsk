@@ -209,6 +209,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.moveCurrent(1)
 	case matches(m, a.keys.Yank):
 		a.yankCurrent()
+	case matches(m, a.keys.YankAll):
+		a.yankAllVisible()
 	}
 }
 
@@ -1057,6 +1059,90 @@ func (a *App) yankCurrent() {
 	a.status = fmt.Sprintf("yanked #%d %s", id, preview)
 }
 
+// yankAllVisible copies a plain-text rendering of EVERY currently-
+// visible task (the rows the user can actually see after filter,
+// section collapse, and pinned-focus narrowing) to the terminal
+// clipboard via OSC52 as a single multi-task block. Uppercase 'Y'
+// sister of lowercase 'y' for the "yank everything I'm looking at"
+// use case (standup write-up, retro slide, weekly review email).
+//
+// Why a separate verb rather than just iterating with 'y'?
+// Lowercase 'y' yanks one task and overwrites the clipboard each
+// time, so iterating 50 visible tasks leaves only the last one
+// pasteable. Uppercase 'Y' does the natural "all of these as one
+// paste" operation in a single keystroke, with a deterministic
+// separator between tasks so the consumer can re-split if needed.
+//
+// Separator: a blank line between each task's formatTaskYank block.
+// Each block is already newline-terminated, so a single \n between
+// them produces "<task>\n\n<task>\n\n..." — clean Markdown paragraph
+// style that Notes / Slack / Jira all render naturally.
+//
+// Visible set: uses visibleTasks() so the result respects:
+//   - active search filter (so 'Y' after '/work' yanks only the
+//     work-tagged visible tasks)
+//   - section collapse state (collapsed sections contribute no tasks)
+//   - pinned-focus (when F is active, only pinned tasks yank)
+//
+// This is the right behavior because the user's mental model is
+// "what's on my screen right now"; if they wanted everything, they'd
+// clear the filter first.
+//
+// Status footer shows "yanked N tasks (Mb)" with the task count
+// and approximate payload size so the user knows the silent OSC52
+// sequence carried the expected amount.
+//
+// Edge cases:
+//   - empty visible set: status "yank-all: no visible tasks", no
+//     OSC52 write (avoids clobbering whatever's currently on the
+//     clipboard with an empty payload).
+//   - write failure: status carries the error so the user knows
+//     the terminal-level copy didn't go through.
+//
+// The lastYank field is also updated so a future "what did I just
+// yank?" introspection (or a regression test) can inspect the
+// payload; same field lowercase 'y' uses, since the two operations
+// share the same conceptual "clipboard memory" slot.
+func (a *App) yankAllVisible() {
+	vt := a.visibleTasks()
+	if len(vt) == 0 {
+		a.status = "yank-all: no visible tasks"
+		return
+	}
+	var b strings.Builder
+	for i, t := range vt {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(formatTaskYank(t))
+	}
+	payload := b.String()
+	a.lastYank = payload
+	w := a.yankWriter
+	if w == nil {
+		w = os.Stderr
+	}
+	if _, err := osc52.New(payload).WriteTo(w); err != nil {
+		a.status = "yank-all: write failed: " + err.Error()
+		return
+	}
+	// Render approximate size in human terms — 1024-byte powers
+	// because that's the "how big a clipboard payload is this"
+	// scale users intuit. Lowercase 'y' single-task yanks are
+	// almost always under 1KB so we don't bother there.
+	size := len(payload)
+	var sizeStr string
+	switch {
+	case size < 1024:
+		sizeStr = fmt.Sprintf("%dB", size)
+	case size < 1024*1024:
+		sizeStr = fmt.Sprintf("%.1fKB", float64(size)/1024.0)
+	default:
+		sizeStr = fmt.Sprintf("%.1fMB", float64(size)/(1024.0*1024.0))
+	}
+	a.status = fmt.Sprintf("yanked %d tasks (%s)", len(vt), sizeStr)
+}
+
 // formatTaskYank renders a single task as a self-contained
 // multi-line text block suitable for pasting into Slack / a Notes
 // app / a Jira description. The format is intentionally minimal
@@ -1492,7 +1578,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · </> reorder · y yank · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · </> reorder · y yank · Y yank-all · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -1545,6 +1631,7 @@ func (a *App) helpView() string {
 		{"<", "move task up in store order"},
 		{">", "move task down in store order"},
 		{"y", "yank task as text to clipboard (OSC52)"},
+		{"Y", "yank ALL visible tasks as text (sister of y)"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}

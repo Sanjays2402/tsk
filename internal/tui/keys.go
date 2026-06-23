@@ -28,6 +28,7 @@ type Keymap struct {
 	MoveUp            key.Binding
 	MoveDown          key.Binding
 	Yank              key.Binding
+	YankAll           key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.
@@ -62,5 +63,6 @@ func DefaultKeymap() Keymap {
 		MoveUp:            key.NewBinding(key.WithKeys("<"), key.WithHelp("<", "move task up (store order)")),
 		MoveDown:          key.NewBinding(key.WithKeys(">"), key.WithHelp(">", "move task down (store order)")),
 		Yank:              key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yank task as text")),
+		YankAll:           key.NewBinding(key.WithKeys("Y"), key.WithHelp("Y", "yank ALL visible tasks as text")),
 	}
 }
