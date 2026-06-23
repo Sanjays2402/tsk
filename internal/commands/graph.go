@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -76,21 +77,22 @@ import (
 // the explicit message saves a "why is this empty?" diagnostic loop.
 func newGraphCmd() *cobra.Command {
 	var (
-		format          string
-		open            bool
-		reachable       int
-		upstreamOf      int
-		highlight       string
-		highlightTag    string
-		dim             string
-		dimTag          string
-		asJSON          bool
-		outputPath      string
-		jsonCompact     bool
-		jsonAppend      bool
-		includePriority bool
-		includeTags     bool
-		includeDue      bool
+		format           string
+		open             bool
+		reachable        int
+		upstreamOf       int
+		highlight        string
+		highlightTag     string
+		dim              string
+		dimTag           string
+		asJSON           bool
+		outputPath       string
+		jsonCompact      bool
+		jsonAppend       bool
+		includePriority  bool
+		includeTags      bool
+		includeDue       bool
+		includeCompleted bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -193,6 +195,7 @@ Examples:
   tsk graph --reachable 7 --json --compact-json --output snap.json   # compact write
   tsk graph --reachable 7 --json --output snap.jsonl --append       # JSONL append (one record per call)
   tsk graph --reachable 7 --json --include-priority                 # JSON envelope with per-node priority
+  tsk graph --reachable 7 --json --include-completed                # add per-node 'completed' RFC3339 timestamp (done tasks only)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -228,6 +231,9 @@ Examples:
 			}
 			if includeDue && !asJSON {
 				return usageErrorf("--include-due only applies to --json (the JSON envelope path)")
+			}
+			if includeCompleted && !asJSON {
+				return usageErrorf("--include-completed only applies to --json (the JSON envelope path)")
 			}
 			if jsonAppend {
 				if !asJSON {
@@ -314,7 +320,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -363,7 +369,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -382,6 +388,7 @@ Examples:
 	cmd.Flags().BoolVar(&includePriority, "include-priority", false, "for --json: add a per-node 'priority' field to the envelope (canonical string: low/medium/high/urgent). Useful for jq pipelines that need to filter by priority without a per-node `tsk show --json <id>` round-trip. Historical default keeps the envelope minimal (id+title+done) so existing snapshot fixtures stay byte-identical.")
 	cmd.Flags().BoolVar(&includeTags, "include-tags", false, "for --json: add a per-node 'tags' field to the envelope (alphabetized array of tag strings; empty array when the task has no tags). Sister of --include-priority, same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to filter by tag (e.g. `select(.tags | index(\"urgent\"))`) without a per-node `tsk show --json <id>` round-trip. Composes with --include-priority and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field via omitempty since we don't have a task to read tags from.")
 	cmd.Flags().BoolVar(&includeDue, "include-due", false, "for --json: add a per-node 'due' field to the envelope (canonical YYYY-MM-DD date string; field is omitted when the task has no due date). Sister of --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag impact-analysis chains where something is due this week (e.g. `select(.due < \"2026-07-01\")`) without a per-node `tsk show --json <id>` round-trip. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read due from.")
+	cmd.Flags().BoolVar(&includeCompleted, "include-completed", false, "for --json: add a per-node 'completed' field to the envelope (canonical RFC3339 timestamp string; field is omitted when the task isn't done). Sister of --include-due / --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for completion-velocity analysis (`jq '[.nodes[] | select(.completed != null)] | length / (.nodes | length)'`), recently-completed sibling detection (which prereqs finished in the last 24h?), and CI gates that gate on \"this dependency chain is N% done\". Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read completed from.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
@@ -1139,12 +1146,13 @@ func truncateForDOT(s string, max int) string {
 // to know "what depends on something due this week?" without a
 // per-node `tsk show --json <id>` round-trip.
 type subgraphNode struct {
-	ID       int       `json:"id"`
-	Title    string    `json:"title"`
-	Done     bool      `json:"done"`
-	Priority string    `json:"priority,omitempty"`
-	Tags     *[]string `json:"tags,omitempty"`
-	Due      string    `json:"due,omitempty"`
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Done      bool      `json:"done"`
+	Priority  string    `json:"priority,omitempty"`
+	Tags      *[]string `json:"tags,omitempty"`
+	Due       string    `json:"due,omitempty"`
+	Completed string    `json:"completed,omitempty"`
 }
 
 // subgraphEdge is one directed dep edge in the JSON subgraph
@@ -1236,7 +1244,16 @@ type subgraphDoc struct {
 // X" and jq comparisons like `select(.due < "2026-07-01")` should
 // naturally skip nodes with no due field. Composes with all other
 // --include-* opt-ins (each is an independent boolean modifier).
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue bool) error {
+//
+// includeCompleted=true is the fourth opt-in: adds a per-task
+// "completed" field carrying the RFC3339 timestamp when the task
+// is done. Tasks not yet done leave the field absent (omitempty
+// drops the empty string) — the "still open" case is naturally
+// distinguishable from "completed at time X". Useful for
+// completion-velocity analysis, "what finished in the last 24h"
+// gates, and CI hooks that need to know how much of a dep chain
+// has shipped. Composes with all other --include-* opt-ins.
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted bool) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1289,6 +1306,17 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 			// makes string comparison equivalent to date
 			// comparison) work without parsing.
 			node.Due = t.Due.Format(model.DateLayout)
+		}
+		if includeCompleted && t.Completed != nil {
+			// Canonical RFC3339 timestamp — same format
+			// `tsk show --json` uses for Completed, so a jq
+			// pipeline can correlate the graph envelope's
+			// nodes with per-task lookups without parsing
+			// a different shape. Only set when the task is
+			// actually completed (the IsDone gate would also
+			// work here, but checking the pointer directly
+			// mirrors the existing includeDue pattern).
+			node.Completed = t.Completed.Format(time.RFC3339)
 		}
 		nodes = append(nodes, node)
 	}
