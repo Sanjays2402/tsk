@@ -89,6 +89,7 @@ func newGraphCmd() *cobra.Command {
 		outputPath       string
 		jsonCompact      bool
 		jsonAppend       bool
+		jsonRotate       int
 		includePriority  bool
 		includeTags      bool
 		includeDue       bool
@@ -196,6 +197,7 @@ Examples:
   tsk graph --reachable 7 --json --compact-json         # single-line JSON (JSONL-friendly)
   tsk graph --reachable 7 --json --compact-json --output snap.json   # compact write
   tsk graph --reachable 7 --json --output snap.jsonl --append       # JSONL append (one record per call)
+  tsk graph --reachable 7 --json --output snap.jsonl --append --rotate 100  # rolling buffer of last 100 snapshots
   tsk graph --reachable 7 --json --include-priority                 # JSON envelope with per-node priority
   tsk graph --reachable 7 --json --include-completed                # add per-node 'completed' RFC3339 timestamp (done tasks only)
   tsk graph --reachable 7 --json --include-started                  # add per-node 'started' RFC3339 timestamp (in-progress tasks only)
@@ -271,6 +273,18 @@ Examples:
 				// invocation (`tsk graph --reachable 7 --json
 				// --output snap.jsonl --append`) ergonomic.
 				jsonCompact = true
+			}
+			if jsonRotate < 0 {
+				return usageErrorf("--rotate must be >= 0 (got %d); 0 disables rotation, any positive N keeps the most-recent N records", jsonRotate)
+			}
+			if jsonRotate > 0 && !jsonAppend {
+				// Rotation only makes sense for the streaming
+				// (append) path. Overwriting --output keeps a
+				// single record by definition, so capping it to
+				// N is a vacuous request — surface the conflict
+				// at the CLI layer so the user re-thinks rather
+				// than getting silent no-op behavior.
+				return usageErrorf("--rotate requires --append (rotation only applies to the JSONL streaming path)")
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -363,11 +377,40 @@ Examples:
 						if err != nil {
 							return fmt.Errorf("--append: open %s: %w", outputPath, err)
 						}
-						defer f.Close()
 						if _, err := f.Write(buf.Bytes()); err != nil {
+							f.Close()
 							return fmt.Errorf("--append: write %s: %w", outputPath, err)
 						}
-						pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+						if err := f.Close(); err != nil {
+							return fmt.Errorf("--append: close %s: %w", outputPath, err)
+						}
+						// Post-append rotation: if --rotate N was
+						// set, cap the file to the most-recent N
+						// records by dropping the oldest lines (FIFO
+						// eviction). Done AFTER the append so a
+						// fresh write is always retained, even when
+						// N=1 and the file was already at capacity.
+						// Implemented as a full read + tail-keep +
+						// atomic rename (write to .tmp, rename over
+						// the target) so a crash mid-rotation leaves
+						// the existing file untouched. Tradeoff:
+						// O(file size) on every rotated call, which
+						// is fine for the snapshot-history use case
+						// (logs measured in MBs, not GBs) and avoids
+						// the complexity of seek-and-truncate.
+						droppedCount := 0
+						if jsonRotate > 0 {
+							n, err := rotateJSONLFile(outputPath, jsonRotate)
+							if err != nil {
+								return fmt.Errorf("--rotate: %w", err)
+							}
+							droppedCount = n
+						}
+						if droppedCount > 0 {
+							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl; rotated: dropped %d oldest line(s), kept newest %d)\n", buf.Len(), outputPath, droppedCount, jsonRotate)
+						} else {
+							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+						}
 						return nil
 					}
 					if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
@@ -406,6 +449,7 @@ Examples:
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
 	cmd.Flags().BoolVar(&jsonCompact, "compact-json", false, "for --json: emit a single-line, no-indent JSON record (JSONL-friendly). Useful when appending impact-analysis snapshots to a log file where each line must be a self-contained record (`tsk graph --reachable 7 --json --compact-json --output snap.jsonl` appends one record per call).")
 	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> instead of overwriting (JSONL semantics). Each call adds exactly one record to the file (creating it if missing); the file builds up a history of impact-analysis snapshots over time. Implies --compact-json so the on-disk shape is true JSONL. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
+	cmd.Flags().IntVar(&jsonRotate, "rotate", 0, "for --json --output --append: cap the JSONL file to N records by trimming the OLDEST lines after each append (FIFO eviction). 0 (default) = no rotation (the file grows unbounded). Useful for long-lived snapshot loops where you want a sliding window of the last N impact-analysis runs (e.g. --rotate 100 keeps a rolling buffer of the last 100 snapshots, oldest dropped as new ones arrive). Only the OLDEST lines are evicted (head-of-file truncation); the most-recent N records are always preserved. Requires --append (rotation only makes sense for the streaming JSONL path; overwriting --output keeps a single record by definition).")
 	cmd.Flags().BoolVar(&includePriority, "include-priority", false, "for --json: add a per-node 'priority' field to the envelope (canonical string: low/medium/high/urgent). Useful for jq pipelines that need to filter by priority without a per-node `tsk show --json <id>` round-trip. Historical default keeps the envelope minimal (id+title+done) so existing snapshot fixtures stay byte-identical.")
 	cmd.Flags().BoolVar(&includeTags, "include-tags", false, "for --json: add a per-node 'tags' field to the envelope (alphabetized array of tag strings; empty array when the task has no tags). Sister of --include-priority, same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to filter by tag (e.g. `select(.tags | index(\"urgent\"))`) without a per-node `tsk show --json <id>` round-trip. Composes with --include-priority and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field via omitempty since we don't have a task to read tags from.")
 	cmd.Flags().BoolVar(&includeDue, "include-due", false, "for --json: add a per-node 'due' field to the envelope (canonical YYYY-MM-DD date string; field is omitted when the task has no due date). Sister of --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag impact-analysis chains where something is due this week (e.g. `select(.due < \"2026-07-01\")`) without a per-node `tsk show --json <id>` round-trip. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read due from.")
@@ -885,6 +929,82 @@ func validateGraphOutputJSONExtension(path string, appendMode bool) error {
 		return usageErrorf("--json --output --append expects path ending in .json or .jsonl, got %q", ext)
 	}
 	return usageErrorf("--json --output expects path ending in .json, got %q", ext)
+}
+
+// rotateJSONLFile caps a JSONL file at <path> to keep the most-recent
+// keepN lines, dropping the oldest. Returns the number of lines
+// dropped (0 if no rotation was needed; positive when trimming
+// occurred). Caller has already validated keepN > 0 — passing 0 or
+// negative is a no-op (returns 0, nil) for defensive ergonomics.
+//
+// Algorithm: read the whole file, split on \n, count non-empty
+// lines (since the encoder always terminates with \n there's a
+// trailing empty token to discard), keep only the last keepN, then
+// atomically replace the file via write-to-.tmp + rename. The
+// atomic-rename pattern matches the rest of tsk's I/O contract: a
+// crash mid-rotation leaves the previous (unrotated) file
+// untouched, never a partially-rotated mess. Tradeoff: O(file
+// size) memory + O(file size) write on every rotated call, which
+// is fine for the snapshot-history use case (kilobytes to single-
+// digit megabytes typical), and avoids the complexity of
+// seek+truncate-from-middle that file systems don't natively
+// support.
+//
+// Files smaller than keepN+1 records are left untouched (returns
+// 0 lines dropped). This is the common-case fast path for
+// callers using --rotate as a safety cap rather than as a
+// constantly-active eviction policy.
+//
+// Empty/missing files are not an error (callers may set --rotate
+// before any append has populated the file; bail cleanly so the
+// first append simply creates the file and the rotation pass
+// finds nothing to do).
+func rotateJSONLFile(path string, keepN int) (int, error) {
+	if keepN <= 0 {
+		return 0, nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read %s: %w", path, err)
+	}
+	// Split and filter empties (trailing newline produces one).
+	rawLines := strings.Split(string(body), "\n")
+	lines := rawLines[:0]
+	for _, l := range rawLines {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) <= keepN {
+		return 0, nil
+	}
+	dropped := len(lines) - keepN
+	keep := lines[dropped:]
+	// Rebuild file body: each retained line followed by \n,
+	// matching the on-disk JSONL convention json.Encoder produces.
+	var sb strings.Builder
+	for _, l := range keep {
+		sb.WriteString(l)
+		sb.WriteString("\n")
+	}
+	// Atomic replace: write to a sibling .tmp, then rename. On
+	// POSIX rename is atomic within a filesystem, so a crash
+	// mid-write leaves the original file intact.
+	tmp := path + ".rotate.tmp"
+	if err := os.WriteFile(tmp, []byte(sb.String()), 0o644); err != nil {
+		return 0, fmt.Errorf("write tmp %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		// Try to clean up the orphan tmp so future runs don't
+		// accumulate them. Best-effort: a remove failure isn't
+		// the user's problem here, the original file is intact.
+		_ = os.Remove(tmp)
+		return 0, fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
+	return dropped, nil
 }
 
 // emitGraph dispatches based on the resolved format. When rootID
