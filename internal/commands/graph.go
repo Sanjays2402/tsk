@@ -85,6 +85,7 @@ func newGraphCmd() *cobra.Command {
 		dimTag       string
 		asJSON       bool
 		outputPath   string
+		jsonCompact  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -183,6 +184,8 @@ Examples:
   tsk graph --format svg --output deps.svg        # write directly to file (no shell redirection)
   tsk graph --format dot --output deps.dot        # extension validated against --format
   tsk graph --reachable 7 --json --output impact.json   # JSON envelope -> file
+  tsk graph --reachable 7 --json --compact-json         # single-line JSON (JSONL-friendly)
+  tsk graph --reachable 7 --json --compact-json --output snap.json   # compact write
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -206,6 +209,9 @@ Examples:
 			}
 			if asJSON && reachable == 0 && upstreamOf == 0 {
 				return usageErrorf("--json only applies to --reachable or --upstream-of (the per-root subgraph paths)")
+			}
+			if jsonCompact && !asJSON {
+				return usageErrorf("--compact-json only applies to --json (the JSON envelope path)")
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -276,7 +282,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact); err != nil {
 						return err
 					}
 					if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
@@ -299,7 +305,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -313,6 +319,7 @@ Examples:
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT/SVG) comma-separated task ids to render in a quiet gray fill+dashed border")
 	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT/SVG) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
+	cmd.Flags().BoolVar(&jsonCompact, "compact-json", false, "for --json: emit a single-line, no-indent JSON record (JSONL-friendly). Useful when appending impact-analysis snapshots to a log file where each line must be a self-contained record (`tsk graph --reachable 7 --json --compact-json --output snap.jsonl` appends one record per call).")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
@@ -1062,7 +1069,16 @@ type subgraphDoc struct {
 // — it surfaces as direction in the envelope so a downstream
 // consumer can tell which question the preview answers without
 // having to know which CLI flag was passed.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open bool) error {
+//
+// compact=true switches the encoder from the default two-space
+// indented form to a single-line "no whitespace, no indent" form
+// — useful for JSONL pipelines where each line must be a
+// self-contained record (a multi-line indented JSON would corrupt
+// every consumer that splits on \n). The contract: indent mode
+// produces the historical bytes (regression test guard via
+// TestGraphJSONOutputBytesMatchStdout) so existing fixtures still
+// pass; compact mode is strictly opt-in via --compact-json.
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact bool) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1103,6 +1119,8 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		doc.Filter = "open"
 	}
 	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
+	if !compact {
+		enc.SetIndent("", "  ")
+	}
 	return enc.Encode(doc)
 }
