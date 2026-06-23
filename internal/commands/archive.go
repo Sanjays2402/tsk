@@ -38,6 +38,7 @@ func newArchiveCmd() *cobra.Command {
 		asJSON     bool
 		outputPath string
 		jsonAppend bool
+		jsonRotate int
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -155,6 +156,20 @@ func newArchiveCmd() *cobra.Command {
 					return usageErrorf("--append requires --output <path> (the file to append to)")
 				}
 			}
+			// --rotate caps the JSONL stream at N records by
+			// trimming the OLDEST after each append (FIFO
+			// eviction). Sister of `tsk graph --json --output
+			// --append --rotate`: same primitive applied to the
+			// archive-run history. Rotation only makes sense for
+			// the streaming (append) path; on the overwriting
+			// --output path the file holds exactly one record by
+			// definition so capping is vacuous.
+			if jsonRotate < 0 {
+				return usageErrorf("--rotate must be >= 0 (got %d); 0 disables rotation, any positive N keeps the most-recent N records", jsonRotate)
+			}
+			if jsonRotate > 0 && !jsonAppend {
+				return usageErrorf("--rotate requires --append (rotation only applies to the JSONL streaming path)")
+			}
 			strategy = strings.ToLower(strings.TrimSpace(strategy))
 			switch strategy {
 			case "", "flat":
@@ -261,7 +276,7 @@ func newArchiveCmd() *cobra.Command {
 					if err := validateArchiveOutputJSONFlags(outputPath, jsonAppend); err != nil {
 						return err
 					}
-					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, nil, kept, archived, nil)
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, jsonRotate, nil, kept, archived, nil)
 				}
 				if outputPath != "" {
 					return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -292,7 +307,7 @@ func newArchiveCmd() *cobra.Command {
 						copyT.ID = nextSim + i
 						simulated[i] = copyT
 					}
-					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, bucketFunc, kept, simulated, activeIDsSim)
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, jsonRotate, bucketFunc, kept, simulated, activeIDsSim)
 				}
 				if outputPath != "" {
 					return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -374,7 +389,7 @@ func newArchiveCmd() *cobra.Command {
 				if err := validateArchiveOutputJSONFlags(outputPath, jsonAppend); err != nil {
 					return err
 				}
-				return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, bucketFunc, kept, archived, activeIDs)
+				return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, jsonRotate, bucketFunc, kept, archived, activeIDs)
 			}
 			if outputPath != "" {
 				return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -395,6 +410,7 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit a stable JSON envelope describing the archive run (which tasks landed in which buckets, per-task archive id assignments, the resolved archive path, and the strategy/bucket-by summary). Works with --dry-run too — the dry-run JSON simulates the archive-id assignment without writing anything. Useful for scripted CI gates and post-archive notifications that need a machine-readable manifest rather than parsing the plain-text summary.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "for --json: write the JSON envelope to this file instead of stdout (.json extension required; created if missing, overwritten if exists). Useful when you want to commit the manifest into the repo as a post-archive snapshot, or pipe an exact filename into a CI step without shell redirection. Sister of `tsk graph --json --output <path>`. Implies --json (passing --output without --json is a usage error). With --append, .jsonl is also accepted and is the canonical streaming extension.")
 	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> as one compact line (JSONL semantics) instead of overwriting. Each call adds exactly one record to the file (creating it if missing); the file builds up a chronological log of archive runs over time — useful for completion-velocity tracking, bucket-distribution drift detection, and anomaly spotting. Sister of `tsk graph --json --output --append` for the impact-analysis snapshot history. Implies the compact (no-indent) record shape so each line is a self-contained JSONL record. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
+	cmd.Flags().IntVar(&jsonRotate, "rotate", 0, "for --json --output --append: cap the JSONL file to N records by trimming the OLDEST lines after each append (FIFO eviction). 0 (default) = no rotation (the file grows unbounded). Useful for long-lived archive loops where you want a sliding window of the last N runs (e.g. --rotate 90 keeps roughly a 90-day rolling history when running once a day). Only the OLDEST lines are evicted (head-of-file truncation); the most-recent N records are always preserved. Sister of `tsk graph --json --output --append --rotate`: same primitive applied to the archive-run history. Requires --append (rotation only applies to the streaming JSONL path; overwriting --output keeps a single record by definition).")
 	return cmd
 }
 
@@ -1326,7 +1342,18 @@ type archiveDoc struct {
 // of archive runs (each line = one run's manifest). Useful for
 // completion-velocity tracking, bucket-distribution drift detection,
 // and anomaly spotting (a sudden 50-task run when daily norm is 5).
-func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy string, strictAnd, dryRun, appendMode bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
+//
+// rotateN caps the JSONL file at N records (FIFO eviction). When
+// 0 (default), the file grows unbounded — the back-compat shape
+// for callers that opted in to --append before --rotate landed.
+// When >0, after each append the file is trimmed to the last N
+// lines via the shared rotateJSONLFile helper (atomic
+// write-to-.tmp + rename so a crash mid-rotation leaves the
+// previous file intact). Sister of `tsk graph --json --output
+// --append --rotate`: same primitive applied to the archive-run
+// history. The status footer reports the dropped-count when
+// rotation actually trimmed lines so the trim isn't silent.
+func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy string, strictAnd, dryRun, appendMode bool, rotateN int, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
 	// Resolve the time-based strategy to its bucketFn for the JSON
 	// path. The writer dispatches the same way in the switch above
 	// — we mirror that dispatch here so the JSON's "bucket" field
@@ -1401,11 +1428,32 @@ func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy st
 			if err != nil {
 				return fmt.Errorf("--append: open %s: %w", outputPath, err)
 			}
-			defer f.Close()
 			if _, err := f.Write(buf.Bytes()); err != nil {
+				f.Close()
 				return fmt.Errorf("--append: write %s: %w", outputPath, err)
 			}
-			pf(w, "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("--append: close %s: %w", outputPath, err)
+			}
+			// Post-append rotation: when --rotate N is set, cap
+			// the JSONL file to the most-recent N records by
+			// dropping the oldest (FIFO eviction). Shared
+			// helper with `tsk graph --json --output --append`,
+			// same atomic-rename semantics so a crash mid-
+			// rotation leaves the previous file intact.
+			droppedCount := 0
+			if rotateN > 0 {
+				n, err := rotateJSONLFile(outputPath, rotateN)
+				if err != nil {
+					return fmt.Errorf("--rotate: %w", err)
+				}
+				droppedCount = n
+			}
+			if droppedCount > 0 {
+				pf(w, "appended %d bytes to %s (format=jsonl; rotated: dropped %d oldest line(s), kept newest %d)\n", buf.Len(), outputPath, droppedCount, rotateN)
+			} else {
+				pf(w, "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+			}
 			return nil
 		}
 		if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
