@@ -182,6 +182,7 @@ Examples:
   tsk graph --format svg --reachable 7 > sub.svg  # subgraph SVG, no graphviz
   tsk graph --format svg --output deps.svg        # write directly to file (no shell redirection)
   tsk graph --format dot --output deps.dot        # extension validated against --format
+  tsk graph --reachable 7 --json --output impact.json   # JSON envelope -> file
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -253,11 +254,17 @@ Examples:
 			// a confusing way). Surfacing the mismatch at the CLI
 			// layer catches the typo before the file lands.
 			//
-			// JSON path is intentionally NOT supported by --output
-			// in this slice: the JSON envelope is already shaped
-			// for jq pipelines (`tsk graph ... --json | jq`); a
-			// per-file dump would just add a tee step. Future
-			// extension if there's a real use case.
+			// --output now also supports --json: the subgraph
+			// envelope is written directly to <path> when both
+			// flags are set together. Useful for CI gates and
+			// snapshot tests that want a stable filename without
+			// shell redirection (e.g. `tsk graph --reachable 7
+			// --json --output impact.json`). Extension validation
+			// for the JSON path requires .json — same fail-fast
+			// behavior as the other format/extension pairs so a
+			// typo like `--json --output impact.svg` is caught
+			// before the file lands containing JSON bytes under
+			// the wrong name.
 			//
 			// We buffer the render before writing so a render
 			// failure leaves NO partial file on disk (matches the
@@ -265,7 +272,18 @@ Examples:
 			// follows).
 			if outputPath != "" {
 				if asJSON {
-					return usageErrorf("--output is not supported with --json (the JSON envelope is for jq pipelines; pipe to a file with shell redirection)")
+					if err := validateGraphOutputJSONExtension(outputPath); err != nil {
+						return err
+					}
+					var buf bytes.Buffer
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open); err != nil {
+						return err
+					}
+					if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
+						return fmt.Errorf("--output: write %s: %w", outputPath, err)
+					}
+					pf(cmd.OutOrStdout(), "wrote %d bytes to %s (format=json)\n", buf.Len(), outputPath)
+					return nil
 				}
 				if err := validateGraphOutputExtension(outputPath, fmtChoice); err != nil {
 					return err
@@ -295,7 +313,7 @@ Examples:
 	cmd.Flags().StringVar(&dim, "dim", "", "(DOT/SVG) comma-separated task ids to render in a quiet gray fill+dashed border")
 	cmd.Flags().StringVar(&dimTag, "dim-tag", "", "(DOT/SVG) comma-separated tag list; push every task carrying any of them to the background (case-insensitive)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "for --reachable or --upstream-of: emit a stable JSON envelope listing every node and edge in the subgraph (scripted impact-analysis)")
-	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). Useful for `tsk graph --format svg --output deps.svg` without shell redirection. Not supported with --json (pipe to a file with shell redirection instead).")
+	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
 
@@ -727,6 +745,33 @@ func validateGraphOutputExtension(path, format string) error {
 	// Defensive: a future format keyword we haven't added a case
 	// for shouldn't fall through silently — surface the gap.
 	return usageErrorf("--output extension validation has no rule for --format %q", format)
+}
+
+// validateGraphOutputJSONExtension surfaces a clear usage error
+// when --json + --output point at a path whose extension isn't
+// .json. Catches the silent-footgun case where a user types
+// `--reachable 7 --json --output impact.svg`: without this check,
+// the file lands containing JSON bytes under a `.svg` name, which
+// breaks every downstream tool inspecting it by extension (an
+// SVG viewer would refuse to render it; a JSON-typed pipeline
+// would skip it).
+//
+// Case-insensitive on the extension so `.JSON` passes. Bare paths
+// (no extension) are REJECTED — JSON has a real on-disk convention
+// worth enforcing, and extensionless dumps usually mean a typo
+// (the user almost certainly meant `--output impact.json`).
+// This is stricter than ASCII's "extensionless OK" because the
+// JSON content has no inherent text-fallback identity.
+//
+// Future format gains slot in via validateGraphOutputExtension's
+// switch + a sibling helper here; the helpers stay narrow so
+// drift between flag-help and validation can't sneak in.
+func validateGraphOutputJSONExtension(path string) error {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".json" {
+		return nil
+	}
+	return usageErrorf("--json --output expects path ending in .json, got %q", ext)
 }
 
 // emitGraph dispatches based on the resolved format. When rootID

@@ -200,10 +200,16 @@ func TestGraphOutputCaseInsensitiveExtension(t *testing.T) {
 	}
 }
 
-// TestGraphOutputRejectsWithJSON: --output is incompatible with
-// --json (the JSON envelope is for jq pipelines; a file dump is
-// just `... --json > file.json` away).
-func TestGraphOutputRejectsWithJSON(t *testing.T) {
+// TestGraphOutputRejectsJSONWithBadExtension: --json --output
+// requires a .json extension. A path like graph.svg is rejected at
+// exit 2 before any bytes hit disk so a typo doesn't silently
+// deposit JSON content under the wrong filename.
+//
+// Sister of validateGraphOutputExtension's format/extension
+// matrix: every format keyword has its own canonical extension(s);
+// --json is now part of that family rather than the prior outright
+// mutex with --output.
+func TestGraphOutputRejectsJSONWithBadExtension(t *testing.T) {
 	dir := t.TempDir()
 	if _, _, err := runCmd(t, dir, "add", "a"); err != nil {
 		t.Fatalf("add: %v", err)
@@ -217,10 +223,16 @@ func TestGraphOutputRejectsWithJSON(t *testing.T) {
 	outPath := filepath.Join(dir, "graph.svg")
 	_, _, err := runCmd(t, dir, "graph", "--reachable", "2", "--json", "--output", outPath)
 	if err == nil {
-		t.Fatal("expected error for --output with --json, got nil")
+		t.Fatal("expected error for --json --output with non-.json path, got nil")
 	}
-	if !strings.Contains(err.Error(), "--output is not supported with --json") {
-		t.Fatalf("expected mutex error, got: %v", err)
+	if !strings.Contains(err.Error(), "--json --output expects path ending in .json") {
+		t.Fatalf("expected json-extension error, got: %v", err)
+	}
+	// Confirm no file landed on disk (atomic-write contract:
+	// validation runs BEFORE render, so a typo never deposits
+	// bytes under the wrong extension).
+	if _, err := os.Stat(outPath); err == nil {
+		t.Fatalf("did not expect %s to exist after extension rejection", outPath)
 	}
 }
 
