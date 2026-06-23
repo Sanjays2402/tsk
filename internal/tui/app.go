@@ -189,6 +189,10 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.archiveCurrent()
 	case matches(m, a.keys.TogglePin):
 		a.togglePinCurrent()
+	case matches(m, a.keys.MoveUp):
+		a.moveCurrent(-1)
+	case matches(m, a.keys.MoveDown):
+		a.moveCurrent(1)
 	}
 }
 
@@ -834,6 +838,117 @@ func (a *App) togglePinCurrent() {
 	}
 }
 
+// moveCurrent swaps the currently-selected task with its neighbor
+// in the UNDERLYING STORE order (NOT the visible/grouped/filtered
+// order). The TUI sister of the `tsk swap <id1> <id2>` CLI verb,
+// scoped to single-step adjacent swaps so the keystroke walks the
+// task through the file one position at a time — the muscle-
+// memory pattern from modal editors (vim's J/K for line moves,
+// most file managers' alt+up/down).
+//
+// dir = -1 moves up (swap with the task before it in store order);
+// dir = +1 moves down (swap with the task after).
+//
+// Why operate on STORE order rather than VISIBLE (grouped) order?
+// The file on disk is what gets persisted; `tsk swap`, `tsk export`,
+// `tsk ls` default sort all read store order. A "move up in the
+// visible list" semantic would be invisible when sections separate
+// the rows (e.g. moving the topmost Done task up does nothing
+// visibly because the Done section sits below every open section).
+// Store-order semantics give the user a predictable "this changes
+// the file by one position" contract that round-trips with the
+// CLI swap verb and survives reload/regroup.
+//
+// Selection contract: after the move, the cursor stays on the same
+// TASK (not the same visual position), so the user's mental anchor
+// (the task they were holding) follows them. The visible row index
+// may shift if the swap crossed a section boundary in the grouped
+// display.
+//
+// Edge cases:
+//   - empty store / no selection: status "move: no task selected".
+//   - already at edge (top with dir=-1, bottom with dir=+1): status
+//     "move: already at start" / "move: already at end" — surfaces
+//     the no-op so the user doesn't keep pressing the key and
+//     wondering why nothing changed.
+//   - Save failure: status carries the error; the in-memory swap is
+//     left in place so the user can re-issue Save (or `r` to reload
+//     from disk).
+//
+// Why '<' and '>' for up/down (and not Shift+J/K or similar)?
+//   - '<' visually points "up/back" and '>' points "down/forward"
+//     — same mental model vim's text-shift operators use.
+//   - 'J' and 'K' are reserved for future "move section up/down"
+//     bulk-line moves (a likely future extension), and lowercase
+//     'j'/'k' are already cursor-move bindings.
+//   - The angle-bracket pair composes cleanly with the existing
+//     direction-sensitive pairs the TUI's settled into (g/G top
+//     vs. bottom, r/R reload-keep vs. reload-clear, n/N cancel
+//     vs. next-jump, p/P priority-up vs. priority-down).
+func (a *App) moveCurrent(dir int) {
+	if dir != -1 && dir != 1 {
+		// Defensive: callers always pass ±1; bail without status.
+		return
+	}
+	id := a.currentID()
+	if id == 0 {
+		a.status = "move: no task selected"
+		return
+	}
+	// Find the task's CURRENT position in the underlying store
+	// (NOT the visible/grouped slice). Store-order is what the
+	// swap mutates; the visible list is recomputed from it.
+	idx := -1
+	for i, t := range a.store.Tasks {
+		if t.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		// Selection still pointed at an id that's been removed
+		// (race with reload, etc.). Surface the inconsistency
+		// rather than crashing.
+		a.status = "move: source not found"
+		return
+	}
+	newIdx := idx + dir
+	if newIdx < 0 {
+		a.status = "move: already at start"
+		return
+	}
+	if newIdx >= len(a.store.Tasks) {
+		a.status = "move: already at end"
+		return
+	}
+	a.store.Tasks[idx], a.store.Tasks[newIdx] = a.store.Tasks[newIdx], a.store.Tasks[idx]
+	if err := a.store.Save(); err != nil {
+		a.status = "move: save failed: " + err.Error()
+		return
+	}
+	// Re-anchor the selection to the SAME TASK (by id) in the
+	// recomputed visible list. The visual row may have shifted —
+	// or the move may have crossed a section boundary in the
+	// grouped display — but the user's mental anchor (the task
+	// they were holding) follows them.
+	vt := a.visibleTasks()
+	newSel := -1
+	for i, t := range vt {
+		if t.ID == id {
+			newSel = i
+			break
+		}
+	}
+	if newSel >= 0 {
+		a.selection = newSel
+	}
+	if dir < 0 {
+		a.status = fmt.Sprintf("moved #%d up (store position %d -> %d)", id, idx+1, newIdx+1)
+	} else {
+		a.status = fmt.Sprintf("moved #%d down (store position %d -> %d)", id, idx+1, newIdx+1)
+	}
+}
+
 func (a *App) startEditTitle() {
 	id := a.currentID()
 	if id == 0 {
@@ -1222,7 +1337,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · </> reorder · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -1272,6 +1387,8 @@ func (a *App) helpView() string {
 		{"C", "clone current task"},
 		{"X", "archive current (done only)"},
 		{"*", "toggle pin on current task"},
+		{"<", "move task up in store order"},
+		{">", "move task down in store order"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}

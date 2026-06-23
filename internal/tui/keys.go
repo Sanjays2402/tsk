@@ -25,6 +25,8 @@ type Keymap struct {
 	FocusPinned       key.Binding
 	ArchiveCurrent    key.Binding
 	TogglePin         key.Binding
+	MoveUp            key.Binding
+	MoveDown          key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.
@@ -56,5 +58,7 @@ func DefaultKeymap() Keymap {
 		FocusPinned:       key.NewBinding(key.WithKeys("F"), key.WithHelp("F", "focus pinned only")),
 		ArchiveCurrent:    key.NewBinding(key.WithKeys("X"), key.WithHelp("X", "archive (done only)")),
 		TogglePin:         key.NewBinding(key.WithKeys("*"), key.WithHelp("*", "toggle pin")),
+		MoveUp:            key.NewBinding(key.WithKeys("<"), key.WithHelp("<", "move task up (store order)")),
+		MoveDown:          key.NewBinding(key.WithKeys(">"), key.WithHelp(">", "move task down (store order)")),
 	}
 }
