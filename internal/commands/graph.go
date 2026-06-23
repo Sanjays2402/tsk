@@ -77,26 +77,27 @@ import (
 // the explicit message saves a "why is this empty?" diagnostic loop.
 func newGraphCmd() *cobra.Command {
 	var (
-		format           string
-		open             bool
-		reachable        int
-		upstreamOf       int
-		highlight        string
-		highlightTag     string
-		dim              string
-		dimTag           string
-		asJSON           bool
-		outputPath       string
-		jsonCompact      bool
-		jsonAppend       bool
-		jsonRotate       int
-		includePriority  bool
-		includeTags      bool
-		includeDue       bool
-		includeCompleted bool
-		includeStarted   bool
-		includePinned    bool
-		includeAll       bool
+		format               string
+		open                 bool
+		reachable            int
+		upstreamOf           int
+		highlight            string
+		highlightTag         string
+		dim                  string
+		dimTag               string
+		asJSON               bool
+		outputPath           string
+		jsonCompact          bool
+		jsonAppend           bool
+		jsonRotate           int
+		includePriority      bool
+		includeTags          bool
+		includeDue           bool
+		includeCompleted     bool
+		includeStarted       bool
+		includePinned        bool
+		includeAll           bool
+		filterCompletedSince string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -204,6 +205,7 @@ Examples:
   tsk graph --reachable 7 --json --include-started                  # add per-node 'started' RFC3339 timestamp (in-progress tasks only)
   tsk graph --reachable 7 --json --include-pinned                   # add per-node 'pinned' boolean (high-importance bookmark axis)
   tsk graph --reachable 7 --json --include-all                      # full-fat envelope: every opt-in field (priority+tags+due+completed+started+pinned)
+  tsk graph --reachable 7 --json --filter-completed-since 7d        # only nodes completed in the last 7 days (recency-trimmed envelope)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -292,6 +294,35 @@ Examples:
 				// than getting silent no-op behavior.
 				return usageErrorf("--rotate requires --append (rotation only applies to the JSONL streaming path)")
 			}
+			// --filter-completed-since trims the subgraph to
+			// nodes completed within the recency window (e.g.
+			// 7d, 24h). Useful for "what shipped this week in
+			// this dep chain?" / completion-velocity dashboards
+			// / change-impact reports that need to focus on
+			// recent activity. Only meaningful on the --json
+			// envelope path (the ASCII / DOT / SVG renderers
+			// don't have an obvious "recently completed" filter
+			// idiom). Empty value = no filter (defensive against
+			// shell vars; mirrors --tag / --priority's empty
+			// stance elsewhere). Negative / zero durations are
+			// rejected — a zero-window filter would drop every
+			// node and is almost certainly a typo.
+			var filterCompletedDur time.Duration
+			filterCompletedActive := false
+			if strings.TrimSpace(filterCompletedSince) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-completed-since only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterCompletedSince))
+				if err != nil {
+					return usageErrorf("invalid --filter-completed-since %q: %v", filterCompletedSince, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-completed-since must be a positive duration, got %q", filterCompletedSince)
+				}
+				filterCompletedDur = d
+				filterCompletedActive = true
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -361,7 +392,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -439,7 +470,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -464,6 +495,7 @@ Examples:
 	cmd.Flags().BoolVar(&includePinned, "include-pinned", false, "for --json: add a per-node 'pinned' field to the envelope (boolean: true when the task is pinned via `tsk pin`, false otherwise; field is OMITTED when the flag isn't set). Sister of --include-priority / --include-tags / --include-due / --include-completed / --include-started — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag pinned tasks in an impact chain (e.g. `.nodes[] | select(.pinned)`), \"is anything important still blocking this release?\" gates, and CI scripts that want to spotlight pinned dependencies. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes omit the field since we don't have a task to read pinned from. Modeled as a *bool with omitempty so 'flag off' (field absent) and 'flag on, task not pinned' (field present and false) are distinguishable in the JSON output — same pattern --include-tags uses for its '[]' vs 'no field' distinction.")
 	cmd.Flags().BoolVar(&includeAll, "include-all", false, "for --json: turn on EVERY --include-* opt-in field at once (priority, tags, due, completed, started, pinned). Ergonomic shortcut for \"give me the full-fat envelope\" use cases — pre-commit dashboards, comprehensive snapshot tests, completion-velocity + elapsed-time analyses that need every axis. Equivalent to passing --include-priority --include-tags --include-due --include-completed --include-started --include-pinned together; setting --include-all alongside the individual flags is idempotent (true OR true == true). The default stays minimal so existing snapshot fixtures and jq pipelines that don't need the extra fields keep their byte-identical historical shape. Useful when scripting `jq` queries that join multiple axes (e.g. `select(.priority == \"urgent\" and .due < \"2026-07-01\" and .completed == null and .pinned)`) without remembering each opt-in flag name.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
+	cmd.Flags().StringVar(&filterCompletedSince, "filter-completed-since", "", "for --json: trim the subgraph envelope to nodes whose task was completed within this duration window (e.g. 7d, 24h, 2w, 1h30m). The ROOT id is always kept (the consumer asked about THIS root); every other node must be done AND completed-within-window to survive. Edges touching a filtered-out node are dropped (no point linking to a node we removed). Useful for completion-velocity dashboards (\"what shipped this week in this dep chain?\"), recent-impact reports (\"which prereqs just closed?\"), and change-summary CI gates. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append (each appended record reflects the filter at call time). Empty (default) = no filter. The envelope gains a top-level `filter_completed_since` field naming the window in canonical humanized form when active, so scripts can distinguish a filtered from un-filtered envelope.")
 	return cmd
 }
 
@@ -1333,11 +1365,12 @@ type subgraphEdge struct {
 // about THIS root; \"nothing depends on it\" is itself a useful
 // answer for the impact-analysis use case).
 type subgraphDoc struct {
-	RootID    int            `json:"root_id"`
-	Direction string         `json:"direction"`
-	Nodes     []subgraphNode `json:"nodes"`
-	Edges     []subgraphEdge `json:"edges"`
-	Filter    string         `json:"filter,omitempty"`
+	RootID               int            `json:"root_id"`
+	Direction            string         `json:"direction"`
+	Nodes                []subgraphNode `json:"nodes"`
+	Edges                []subgraphEdge `json:"edges"`
+	Filter               string         `json:"filter,omitempty"`
+	FilterCompletedSince string         `json:"filter_completed_since,omitempty"`
 }
 
 // emitSubgraphJSON renders the stable JSON envelope for the
@@ -1413,7 +1446,7 @@ type subgraphDoc struct {
 // started surfaces work-began time. Useful for elapsed-time
 // analysis on currently-working tasks and "what's in flight in
 // this chain?" gates. Composes with all other --include-* opt-ins.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool) error {
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool, filterCompletedActive bool, filterCompletedDur time.Duration) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1428,6 +1461,45 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
+	// --filter-completed-since filtering: keep only nodes whose
+	// task is done AND completed within the window. The root id
+	// is ALWAYS kept regardless of the filter — the consumer
+	// asked about THIS root; the answer "your root isn't itself
+	// recently-completed but here's the recently-completed
+	// subset around it" is more useful than "your root
+	// disappeared from its own subgraph". Dangling-edge nodes
+	// (no task) are dropped under any active filter (they have
+	// no completed timestamp to evaluate).
+	kept := make(map[int]bool, len(ids))
+	if filterCompletedActive {
+		cutoff := time.Now().Add(-filterCompletedDur)
+		for _, id := range ids {
+			if id == rootID {
+				kept[id] = true
+				continue
+			}
+			t := s.ByID(id)
+			if t == nil {
+				continue
+			}
+			if !t.Done || t.Completed == nil {
+				continue
+			}
+			if t.Completed.Before(cutoff) {
+				continue
+			}
+			kept[id] = true
+		}
+		// Trim the ids slice to the kept set so the node-render
+		// loop below only emits surviving nodes.
+		filteredIDs := ids[:0]
+		for _, id := range ids {
+			if kept[id] {
+				filteredIDs = append(filteredIDs, id)
+			}
+		}
+		ids = filteredIDs
+	}
 	nodes := make([]subgraphNode, 0, len(ids))
 	for _, id := range ids {
 		t := s.ByID(id)
@@ -1510,6 +1582,17 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 	}
 	jsonEdges := make([]subgraphEdge, 0, len(edges))
 	for _, e := range edges {
+		// Drop edges whose endpoints didn't survive the
+		// completed-since filter. When the filter is inactive
+		// kept is empty AND filterCompletedActive is false, so
+		// we accept every edge. When active, both endpoints must
+		// be in the kept set (otherwise the edge points at a
+		// non-rendered node and would be meaningless).
+		if filterCompletedActive {
+			if !kept[e.from] || !kept[e.to] {
+				continue
+			}
+		}
 		jsonEdges = append(jsonEdges, subgraphEdge{From: e.from, To: e.to})
 	}
 	doc := subgraphDoc{
@@ -1520,6 +1603,15 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 	}
 	if open {
 		doc.Filter = "open"
+	}
+	if filterCompletedActive {
+		// Canonical form: "completed<=Nm" / "completed<=Ndh" so
+		// scripts watching the envelope can distinguish an
+		// active recency-filter from the un-filtered "open"
+		// case. The duration is rendered via humanizeDuration
+		// for consistency with --since reporting elsewhere
+		// (depend --pending, wip --stale).
+		doc.FilterCompletedSince = humanizeDuration(filterCompletedDur)
 	}
 	enc := json.NewEncoder(w)
 	if !compact {
