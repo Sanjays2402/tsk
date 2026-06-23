@@ -693,23 +693,64 @@ this tick's features.
 - [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
 - [ ] `tsk graph --json --output snap.jsonl --append --watch N` — append a snapshot every N seconds for continuous monitoring (combine the streaming primitives with a watcher)
 - [ ] `tsk graph --json --output snap.jsonl --append --since <id> --json | jq` recipe doc — one-pager on the snapshot-history pattern
-- [ ] `tsk graph --json --compact-json --include-priority` — extend the JSON envelope to include task priority + done state in the nodes (currently just id+title+done; jq pipelines often need priority for filtering)
+- [x] `tsk graph --json --compact-json --include-priority` — extend the JSON envelope to include task priority + done state in the nodes (currently just id+title+done; jq pipelines often need priority for filtering) (tick 2026-06-23/0123)
 - [ ] `tsk graph --json --output snap.jsonl --append --rotate N` — auto-rotate the JSONL file when it exceeds N records (the log-rotation sister of --append)
-- [ ] `tsk archive --strategy weekly --json` — JSON envelope of the archive run (which tasks landed in which buckets) for scripted CI gates
+- [x] `tsk archive --strategy weekly --json` — JSON envelope of the archive run (which tasks landed in which buckets) for scripted CI gates (tick 2026-06-23/0123)
 - [ ] `tsk archive --bucket-by priority --strict-and` — currently --strict-and rejects non-tag axes; consider relaxing to "priority + tag intersection"
 - [ ] `tsk pause --all --tag X --strict-and-tag Y` — narrow bulk-pause by INTERSECTION of two tags (mirrors archive's strict-and surface)
-- [ ] `tsk depend --pending --strict-and-tag a,b` — intersection variant for the pending notification queue
+- [x] `tsk depend --pending --strict-and-tag a,b` — intersection variant for the pending notification queue (tick 2026-06-23/0123)
 - [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
 - [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
 - [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
 - [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
 - [ ] TUI status-bar elapsed-time render for in-progress tasks
 - [ ] TUI sticky header with `tsk wip` count
-- [ ] TUI '<' / '>' move-task-up / move-task-down (sister of `tsk swap` CLI; manual reorder inside the TUI)
+- [x] TUI '<' / '>' move-task-up / move-task-down (sister of `tsk swap` CLI; manual reorder inside the TUI) (tick 2026-06-23/0123)
 - [ ] TUI '?' enter help overlay also shows the active filter / sort state (currently only shows the keybindings)
-- [ ] TUI 'y' yank task as text to clipboard (for cross-tool quotes / Slack pastes)
+- [x] TUI 'y' yank task as text to clipboard (for cross-tool quotes / Slack pastes) (tick 2026-06-23/0123)
 - [ ] TUI status footer auto-clears after N seconds (currently sticky until the next action; can crowd-out unrelated context)
 
+
+### Polish & DX (added 2026-06-23 tick #26)
+
+Fresh ideas so future ticks have ample sized work. With the
+graph JSON envelope now carrying optional --include-priority
+(closing tick #25's #1 follow-on), the archive subcommand
+gaining its first --json envelope (mirroring the surface
+graph + start + pause already had), depend's pending feed
+gaining intersection-style tag filtering (sister of the
+existing --tag union form), and the TUI gaining two more
+gap-closers (manual reorder via </> and clipboard yank via
+y), this batch leans into the still-unstarted long-tail and
+fresh follow-ons sensible from this tick's features.
+
+- [ ] `tsk show <id> --watch` — re-render the detail view every N seconds (live progress / pomodoro)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list, split a parent task into N subtasks
+- [ ] `tsk wrap <id>` — split a long title with `>` continuation
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop; default 25m
+- [ ] `tsk rules` — declarative auto-mutation rules (e.g. "if tag=:weekly, recreate daily")
+- [ ] `tsk archive --json --output <path>` — write the archive envelope to a file (sister of `tsk graph --json --output`; useful when piping the manifest into a CI commit-back step)
+- [ ] `tsk archive --json --append` — JSONL-style append-mode for archive history (one record per run; mirrors `tsk graph --json --append`)
+- [ ] `tsk graph --json --include-priority --include-tags` — extend the JSON envelope to also include the per-node tag list (next opt-in field after --include-priority; useful for jq pipelines that filter by tag without a `tsk show` round-trip)
+- [ ] `tsk graph --json --include-priority --include-due` — extend the envelope to also include due dates (would let CI gates flag "what depends on something due this week?" without a fan-out)
+- [ ] `tsk pause --all --strict-and-tag a,b` — narrow bulk-pause by INTERSECTION of two tags (sister of depend --pending --strict-and-tag shipped this tick; same flag name for surface consistency)
+- [ ] `tsk start --all --strict-and-tag a,b` — same intersection semantic for the inverse verb (bulk-start every task carrying ALL listed tags)
+- [ ] `tsk depend --pending --json` already exists; consider adding --strict-and-tag to the JSON envelope so the filter shows up in the structured output too
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' enter help overlay also shows the active filter / sort state (currently only shows the keybindings)
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'Y' yank ALL visible tasks (multi-task variant; sister of 'y' for batched paste-into-Slack-thread use cases)
+- [ ] TUI 'Y' yank-with-metadata-column (capital-Y variant; vim convention for "yank to end of line" — capture the rendered task row INCLUDING the metadata column)
 
 
 
@@ -3468,3 +3509,263 @@ the long-tail (recipe docs, recurring tasks, config files,
 multi-file aggregation, the still-unstarted TUI structural
 features).
 
+
+### 2026-06-23 01:23 PT (tick #26)
+
+Shipped 5 features. Full quality gate (gofmt + vet + build + go
+test ./...) green before push. Single revertible commit per
+feature. Landed 188444d..8c54f5d on origin/main; verified via
+`git fetch -q origin && git log --oneline origin/main | head`.
+
+- `graph --json --include-priority`        — 188444d feat(graph): --json --include-priority adds per-node priority field
+- `archive --json`                          — 8dee296 feat(archive): --json emits a stable run envelope (archived rows + counts + path)
+- `depend --pending --strict-and-tag`       — ade3d79 feat(depend): --pending --strict-and-tag CSV intersection-style tag filter
+- TUI '<' / '>' move-task-up/down           — f7651be feat(tui): '<' / '>' move the current task up / down in store order
+- TUI 'y' yank task to clipboard            — 8c54f5d feat(tui): 'y' yank the current task as text to the system clipboard via OSC52
+
+Notable choices:
+
+- `graph --json --include-priority` is the natural follow-on
+  from tick #25's roadmap (it was queued as the #1 fresh idea).
+  Opt-in design (default keeps the historical id+title+done
+  shape byte-identical so existing snapshot fixtures stay
+  stable) — the field uses `omitempty` so the unflagged path
+  emits zero new bytes. When opted in, every real-task node
+  gains a "priority" carrying the canonical string ("low" /
+  "medium" / "high" / "urgent" — same shape `tsk show --json`
+  uses), so jq selectors compose across the two surfaces.
+  Dangling-edge "(missing)" nodes keep priority="" which
+  omitempty drops; consumers filter those out with
+  `select(.priority != "")`. Composes with --compact-json
+  (JSONL records carry priority), --append (snapshot history
+  with priority drift visible per record), and --upstream-of
+  (the inverse direction works identically).
+
+- `archive --json` was queued under tick #25's roadmap and is
+  one of the bigger gap-closers — the archive subcommand was
+  the last major mutating verb without a JSON envelope, while
+  graph/start/pause/depend all had them. The envelope shape
+  mirrors the pattern those use: top-level metadata
+  (archive_path, strategy, bucket_by, strict_and, dry_run,
+  total_count, active_count) + per-task rows (active_id,
+  archive_id, title, priority, bucket). Critical design choice:
+  the same shape is emitted on ALL three exit paths (no
+  tasks, --dry-run, real run) so scripted pipelines don't have
+  to branch on flow. Dry-run SIMULATES the archive-id
+  assignment by reading the archive file's current max+1 but
+  writes nothing — consumers see the structured "what would
+  happen" answer identically to a real run. Active-id capture:
+  the existing loop overwrites archived[i].ID with the new
+  archive id; the JSON path needs both halves of the identity
+  round-trip ("task #N became archive #M"), so we snapshot
+  active_ids in a parallel slice BEFORE the rewrite. Bucket
+  computation mirrors the writer's strategy/bucketBy switch
+  dispatch — for time strategies we call bucketByDay/Week/
+  Month/Quarter/Year directly; for --bucket-by we use the
+  same bucketFunc the writer passes to writeBucketedArchive.
+  The two paths agree on which task lands in which section
+  header.
+
+- `depend --pending --strict-and-tag` adds the intersection-
+  style multi-tag filter to the pending notification queue's
+  tag axis. Sister of the existing --tag (single-tag, union-
+  style) flag. Mutually exclusive (each is a different logical
+  operator on the tag axis; combining them would muddle which
+  tag the operator applies to). Composes with --priority as
+  AND. taskHasAllTags helper uses the case-insensitive HasTag
+  short-circuit pattern; empty list returns true so callers
+  don't have to branch on filter state. Filter summary renders
+  as "tag=a&b" — the & disambiguates intersection from union
+  in the header/empty messages without checking the original
+  flag name. Same disambiguation marker `tsk archive
+  --bucket-by tag:&a,b` uses, so the two surfaces read
+  symmetrically. CSV parsing reuses splitTagCSV (same
+  tolerance --highlight-tag/--dim-tag use for whitespace and
+  empty tokens).
+
+- TUI '<' and '>' move the selected task up/down by one
+  position in STORE ORDER (NOT the visible/grouped order).
+  Sister of the `tsk swap <id1> <id2>` CLI verb, scoped to
+  single-step adjacent swaps so the keystroke walks the task
+  through the file one position at a time. Why store-order
+  semantics instead of visible-order? The file on disk is
+  what gets persisted; a "move up in the visible list"
+  semantic would be invisible when sections separate the rows
+  (moving the topmost Done task up does nothing visibly
+  because Done sits below every open section). Store-order
+  semantics give the user a predictable "this changes the
+  file by one position" contract that round-trips with the
+  CLI swap verb and survives reload/regroup. Selection
+  contract: cursor stays on the SAME TASK (selection-by-id)
+  after the move, so the user's mental anchor follows them
+  through any visual section shifts. Edge cases handled:
+  empty store, no selection, already-at-edge (clear "already
+  at start/end" status hint rather than silent no-op), save
+  failure (in-memory swap left in place so user can re-issue
+  Save or 'r' reload). Why '<' / '>' (not Shift+J/K)? The
+  angle brackets visually point "up/back" and "down/forward"
+  — vim's text-shift mental model. 'J'/'K' reserved for
+  future "move section up/down" bulk moves; lowercase 'j'/'k'
+  already bound to cursor-move. Composes with the existing
+  direction-sensitive pairs (g/G, r/R, n/N, p/P).
+
+- TUI 'y' copies the current task as plain text to the system
+  clipboard using the OSC52 terminal escape sequence. OSC52
+  works across iTerm2, Terminal.app, kitty, alacritty, tmux,
+  screen, and over SSH with no native OS clipboard API or
+  external `pbcopy`/`xclip` process call. go-osc52 was
+  already a transitive dep through bubbletea (promoted to a
+  direct require by go mod tidy). The yank shape is a self-
+  contained multi-line block suitable for Slack/Notes/Jira
+  pastes: "#<id> <title>" header plus optional metadata
+  lines (priority if non-low, due if set, tags
+  alphabetized, notes indented). Empty/zero fields omitted
+  so the paste stays tight. Writes the OSC52 escape to
+  yankWriter (defaults to os.Stderr so the bubbletea
+  renderer on stdout doesn't get scrambled); tests inject a
+  bytes.Buffer to inspect the exact payload without needing
+  a real terminal. Status footer shows "yanked #N <title>"
+  with the title truncated to ~48 chars — provides visible
+  confirmation that the silent terminal-clipboard sequence
+  went through. Why lowercase 'y'? vim 'yy' convention.
+  Coexists cleanly with 'y' being bound to Confirm for
+  delete prompts: dispatch order runs confirm-handling BEFORE
+  nav-handling, so 'y' confirms an active delete and is free
+  for yank in steady-state nav mode (regression-tested both
+  paths). Form-input shadowing regression guard: while 'a'
+  add or 'e' edit form is open, 'y' lands in the input
+  value, NOT triggering a yank — same guard every TUI
+  single-action verb has to handle.
+
+Files added this tick:
+- internal/commands/graph_json_include_priority_test.go (8 tests)
+- internal/commands/archive_json_test.go (11 tests)
+- internal/commands/depend_pending_strict_and_tag_test.go (7 tests)
+- internal/tui/move_test.go (8 tests)
+- internal/tui/yank_test.go (12 tests)
+
+Files modified:
+- internal/commands/graph.go (includePriority flag declaration,
+  validation, emitSubgraphJSON signature grows, node emit
+  loop sets Priority when flag set, subgraphNode struct gains
+  Priority string with omitempty, Long doc + Examples gain a
+  --include-priority line)
+- internal/commands/archive.go (asJSON flag declaration,
+  three exit-path JSON branches — no-tasks, dry-run-with-
+  simulation, real-run — activeIDs parallel slice captured
+  before id rewrite, emitArchiveJSON + archiveDoc +
+  archivedRow definitions, encoding/json and io imports
+  added)
+- internal/commands/depend.go (pendingStrictAndTag flag
+  declaration + dispatch arg + flag registration, Long doc
+  gains an intersection block)
+- internal/commands/depend_pending.go (runDependPending
+  signature grows by strictAndTagsRaw, mutex check between
+  --tag and --strict-and-tag, collectPendingRows applies
+  taskHasAllTags filter, buildPendingFilterSummary renders
+  "tag=a&b" form, taskHasAllTags helper)
+- internal/tui/keys.go (MoveUp, MoveDown, Yank bindings +
+  struct fields)
+- internal/tui/app.go (moveCurrent + yankCurrent +
+  formatTaskYank methods, lastYank/yankWriter App fields,
+  handleNavKey wiring for <, >, y; footer hint gains
+  "</> reorder" and "y yank"; helpView rows added; io +
+  osc52 imports added)
+- go.mod / go.sum (osc52 promoted from indirect to direct)
+
+Per-feature test counts:
+  graph --include-priority             8 new (present-when-
+                                       set, absent-by-
+                                       default, requires-
+                                       json, composes-with-
+                                       compact, composes-
+                                       with-upstream-of,
+                                       composes-with-append,
+                                       dangling-node
+                                       omission, all-four-
+                                       priorities-round-trip)
+  archive --json                      11 new (flat-success
+                                       both id halves, dry-
+                                       run simulates without
+                                       writing, no-tasks
+                                       empty-array shape,
+                                       bucket-by tag per-row
+                                       bucket field, strategy
+                                       weekly YYYY-W## shape,
+                                       strict-and propagates,
+                                       distinct active vs
+                                       archive ids after seed,
+                                       priority field, default
+                                       indented form, active
+                                       count after partial
+                                       archive, no-tasks dry-
+                                       run envelope shape)
+  depend --strict-and-tag              7 new (intersection
+                                       requires all tags,
+                                       mutex with --tag, one-
+                                       element CSV identity,
+                                       composes with priority,
+                                       empty result shows
+                                       filter, tolerant CSV
+                                       parsing, unit smoke
+                                       for HasAllTags)
+  TUI </> move                         8 new (move-down swap,
+                                       move-up swap, at-top
+                                       edge, at-bottom edge,
+                                       selection follows
+                                       task, round-trip
+                                       identity, empty-store
+                                       no-op, form-input
+                                       shadowing)
+  TUI y yank                          12 new (OSC52 prefix+
+                                       suffix shape, format
+                                       minimal, omits low,
+                                       includes non-low,
+                                       includes due, tags
+                                       alphabetized, notes
+                                       indented, blank-notes
+                                       omission, full-shape
+                                       byte-stability, empty-
+                                       store no-op, form-
+                                       input shadowing, delete-
+                                       confirm precedence,
+                                       help+footer mention,
+                                       long-title truncation)
+  TOTAL                               46 new test cases on
+top of the existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each commit is independently revertible.
+- The graph JSON envelope now supports its first opt-in node
+  field (--include-priority), establishing the pattern for
+  future opt-in extensions (--include-tags, --include-due
+  queued for tick #27).
+- The archive subcommand gains its first JSON envelope, the
+  last major mutating verb to get one. Pattern follows
+  start/pause/depend's structured-preview shape so consumers
+  can reuse jq pipelines across the bulk-verb surface.
+- The intersection-style --strict-and-tag flag adds the
+  missing logical operator to the pending feed's tag axis.
+  Sister rollouts queued for `tsk pause --all` and `tsk
+  start --all` (tick #27 backlog) so the bulk-action verbs
+  match.
+- The TUI gains its first STORE-ORDER mutation primitive
+  (</>) and its first CLIPBOARD primitive (y). Both close
+  long-standing gaps with the CLI surface. The 'y' + delete-
+  confirm coexistence was a notable design risk; both paths
+  are regression-tested.
+- osc52 dep promotion was painless — already a transitive
+  through bubbletea, `go mod tidy` cleaned up the require
+  block.
+
+This is the fourteenth batch shipped directly on main. The
+graph JSON envelope path gains its first opt-in node field;
+the archive subcommand gains its first JSON envelope (last
+major mutating verb to get one); depend's pending feed gains
+intersection-style tag filtering; the TUI gains its first
+store-order mutation primitive and its first clipboard
+primitive. The next ticks have ample sized work in the long-
+tail (recipe docs, recurring tasks, config files, multi-file
+aggregation, the still-unstarted TUI structural features,
+plus the strict-and-tag flag rollout to pause/start --all).
