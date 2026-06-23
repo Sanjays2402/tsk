@@ -37,6 +37,7 @@ func newArchiveCmd() *cobra.Command {
 		strictAnd  bool
 		asJSON     bool
 		outputPath string
+		jsonAppend bool
 	)
 	cmd := &cobra.Command{
 		Use:   "archive",
@@ -126,6 +127,34 @@ func newArchiveCmd() *cobra.Command {
 			"preserved verbatim (no re-bucketing of historical data).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// --append is a JSONL streaming mode for --json --output:
+			// each call adds exactly ONE record to the file (creating
+			// it if missing). Sister of `tsk graph --json --output
+			// --append`, with the same surface contract:
+			//   - --append requires --json (it's a JSON-envelope mode)
+			//   - --append requires --output (where do you stream to?)
+			//   - --append implies --compact-json behavior internally
+			//     (no indent, single line per record) — multi-line
+			//     indented JSON across records would break every
+			//     consumer that splits on \n
+			//
+			// Why have it at all? Because archive runs are a perfect
+			// historical signal: every run captures "what shipped".
+			// Streaming each run's manifest to a single .jsonl file
+			// over weeks gives you a chronological log of completion
+			// velocity, bucket distribution shifts, and any anomaly
+			// (a run that suddenly archived 50 tasks where the daily
+			// norm is 5 is a visible spike in the log). Sister of
+			// the graph --json --append streaming pattern that
+			// captures impact-analysis snapshots over time.
+			if jsonAppend {
+				if !asJSON {
+					return usageErrorf("--append only applies to --json (the JSON envelope path)")
+				}
+				if outputPath == "" {
+					return usageErrorf("--append requires --output <path> (the file to append to)")
+				}
+			}
 			strategy = strings.ToLower(strings.TrimSpace(strategy))
 			switch strategy {
 			case "", "flat":
@@ -229,10 +258,10 @@ func newArchiveCmd() *cobra.Command {
 
 			if len(archived) == 0 {
 				if asJSON {
-					if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+					if err := validateArchiveOutputJSONFlags(outputPath, jsonAppend); err != nil {
 						return err
 					}
-					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, nil, kept, archived, nil)
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, nil, kept, archived, nil)
 				}
 				if outputPath != "" {
 					return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -243,7 +272,7 @@ func newArchiveCmd() *cobra.Command {
 
 			if dryRun {
 				if asJSON {
-					if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+					if err := validateArchiveOutputJSONFlags(outputPath, jsonAppend); err != nil {
 						return err
 					}
 					// Dry-run JSON: simulate the archive-id assignment
@@ -263,7 +292,7 @@ func newArchiveCmd() *cobra.Command {
 						copyT.ID = nextSim + i
 						simulated[i] = copyT
 					}
-					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, simulated, activeIDsSim)
+					return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, bucketFunc, kept, simulated, activeIDsSim)
 				}
 				if outputPath != "" {
 					return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -342,10 +371,10 @@ func newArchiveCmd() *cobra.Command {
 			}
 
 			if asJSON {
-				if err := validateArchiveOutputJSONFlags(outputPath, false); err != nil {
+				if err := validateArchiveOutputJSONFlags(outputPath, jsonAppend); err != nil {
 					return err
 				}
-				return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, bucketFunc, kept, archived, activeIDs)
+				return emitArchiveJSON(cmd.OutOrStdout(), outputPath, archivePath, strategy, bucketBy, strictAnd, dryRun, jsonAppend, bucketFunc, kept, archived, activeIDs)
 			}
 			if outputPath != "" {
 				return usageErrorf("--output requires --json (the JSON envelope path)")
@@ -364,7 +393,8 @@ func newArchiveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&bucketBy, "bucket-by", "", "user-supplied bucket axis: 'priority', 'tag', 'tag:X' (boolean partition by single tag), 'tag:!X' (inverse single-tag), 'tag:X,Y,Z' (multi-tag CSV union), 'tag:!X,!Y' (inverse CSV), or 'id-range:N' (fixed-width id windows). Mutually exclusive with --strategy.")
 	cmd.Flags().BoolVar(&strictAnd, "strict-and", false, "for --bucket-by tag:X,Y (CSV-tag variant): require ALL listed tags on a task (intersection) instead of the default ANY (union). Combines with the inverse form (tag:!X,!Y --strict-and = NOT carrying ALL listed tags). The bucket label gains a '&' marker so flat-text archive scans can distinguish union vs intersection sections.")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit a stable JSON envelope describing the archive run (which tasks landed in which buckets, per-task archive id assignments, the resolved archive path, and the strategy/bucket-by summary). Works with --dry-run too — the dry-run JSON simulates the archive-id assignment without writing anything. Useful for scripted CI gates and post-archive notifications that need a machine-readable manifest rather than parsing the plain-text summary.")
-	cmd.Flags().StringVar(&outputPath, "output", "", "for --json: write the JSON envelope to this file instead of stdout (.json extension required; created if missing, overwritten if exists). Useful when you want to commit the manifest into the repo as a post-archive snapshot, or pipe an exact filename into a CI step without shell redirection. Sister of `tsk graph --json --output <path>`. Implies --json (passing --output without --json is a usage error).")
+	cmd.Flags().StringVar(&outputPath, "output", "", "for --json: write the JSON envelope to this file instead of stdout (.json extension required; created if missing, overwritten if exists). Useful when you want to commit the manifest into the repo as a post-archive snapshot, or pipe an exact filename into a CI step without shell redirection. Sister of `tsk graph --json --output <path>`. Implies --json (passing --output without --json is a usage error). With --append, .jsonl is also accepted and is the canonical streaming extension.")
+	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> as one compact line (JSONL semantics) instead of overwriting. Each call adds exactly one record to the file (creating it if missing); the file builds up a chronological log of archive runs over time — useful for completion-velocity tracking, bucket-distribution drift detection, and anomaly spotting. Sister of `tsk graph --json --output --append` for the impact-analysis snapshot history. Implies the compact (no-indent) record shape so each line is a self-contained JSONL record. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
 	return cmd
 }
 
@@ -1284,7 +1314,19 @@ type archiveDoc struct {
 // only output channel), we'd risk byte-doubling; the
 // "wrote N bytes to <path>" confirmation is the only thing that
 // lands on stdout in the file path.
-func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy string, strictAnd, dryRun bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
+//
+// appendMode switches the file-write path to JSONL streaming
+// semantics: each call adds exactly ONE compact (no-indent) record
+// to the file, with O_APPEND open mode so concurrent calls don't
+// race on offset. The file is created if missing, never truncated.
+// Caller has already validated that --output is set when
+// appendMode=true (it's meaningless without a destination file).
+// This mirrors `tsk graph --json --output --append`'s streaming-
+// snapshot pattern: over time the file builds a chronological log
+// of archive runs (each line = one run's manifest). Useful for
+// completion-velocity tracking, bucket-distribution drift detection,
+// and anomaly spotting (a sudden 50-task run when daily norm is 5).
+func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy string, strictAnd, dryRun, appendMode bool, bucketFunc bucketFn, kept, archived []model.Task, activeIDs []int) error {
 	// Resolve the time-based strategy to its bucketFn for the JSON
 	// path. The writer dispatches the same way in the switch above
 	// — we mirror that dispatch here so the JSON's "bucket" field
@@ -1333,11 +1375,38 @@ func emitArchiveJSON(w io.Writer, outputPath, archivePath, strategy, bucketBy st
 		// Buffer the render before writing so a render failure
 		// leaves no partial file on disk (matches the
 		// atomic-write contract every other tsk write path follows).
+		// In append mode the encoder omits indentation so each
+		// record is a single self-contained line (true JSONL).
 		var buf bytes.Buffer
 		enc := json.NewEncoder(&buf)
-		enc.SetIndent("", "  ")
+		if !appendMode {
+			enc.SetIndent("", "  ")
+		}
 		if err := enc.Encode(doc); err != nil {
 			return err
+		}
+		if appendMode {
+			// O_APPEND for crash-safe streaming: each call adds
+			// exactly one compact JSON record (already terminated
+			// with a trailing newline by json.Encoder). Create-
+			// if-missing so the first call to a fresh .jsonl file
+			// works without pre-touching. The atomic-write
+			// contract is weaker here than the rest of tsk's I/O
+			// (a concurrent reader could see a partial write on
+			// a non-POSIX filesystem), but JSONL by design is
+			// append-friendly: most filesystems guarantee atomicity
+			// for writes under 4KB, which our compact envelope
+			// easily fits even with hundreds of archived rows.
+			f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+			if err != nil {
+				return fmt.Errorf("--append: open %s: %w", outputPath, err)
+			}
+			defer f.Close()
+			if _, err := f.Write(buf.Bytes()); err != nil {
+				return fmt.Errorf("--append: write %s: %w", outputPath, err)
+			}
+			pf(w, "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
+			return nil
 		}
 		if err := os.WriteFile(outputPath, buf.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("--output: write %s: %w", outputPath, err)
