@@ -20,6 +20,7 @@ type Keymap struct {
 	Reload            key.Binding
 	ReloadClear       key.Binding
 	Clone             key.Binding
+	JumpNext          key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.
@@ -46,5 +47,6 @@ func DefaultKeymap() Keymap {
 		Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 		ReloadClear:   key.NewBinding(key.WithKeys("R"), key.WithHelp("R", "reload+clear filter")),
 		Clone:         key.NewBinding(key.WithKeys("C"), key.WithHelp("C", "clone")),
+		JumpNext:      key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "jump to next-unblocked")),
 	}
 }

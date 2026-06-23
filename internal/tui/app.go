@@ -177,6 +177,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.reloadFromDiskClearingFilter()
 	case matches(m, a.keys.Clone):
 		a.cloneCurrent()
+	case matches(m, a.keys.JumpNext):
+		a.jumpToNextUnblocked()
 	}
 }
 
@@ -366,6 +368,157 @@ func (a *App) cloneCurrent() {
 		}
 	}
 	a.status = fmt.Sprintf("cloned #%d → #%d", id, newID)
+}
+
+// jumpToNextUnblocked moves the cursor to the highest-priority
+// undone, non-waiting, non-blocked task in the visible list — the
+// TUI sister of `tsk next --respect-deps`. One keystroke ('N')
+// instead of dropping back to the shell to ask "what should I work
+// on next?" in the middle of a TUI session.
+//
+// Selection contract (mirrors `tsk next --respect-deps`):
+//   - pinned tasks beat unpinned (sticky bookmarks float)
+//   - within the same pin state, higher Priority wins
+//     (urgent > high > medium > low)
+//   - dated tasks beat undated; earliest due wins among dated
+//   - lower id breaks remaining ties (stable, deterministic)
+//
+// Done / waiting / blocked tasks are EXCLUDED from the candidate
+// pool — they're not actionable right now, and surfacing them
+// would defeat the "what can I actually work on?" intent. If every
+// candidate is blocked, the cursor falls back to the highest-
+// priority BLOCKED task (annotated in the status footer so the
+// user knows what's gating progress) rather than going silent — a
+// "(blocked)" annotation is more honest than "no task found" when
+// the answer is "everything's stuck on X".
+//
+// Visibility-aware: only tasks the user can currently SEE (via
+// visibleTasks(), which respects collapse state + filter) are
+// candidates. So if Done is collapsed (the default), done tasks
+// are ignored anyway; if the user filtered to "#work", only work
+// tasks are picked from. This matches the rest of the TUI's
+// jump-style helpers (jumpTop / jumpBottom).
+//
+// Errors / empty-pool surface into the status footer; selection
+// never moves past the visible bounds.
+//
+// Why a separate verb from jumpBottom? Because "next" isn't
+// positional — it's a SCORE function over the candidate pool.
+// jumpBottom always lands on the last row regardless of priority;
+// jumpToNextUnblocked lands on the BEST row given the current
+// dep / priority / due state. The two share no semantics beyond
+// "move the cursor".
+func (a *App) jumpToNextUnblocked() {
+	vt := a.visibleTasks()
+	if len(vt) == 0 {
+		a.status = "no tasks visible"
+		return
+	}
+	now := time.Now()
+	var best *model.Task
+	var bestIdx int = -1
+	var bestBlocked *model.Task
+	var bestBlockedIdx int = -1
+	var bestBlockedReasons []int
+	for i := range vt {
+		t := &vt[i]
+		if t.Done {
+			continue
+		}
+		if t.IsWaiting(now) {
+			continue
+		}
+		blockers := tuiUnmetBlockers(a.store, t)
+		if len(blockers) > 0 {
+			if isBetterNextTUI(t, bestBlocked) {
+				bestBlocked = t
+				bestBlockedIdx = i
+				bestBlockedReasons = blockers
+			}
+			continue
+		}
+		if isBetterNextTUI(t, best) {
+			best = t
+			bestIdx = i
+		}
+	}
+	if best != nil {
+		a.selection = bestIdx
+		a.status = fmt.Sprintf("next: #%d %s", best.ID, best.Title)
+		return
+	}
+	if bestBlocked != nil {
+		// All visible candidates blocked; surface the best one
+		// with its blockers so the user knows what's gating.
+		a.selection = bestBlockedIdx
+		blockerLabels := make([]string, len(bestBlockedReasons))
+		for i, id := range bestBlockedReasons {
+			blockerLabels[i] = fmt.Sprintf("#%d", id)
+		}
+		a.status = fmt.Sprintf("next: #%d %s (blocked by %s)",
+			bestBlocked.ID, bestBlocked.Title, strings.Join(blockerLabels, ", "))
+		return
+	}
+	a.status = "all caught up"
+}
+
+// tuiUnmetBlockers is the TUI's local copy of the open-prereq
+// check. We don't import internal/commands (cycle), so this is
+// a small duplicate of commands.unmetBlockers's body — only the
+// "batchIDs" parameter is dropped (it's meaningful only for
+// `tsk done` batch ops, not for a TUI cursor move).
+//
+// A dangling dep (id with no task in the store) is treated as
+// satisfied: the user can't be expected to clean up an
+// out-of-band reference just to navigate. `tsk lint` is where
+// dangling deps get surfaced for cleanup.
+func tuiUnmetBlockers(s *store.Store, t *model.Task) []int {
+	if !t.HasDependencies() {
+		return nil
+	}
+	out := make([]int, 0, len(t.DependsOn))
+	for _, dep := range t.DependsOn {
+		bt := s.ByID(dep)
+		if bt == nil {
+			continue
+		}
+		if !bt.Done {
+			out = append(out, dep)
+		}
+	}
+	return out
+}
+
+// isBetterNextTUI is the TUI's local copy of the next-pick
+// tie-break order. Duplicated rather than imported (cycle
+// avoidance) but keeps the order in lockstep with the CLI's
+// `tsk next` selector:
+//
+//	pin > priority desc > dated-before-undated > earliest-due > lowest-id
+//
+// Returns true when t should beat current. nil current always
+// loses (the first valid candidate is best by default).
+func isBetterNextTUI(t, current *model.Task) bool {
+	if current == nil {
+		return true
+	}
+	if t.Pinned != current.Pinned {
+		return t.Pinned
+	}
+	if t.Priority != current.Priority {
+		return t.Priority > current.Priority
+	}
+	switch {
+	case t.Due != nil && current.Due == nil:
+		return true
+	case t.Due == nil && current.Due != nil:
+		return false
+	case t.Due != nil && current.Due != nil:
+		if !t.Due.Equal(*current.Due) {
+			return t.Due.Before(*current.Due)
+		}
+	}
+	return t.ID < current.ID
 }
 
 func (a *App) startEditTitle() {
