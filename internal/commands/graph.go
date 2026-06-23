@@ -88,6 +88,7 @@ func newGraphCmd() *cobra.Command {
 		jsonCompact     bool
 		jsonAppend      bool
 		includePriority bool
+		includeTags     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -220,6 +221,9 @@ Examples:
 			if includePriority && !asJSON {
 				return usageErrorf("--include-priority only applies to --json (the JSON envelope path)")
 			}
+			if includeTags && !asJSON {
+				return usageErrorf("--include-tags only applies to --json (the JSON envelope path)")
+			}
 			if jsonAppend {
 				if !asJSON {
 					return usageErrorf("--append only applies to --json (the JSON envelope path)")
@@ -305,7 +309,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -354,7 +358,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -371,6 +375,7 @@ Examples:
 	cmd.Flags().BoolVar(&jsonCompact, "compact-json", false, "for --json: emit a single-line, no-indent JSON record (JSONL-friendly). Useful when appending impact-analysis snapshots to a log file where each line must be a self-contained record (`tsk graph --reachable 7 --json --compact-json --output snap.jsonl` appends one record per call).")
 	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> instead of overwriting (JSONL semantics). Each call adds exactly one record to the file (creating it if missing); the file builds up a history of impact-analysis snapshots over time. Implies --compact-json so the on-disk shape is true JSONL. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
 	cmd.Flags().BoolVar(&includePriority, "include-priority", false, "for --json: add a per-node 'priority' field to the envelope (canonical string: low/medium/high/urgent). Useful for jq pipelines that need to filter by priority without a per-node `tsk show --json <id>` round-trip. Historical default keeps the envelope minimal (id+title+done) so existing snapshot fixtures stay byte-identical.")
+	cmd.Flags().BoolVar(&includeTags, "include-tags", false, "for --json: add a per-node 'tags' field to the envelope (alphabetized array of tag strings; empty array when the task has no tags). Sister of --include-priority, same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to filter by tag (e.g. `select(.tags | index(\"urgent\"))`) without a per-node `tsk show --json <id>` round-trip. Composes with --include-priority and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field via omitempty since we don't have a task to read tags from.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
@@ -1095,11 +1100,29 @@ func truncateForDOT(s string, max int) string {
 // non-empty priority value (model.Priority always serializes to one
 // of the four named values), so omitempty doesn't suppress the
 // field for actual tasks — only for the "(missing)" placeholder.
+//
+// Tags is OPT-IN via the --include-tags flag, same shape:
+// when set, every real task's node gains a "tags" field carrying
+// the alphabetized tag array (empty array []string{} for tasks
+// with no tags so jq's `.tags | length` works without null-
+// crashing). Modeled as a *[]string pointer instead of a plain
+// []string so we can DISTINGUISH "field intentionally omitted
+// (flag off)" — nil pointer drops the field via omitempty — from
+// "field present and empty" — non-nil pointer to []string{} which
+// serializes as `[]`. A plain []string with omitempty would drop
+// the empty case (collapsing both meanings into "no field"), which
+// is the opposite of what jq pipelines need. Dangling-edge
+// "(missing)" nodes leave the pointer nil — there's no task to
+// read tags from, so omitting the field is the honest answer.
+// Useful for downstream filters like `jq '.nodes[] | select(.tags
+// | index("urgent"))'` that need tags without falling back to a
+// `tsk show --json <id>` round-trip per node.
 type subgraphNode struct {
-	ID       int    `json:"id"`
-	Title    string `json:"title"`
-	Done     bool   `json:"done"`
-	Priority string `json:"priority,omitempty"`
+	ID       int       `json:"id"`
+	Title    string    `json:"title"`
+	Done     bool      `json:"done"`
+	Priority string    `json:"priority,omitempty"`
+	Tags     *[]string `json:"tags,omitempty"`
 }
 
 // subgraphEdge is one directed dep edge in the JSON subgraph
@@ -1174,7 +1197,16 @@ type subgraphDoc struct {
 // '.nodes[] | select(.priority == "urgent")'` that need priority
 // without falling back to a `tsk show --json <id>` round-trip per
 // node.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority bool) error {
+//
+// includeTags=true is the sister flag: adds the per-task "tags"
+// field to every real-task node (alphabetized; empty `[]` for
+// tasks with no tags so `.tags | length` works without null-
+// crashing). Dangling-edge "(missing)" nodes leave the field
+// omitted entirely — we don't have a task to read tags from, and
+// guessing would mislead. Composes cleanly with --include-priority
+// (both modifiers are independent opt-ins) and --compact-json
+// (same single-line shape with both fields inline).
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags bool) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1206,6 +1238,19 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		node := subgraphNode{ID: id, Title: t.Title, Done: t.Done}
 		if includePriority {
 			node.Priority = t.Priority.String()
+		}
+		if includeTags {
+			// Alphabetized copy of the task's tags so the JSON
+			// output is deterministic across calls regardless of
+			// the on-disk tag order. Empty/no-tag tasks get a
+			// non-nil empty slice via a fresh allocation so the
+			// JSON encoder emits `[]` (not omitted, not null) —
+			// jq pipelines that do `.tags | length` would crash
+			// on null but cleanly return 0 on `[]`.
+			tags := make([]string, len(t.Tags))
+			copy(tags, t.Tags)
+			sort.Strings(tags)
+			node.Tags = &tags
 		}
 		nodes = append(nodes, node)
 	}
