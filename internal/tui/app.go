@@ -161,6 +161,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		}
 	case matches(m, a.keys.PriorityCycle):
 		a.cyclePriority()
+	case matches(m, a.keys.PriorityCycleDown):
+		a.cyclePriorityDown()
 	case matches(m, a.keys.TagEdit):
 		a.startEditTags()
 	case matches(m, a.keys.DueEdit):
@@ -1084,6 +1086,36 @@ func (a *App) cyclePriority() {
 	a.saveWithStatus()
 }
 
+// cyclePriorityDown is the reverse-direction sister of cyclePriority.
+// Lowercase 'p' increments priority in the (low -> medium -> high ->
+// urgent -> low) loop, which works for the common "bump it up" use
+// case but is hostile when the user overshot and wants to nudge a
+// task DOWN one notch (lowercase 'p' would take three presses to
+// cycle around). Uppercase 'P' decrements in the (urgent -> high ->
+// medium -> low -> urgent) loop, so a single press steps the priority
+// back.
+//
+// The lowercase/uppercase pair matches the convention the TUI's
+// settled into for direction-sensitive bindings (g/G top vs. bottom,
+// r/R reload-keep vs. reload-clear, n/N cancel vs. next-jump). The
+// keymap-level grouping also pairs visually in the helpView ('p/P').
+//
+// Math: (x - 1 + 4) % 4 keeps the result in [0, 4) for x in [0, 3]
+// including x=0 (which wraps to 3 == urgent). Identical to
+// cyclePriority's body except the direction operator.
+//
+// Save semantics: same as cyclePriority — single Save call, errors
+// surface to status footer via saveWithStatus.
+func (a *App) cyclePriorityDown() {
+	id := a.currentID()
+	if id == 0 {
+		return
+	}
+	t := a.store.ByID(id)
+	t.Priority = model.Priority((int(t.Priority) - 1 + 4) % 4)
+	a.saveWithStatus()
+}
+
 func (a *App) toggleSection() {
 	vt := a.visibleTasks()
 	if a.selection >= len(vt) {
@@ -1190,7 +1222,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p/P prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -1230,7 +1262,8 @@ func (a *App) helpView() string {
 		{"e", "edit title"},
 		{"t", "edit tags"},
 		{"D", "set due date"},
-		{"p", "cycle priority"},
+		{"p", "cycle priority up"},
+		{"P", "cycle priority down"},
 		{"d", "delete (confirm)"},
 		{"/", "fuzzy filter"},
 		{"s", "sort: priority|due|created|id"},
