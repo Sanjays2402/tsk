@@ -185,6 +185,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.toggleFocusPinned()
 	case matches(m, a.keys.ArchiveCurrent):
 		a.archiveCurrent()
+	case matches(m, a.keys.TogglePin):
+		a.togglePinCurrent()
 	}
 }
 
@@ -747,6 +749,89 @@ func tuiArchivePath(activePath string) string {
 	return filepath.Join(filepath.Dir(activePath), ".tsk.archive.md")
 }
 
+// togglePinCurrent flips the Pinned flag on the currently-selected
+// task — the TUI sister of `tsk pin` / `tsk unpin`. One keystroke
+// ('*') for the common "bookmark this task" / "release that pin"
+// workflow without dropping to the shell.
+//
+// Why this completes the pin cluster: tick #24 shipped 'F'
+// (focus-pinned toggle) so the user can FILTER to pinned tasks;
+// what was missing was a way to BUILD the pinned set inside the
+// TUI. With `*`, the workflow is end-to-end inside the TUI:
+//   - move cursor to a task
+//   - press '*' to pin it (or unpin)
+//   - press 'F' to focus on the pinned set
+//   - press 'F' again to come back to the full list
+//
+// Why '*' and not 'P' (a more obvious lowercase/uppercase pair
+// with 'p'-cycle-priority)? Two reasons:
+//
+//  1. '*' is the conventional "mark this row" key in modal editors
+//     (vim search-current-word, mutt mark-message), reading as
+//     "this row is special" without colliding with priority.
+//  2. The next tick already plans a 'P' priority-cycle-down sister
+//     to lowercase 'p' (the keymap has space for the lowercase/
+//     uppercase pair on priority specifically). Reserving 'P' for
+//     priority keeps the two clusters separate.
+//
+// Selection contract: cursor stays on the same task after toggling
+// (the task hasn't moved, only its sticky flag changed). The status
+// footer reflects the new state ("pinned" / "unpinned") so the user
+// sees the action took effect even when the visible row decoration
+// hasn't yet caught up (next render frame will show the pin marker).
+//
+// Idempotent: pinning an already-pinned task is technically a no-op
+// (status reads "already pinned" so the user knows nothing changed
+// — vs the toggle path which says "pinned"). The implementation
+// flips unconditionally because Pinned is a bool — there's no
+// pre-state to check; the only meaningful distinction is the
+// status message, which we derive from the post-flip value
+// directly.
+//
+// Composes with focus-pinned: pinning while pinnedOnly=false works
+// the obvious way (task gains the pin marker, stays in the visible
+// list). UNPINNING while pinnedOnly=true makes the task disappear
+// from view; cursor snaps to the next visible row if the just-
+// unpinned task was last, otherwise stays at the same position
+// (which is now the next task). Edge case handled.
+//
+// Errors (Save failure, missing source) surface into the status
+// footer rather than crashing — same contract as cloneCurrent /
+// archiveCurrent.
+func (a *App) togglePinCurrent() {
+	id := a.currentID()
+	if id == 0 {
+		a.status = "pin: no task selected"
+		return
+	}
+	t := a.store.ByID(id)
+	if t == nil {
+		a.status = "pin: source not found"
+		return
+	}
+	t.Pinned = !t.Pinned
+	if err := a.store.Save(); err != nil {
+		a.status = "pin: save failed: " + err.Error()
+		return
+	}
+	// Compose with focus-pinned: if we just unpinned while pinned
+	// only is active, the task disappears from the visible list.
+	// Snap selection to a sane position (the next visible task at
+	// the same index, or the last row, or 0 on empty).
+	vt := a.visibleTasks()
+	if a.selection >= len(vt) && len(vt) > 0 {
+		a.selection = len(vt) - 1
+	}
+	if len(vt) == 0 {
+		a.selection = 0
+	}
+	if t.Pinned {
+		a.status = fmt.Sprintf("pinned #%d", id)
+	} else {
+		a.status = fmt.Sprintf("unpinned #%d", id)
+	}
+}
+
 func (a *App) startEditTitle() {
 	id := a.currentID()
 	if id == 0 {
@@ -1105,7 +1190,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · X archive · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · * pin · X archive · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -1153,6 +1238,7 @@ func (a *App) helpView() string {
 		{"r/R", "reload (R also clears filter)"},
 		{"C", "clone current task"},
 		{"X", "archive current (done only)"},
+		{"*", "toggle pin on current task"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}

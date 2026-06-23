@@ -23,6 +23,7 @@ type Keymap struct {
 	JumpNext          key.Binding
 	FocusPinned       key.Binding
 	ArchiveCurrent    key.Binding
+	TogglePin         key.Binding
 }
 
 // DefaultKeymap returns the default tsk TUI keybindings.
@@ -52,5 +53,6 @@ func DefaultKeymap() Keymap {
 		JumpNext:       key.NewBinding(key.WithKeys("N"), key.WithHelp("N", "jump to next-unblocked")),
 		FocusPinned:    key.NewBinding(key.WithKeys("F"), key.WithHelp("F", "focus pinned only")),
 		ArchiveCurrent: key.NewBinding(key.WithKeys("X"), key.WithHelp("X", "archive (done only)")),
+		TogglePin:      key.NewBinding(key.WithKeys("*"), key.WithHelp("*", "toggle pin")),
 	}
 }
