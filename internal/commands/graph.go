@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Sanjays2402/tsk/internal/model"
 	"github.com/Sanjays2402/tsk/internal/store"
 )
 
@@ -89,6 +90,7 @@ func newGraphCmd() *cobra.Command {
 		jsonAppend      bool
 		includePriority bool
 		includeTags     bool
+		includeDue      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -224,6 +226,9 @@ Examples:
 			if includeTags && !asJSON {
 				return usageErrorf("--include-tags only applies to --json (the JSON envelope path)")
 			}
+			if includeDue && !asJSON {
+				return usageErrorf("--include-due only applies to --json (the JSON envelope path)")
+			}
 			if jsonAppend {
 				if !asJSON {
 					return usageErrorf("--append only applies to --json (the JSON envelope path)")
@@ -309,7 +314,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -358,7 +363,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -376,6 +381,7 @@ Examples:
 	cmd.Flags().BoolVar(&jsonAppend, "append", false, "for --json --output: APPEND the JSON envelope to <path> instead of overwriting (JSONL semantics). Each call adds exactly one record to the file (creating it if missing); the file builds up a history of impact-analysis snapshots over time. Implies --compact-json so the on-disk shape is true JSONL. .json and .jsonl extensions both accepted; .jsonl is the canonical streaming-JSON convention.")
 	cmd.Flags().BoolVar(&includePriority, "include-priority", false, "for --json: add a per-node 'priority' field to the envelope (canonical string: low/medium/high/urgent). Useful for jq pipelines that need to filter by priority without a per-node `tsk show --json <id>` round-trip. Historical default keeps the envelope minimal (id+title+done) so existing snapshot fixtures stay byte-identical.")
 	cmd.Flags().BoolVar(&includeTags, "include-tags", false, "for --json: add a per-node 'tags' field to the envelope (alphabetized array of tag strings; empty array when the task has no tags). Sister of --include-priority, same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to filter by tag (e.g. `select(.tags | index(\"urgent\"))`) without a per-node `tsk show --json <id>` round-trip. Composes with --include-priority and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field via omitempty since we don't have a task to read tags from.")
+	cmd.Flags().BoolVar(&includeDue, "include-due", false, "for --json: add a per-node 'due' field to the envelope (canonical YYYY-MM-DD date string; field is omitted when the task has no due date). Sister of --include-tags / --include-priority — same opt-in shape so existing snapshot fixtures stay byte-identical when unset. Useful for jq pipelines that need to flag impact-analysis chains where something is due this week (e.g. `select(.due < \"2026-07-01\")`) without a per-node `tsk show --json <id>` round-trip. Composes with all other --include-* opt-ins and --compact-json; dangling-edge nodes (rendered as '(missing)') omit the field since we don't have a task to read due from.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	return cmd
 }
@@ -1117,12 +1123,28 @@ func truncateForDOT(s string, max int) string {
 // Useful for downstream filters like `jq '.nodes[] | select(.tags
 // | index("urgent"))'` that need tags without falling back to a
 // `tsk show --json <id>` round-trip per node.
+//
+// Due is OPT-IN via the --include-due flag, third opt-in field:
+// when set, real-task nodes with a due date gain a "due" field
+// carrying the canonical YYYY-MM-DD string (matches model.DateLayout,
+// same shape `tsk show` uses). Tasks WITHOUT a due date leave the
+// field absent entirely — semantically "no due" is meaningfully
+// different from "due on date X", and a downstream jq comparison
+// like `select(.due < "2026-07-01")` should naturally skip nodes
+// with no due field rather than tripping a type error. Stored as a
+// plain string with omitempty (a missing-due task gets ""; the
+// omitempty tag drops the field). Dangling-edge "(missing)" nodes
+// leave the field absent for the same reason — there's no task to
+// read due from. Useful for impact-analysis chains where you want
+// to know "what depends on something due this week?" without a
+// per-node `tsk show --json <id>` round-trip.
 type subgraphNode struct {
 	ID       int       `json:"id"`
 	Title    string    `json:"title"`
 	Done     bool      `json:"done"`
 	Priority string    `json:"priority,omitempty"`
 	Tags     *[]string `json:"tags,omitempty"`
+	Due      string    `json:"due,omitempty"`
 }
 
 // subgraphEdge is one directed dep edge in the JSON subgraph
@@ -1206,7 +1228,15 @@ type subgraphDoc struct {
 // guessing would mislead. Composes cleanly with --include-priority
 // (both modifiers are independent opt-ins) and --compact-json
 // (same single-line shape with both fields inline).
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags bool) error {
+//
+// includeDue=true is the third opt-in: adds a per-task "due"
+// field carrying the canonical YYYY-MM-DD string when set. Tasks
+// without a due date leave the field absent (omitempty drops the
+// empty string) — semantically "no due" differs from "due on date
+// X" and jq comparisons like `select(.due < "2026-07-01")` should
+// naturally skip nodes with no due field. Composes with all other
+// --include-* opt-ins (each is an independent boolean modifier).
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue bool) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1251,6 +1281,14 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 			copy(tags, t.Tags)
 			sort.Strings(tags)
 			node.Tags = &tags
+		}
+		if includeDue && t.Due != nil {
+			// Canonical YYYY-MM-DD form. Same DateLayout `tsk
+			// show` and `tsk due` use, so jq pipelines that
+			// compare dates lexicographically (the ISO format
+			// makes string comparison equivalent to date
+			// comparison) work without parsing.
+			node.Due = t.Due.Format(model.DateLayout)
 		}
 		nodes = append(nodes, node)
 	}
