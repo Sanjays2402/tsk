@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -182,6 +183,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.jumpToNextUnblocked()
 	case matches(m, a.keys.FocusPinned):
 		a.toggleFocusPinned()
+	case matches(m, a.keys.ArchiveCurrent):
+		a.archiveCurrent()
 	}
 }
 
@@ -588,6 +591,162 @@ func (a *App) toggleFocusPinned() {
 	}
 }
 
+// archiveCurrent moves the currently-selected DONE task into the
+// sibling .tsk.archive.md file — the TUI sister of `tsk archive`
+// (flat strategy, default sibling file). One keystroke ('X') for
+// the common end-of-day "clear my completed work out of the active
+// list" workflow, vs. dropping back to the shell to run
+// `tsk archive --all`.
+//
+// Why DONE-only? The CLI `tsk archive` already filters to Done tasks
+// by predicate; archiving an open task would be a category error
+// (the whole point of the archive file is completed work). Refusing
+// the action surfaces a "task is not done — mark it done first"
+// status hint rather than silently no-opping, so the user
+// understands what's blocked.
+//
+// Why flat-strategy default (no bucket-by, no merge-into)? The TUI
+// shortcut is for the single-task quick action; the full CLI is
+// still where bucketed / merge-into / --strategy live. A TUI verb
+// that surfaced every flag would clutter the keymap and be no
+// faster than just dropping to the shell. The flat append keeps the
+// single-keystroke promise.
+//
+// Atomic-ish: the archive store is loaded, the task is appended
+// with a fresh archive id (continuing the archive's max+1, same
+// contract as the CLI), the archive is saved, THEN the task is
+// removed from the active store and the active is saved. If the
+// archive save fails, the active is untouched (the task stays
+// where it was — no half-archived state). If the active save
+// fails after a successful archive save, the task DOES exist in
+// both files momentarily (the user can re-run X or `tsk archive
+// --all` to recover). This matches the CLI's two-save approach
+// since wrapping both in a single atomic write isn't feasible
+// across two distinct files.
+//
+// Selection contract: after the archive, the cursor stays on the
+// same visible position (so pressing X repeatedly walks down the
+// done section without surprise jumps). If the cursor was on the
+// last item in the visible list, it shifts up by one. Falls back
+// to position 0 if the active store ends up empty.
+//
+// Errors surface into the status footer; the active store is
+// reloaded from the freshly-saved file so the in-memory view
+// matches disk after the operation completes.
+//
+// Why uppercase 'X' (not 'x')? Lowercase 'x' is the conventional
+// vim "delete one character" — reserved for a future single-
+// character edit primitive. Uppercase 'X' is the conventional
+// "destructive bulk-action" key in modal editors (vim's "delete
+// backwards", less's "kill"), which matches the "this task is
+// leaving the visible list" semantic.
+//
+// dependents-aware safety: if the task being archived is named as
+// a prereq by any other OPEN task in the active store, the archive
+// is REFUSED with a "blocked by N dependents" status — archiving
+// would create a dangling dep reference in the active store, which
+// then surfaces as a `tsk lint` finding. Better to flag it here
+// and let the user `tsk depend --remove-all` or `tsk depend
+// <other> --remove <id>` first. Done dependents are tolerated
+// (they're already satisfied, the dangling ref is no-op).
+func (a *App) archiveCurrent() {
+	id := a.currentID()
+	if id == 0 {
+		a.status = "archive: no task selected"
+		return
+	}
+	src := a.store.ByID(id)
+	if src == nil {
+		a.status = "archive: source not found"
+		return
+	}
+	if !src.Done {
+		a.status = "archive: task is not done — mark it done first"
+		return
+	}
+	// dependents-aware safety: refuse if any OPEN task names this
+	// id in its DependsOn. Otherwise the archive leaves a dangling
+	// ref in the active store. Done dependents are fine — they're
+	// already satisfied.
+	blocking := make([]int, 0)
+	for _, t := range a.store.Tasks {
+		if t.ID == id || t.Done {
+			continue
+		}
+		for _, dep := range t.DependsOn {
+			if dep == id {
+				blocking = append(blocking, t.ID)
+				break
+			}
+		}
+	}
+	if len(blocking) > 0 {
+		labels := make([]string, len(blocking))
+		for i, bid := range blocking {
+			labels[i] = fmt.Sprintf("#%d", bid)
+		}
+		a.status = fmt.Sprintf("archive: #%d is a prereq for %s — clear deps first", id, strings.Join(labels, ","))
+		return
+	}
+	archivePath := tuiArchivePath(a.store.Path)
+	arch, err := store.Load(archivePath)
+	if err != nil {
+		a.status = "archive: load failed: " + err.Error()
+		return
+	}
+	// Stamp the archive header if the file didn't exist before
+	// (Load on a missing file returns a fresh store with empty
+	// header).
+	if _, statErr := os.Stat(archivePath); os.IsNotExist(statErr) {
+		arch.Header = "# tsk archive\n"
+	}
+	// Continue the archive's id space (max+1). The active id is
+	// dropped on copy — the archive has its own monotonic sequence
+	// so re-imports / cross-file references stay clean.
+	nextArchiveID := 1
+	for _, t := range arch.Tasks {
+		if t.ID >= nextArchiveID {
+			nextArchiveID = t.ID + 1
+		}
+	}
+	copy := *src
+	copy.ID = nextArchiveID
+	arch.Tasks = append(arch.Tasks, copy)
+	if err := arch.Save(); err != nil {
+		a.status = "archive: save archive failed: " + err.Error()
+		return
+	}
+	// Now remove from active. If this Save fails, the user has a
+	// duplicate (in both files) — surface it clearly so they know
+	// to re-run.
+	a.store.Remove(id)
+	if err := a.store.Save(); err != nil {
+		a.status = "archive: archived OK but active save failed (duplicate exists): " + err.Error()
+		return
+	}
+	// Move cursor down by one visible position (so repeated X walks
+	// through the done section), or up by one if we were on the
+	// last visible row.
+	vt := a.visibleTasks()
+	if a.selection >= len(vt) && len(vt) > 0 {
+		a.selection = len(vt) - 1
+	}
+	if len(vt) == 0 {
+		a.selection = 0
+	}
+	a.status = fmt.Sprintf("archived #%d -> #%d in %s", id, copy.ID, archivePath)
+}
+
+// tuiArchivePath resolves the sibling archive path next to the
+// active .tsk.md. Mirrors the CLI's resolveArchivePath default
+// (mergeInto==""): same directory, fixed ".tsk.archive.md" name.
+// Inlined rather than imported because internal/tui can't import
+// internal/commands (would cycle); the path-shape is small and
+// stable.
+func tuiArchivePath(activePath string) string {
+	return filepath.Join(filepath.Dir(activePath), ".tsk.archive.md")
+}
+
 func (a *App) startEditTitle() {
 	id := a.currentID()
 	if id == 0 {
@@ -946,7 +1105,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · X archive · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -993,6 +1152,7 @@ func (a *App) helpView() string {
 		{"tab", "collapse current section"},
 		{"r/R", "reload (R also clears filter)"},
 		{"C", "clone current task"},
+		{"X", "archive current (done only)"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}
