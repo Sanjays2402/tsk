@@ -50,22 +50,23 @@ func pacificLoc() *time.Location {
 
 // App is the bubbletea Model for tsk's interactive UI.
 type App struct {
-	store     *store.Store
-	pal       Palette
-	keys      Keymap
-	now       time.Time
-	width     int
-	height    int
-	selection int
-	collapsed map[sectionKind]bool
-	form      formMode
-	inputCur  inputBox
-	editing   int
-	confirm   int
-	status    string
-	showHelp  bool
-	filter    string
-	sortMode  string
+	store      *store.Store
+	pal        Palette
+	keys       Keymap
+	now        time.Time
+	width      int
+	height     int
+	selection  int
+	collapsed  map[sectionKind]bool
+	form       formMode
+	inputCur   inputBox
+	editing    int
+	confirm    int
+	status     string
+	showHelp   bool
+	filter     string
+	sortMode   string
+	pinnedOnly bool
 }
 
 // inputBox is a tiny stand-in that abstracts textinput to avoid importing the
@@ -179,6 +180,8 @@ func (a *App) handleNavKey(m tea.KeyMsg) {
 		a.cloneCurrent()
 	case matches(m, a.keys.JumpNext):
 		a.jumpToNextUnblocked()
+	case matches(m, a.keys.FocusPinned):
+		a.toggleFocusPinned()
 	}
 }
 
@@ -521,6 +524,70 @@ func isBetterNextTUI(t, current *model.Task) bool {
 	return t.ID < current.ID
 }
 
+// toggleFocusPinned flips the pinned-only filter on/off. When on,
+// visibleTasks() further narrows to only PINNED tasks — the TUI
+// sister of `tsk top --pinned-only`. When off, the unfiltered
+// (or text-filtered) full view returns.
+//
+// Use case: the user has a small handful of bookmark tasks pinned
+// (via `tsk pin`) and wants a focus mode that hides everything
+// else without permanently filtering. One keystroke in, one
+// keystroke out — toggling rather than entering a long-lived
+// search filter.
+//
+// Selection preservation: when toggling ON, if the previously-
+// selected task is pinned (i.e. it survives the new filter), the
+// cursor stays on it. Otherwise it snaps to the first visible
+// pinned task. When toggling OFF, the cursor tries to preserve
+// the same task in the now-broader list; falls back to position
+// 0 if not found.
+//
+// Composes with the existing text filter: pinned-only AND the
+// text filter both apply (intersection). So the user can hit `F`
+// to focus pinned, then `/` to narrow further within the pinned
+// set — e.g. "show me only my pinned 'release' tasks".
+//
+// Status footer reflects the state change so the user knows
+// what changed: "pinned only" when on, "all tasks" when off.
+// Uppercase 'F' (not 'f') to leave lowercase free for future
+// "f" commands (find, filter — none currently bound) and to
+// match the lowercase-positional / uppercase-explicit convention
+// the TUI has been settling into (g/G, r/R, n/N as cancel vs
+// next-jump).
+//
+// Empty pinned set: still works — visibleTasks just becomes
+// empty, the status footer says "pinned only (no pinned
+// tasks)". Helpful diagnostic when the user thinks they've
+// pinned things but hasn't.
+func (a *App) toggleFocusPinned() {
+	prevID := a.currentID()
+	a.pinnedOnly = !a.pinnedOnly
+	vt := a.visibleTasks()
+	// Try to preserve the selection by id; fall back to 0.
+	if prevID > 0 {
+		for i, t := range vt {
+			if t.ID == prevID {
+				a.selection = i
+				if a.pinnedOnly {
+					a.status = "pinned only"
+				} else {
+					a.status = "all tasks"
+				}
+				return
+			}
+		}
+	}
+	a.selection = 0
+	switch {
+	case a.pinnedOnly && len(vt) == 0:
+		a.status = "pinned only (no pinned tasks)"
+	case a.pinnedOnly:
+		a.status = "pinned only"
+	default:
+		a.status = "all tasks"
+	}
+}
+
 func (a *App) startEditTitle() {
 	id := a.currentID()
 	if id == 0 {
@@ -701,6 +768,15 @@ func (a *App) visibleTasks() []model.Task {
 			}
 			g = filtered
 		}
+		if a.pinnedOnly {
+			filtered := g[:0]
+			for _, t := range g {
+				if t.Pinned {
+					filtered = append(filtered, t)
+				}
+			}
+			g = filtered
+		}
 		out = append(out, g...)
 	}
 	return out
@@ -824,6 +900,15 @@ func (a *App) View() string {
 			}
 			g = filtered
 		}
+		if a.pinnedOnly {
+			filtered := g[:0]
+			for _, t := range g {
+				if t.Pinned {
+					filtered = append(filtered, t)
+				}
+			}
+			g = filtered
+		}
 		marker := "▾"
 		if a.collapsed[k] {
 			marker = "▸"
@@ -861,7 +946,7 @@ func (a *App) View() string {
 		b.WriteString(a.helpView())
 	} else {
 		b.WriteByte('\n')
-		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
+		b.WriteString(a.pal.Help.Render("j/k move · g/G top/bottom · N next · F pin-focus · ␣ toggle · a add · e edit · d delete · D due · p prio · t tags · / search · s sort · tab collapse · ? help · q quit"))
 	}
 	return b.String()
 }
@@ -894,6 +979,8 @@ func (a *App) helpView() string {
 	rows := [][2]string{
 		{"j/k", "move selection"},
 		{"g/G", "jump top / bottom"},
+		{"N", "jump to next-unblocked"},
+		{"F", "focus pinned only (toggle)"},
 		{"⏎/␣", "toggle done"},
 		{"a", "add task"},
 		{"e", "edit title"},
@@ -904,6 +991,8 @@ func (a *App) helpView() string {
 		{"/", "fuzzy filter"},
 		{"s", "sort: priority|due|created|id"},
 		{"tab", "collapse current section"},
+		{"r/R", "reload (R also clears filter)"},
+		{"C", "clone current task"},
 		{"?", "toggle help"},
 		{"q", "quit"},
 	}
