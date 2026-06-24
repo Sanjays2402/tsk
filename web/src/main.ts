@@ -83,6 +83,7 @@ import {
   type LiveStatus,
 } from "./live";
 import { registerServiceWorker } from "./pwa";
+import { resolveNotes } from "./notes";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -400,8 +401,8 @@ function clearDropIndicator(): void {
 function onDragStart(e: DragEvent): void {
   const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-id]");
   if (!row) return;
-  // An in-progress inline edit / due picker shouldn't be draggable.
-  if (editing || duePicking) {
+  // An in-progress inline edit / due picker / notes editor shouldn't be draggable.
+  if (editing || duePicking || notesEditing) {
     e.preventDefault();
     return;
   }
@@ -976,6 +977,124 @@ function prettyLocal(due: string): string {
   });
 }
 
+// --- F23: notes editor -----------------------------------------------------
+
+/** True while the notes panel is mounted, so list nav keys stand down. */
+let notesEditing = false;
+
+/**
+ * Open the multi-line notes editor for a task. Mounts an expanding panel under
+ * the row with a textarea seeded from the task's notes. Cmd/Ctrl-Enter or the
+ * Save button commits via PATCH (optimistic + rollback, matching the title/due
+ * patterns); Escape or a click-away cancels. An empty textarea clears the notes
+ * (the store drops the continuation lines). Round-trips the `.tsk.md` 6-space
+ * continuation block through the existing `notes` PATCH field.
+ */
+function openNotesEditor(id: number): void {
+  if (notesEditing || editing || duePicking) return;
+  const row = els.content.querySelector<HTMLElement>(`[data-id="${id}"]`);
+  if (!row) return;
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+
+  notesEditing = true;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const original = task.notes ?? "";
+  const panel = document.createElement("div");
+  panel.className = "notes-pop";
+  panel.setAttribute("data-notes-pop", "");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-label", "Edit notes");
+  panel.innerHTML = `
+    <textarea class="notes-area" data-notes-area spellcheck="true"
+              placeholder="Notes… markdown-ish, multi-line. Saved as indented lines under the task in .tsk.md."
+              aria-label="Task notes"></textarea>
+    <div class="notes-foot">
+      <span class="notes-hint"><kbd>&#8984;&#9166;</kbd> save &middot; <kbd>esc</kbd> cancel</span>
+      <span class="notes-foot-actions">
+        <button class="notes-cancel" data-notes-cancel type="button">Cancel</button>
+        <button class="notes-save" data-notes-save type="button">Save</button>
+      </span>
+    </div>`;
+  row.appendChild(panel);
+
+  const area = panel.querySelector<HTMLTextAreaElement>("[data-notes-area]")!;
+  area.value = original;
+  area.focus();
+  // Put the caret at the end rather than selecting everything.
+  area.setSelectionRange(area.value.length, area.value.length);
+  autoGrow(area);
+
+  let settled = false;
+  const close = (): void => {
+    if (settled) return;
+    settled = true;
+    notesEditing = false;
+    panel.remove();
+    document.removeEventListener("click", onAway, true);
+    render();
+    flushPendingLiveRefresh();
+  };
+  const save = (): void => {
+    const outcome = resolveNotes(original, area.value);
+    close();
+    if (outcome.kind === "commit") commitNotes(id, outcome.notes);
+  };
+
+  area.addEventListener("input", () => autoGrow(area));
+  area.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // keep list nav keys from firing while editing
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      save();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  });
+  panel.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest("[data-notes-save]")) {
+      e.stopPropagation();
+      save();
+    } else if (t?.closest("[data-notes-cancel]")) {
+      e.stopPropagation();
+      close();
+    }
+  });
+  const onAway = (e: MouseEvent): void => {
+    if (!panel.contains(e.target as Node)) save(); // click-away saves, like a doc editor
+  };
+  setTimeout(() => document.addEventListener("click", onAway, true), 0);
+}
+
+/** Grow a textarea to fit its content (cheap auto-resize, capped by CSS max-height). */
+function autoGrow(area: HTMLTextAreaElement): void {
+  area.style.height = "auto";
+  area.style.height = `${area.scrollHeight}px`;
+}
+
+/** Persist a notes change via PATCH, optimistic with rollback. */
+async function commitNotes(id: number, notes: string): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  currentTasks[idx] = { ...before, notes };
+  render();
+  try {
+    const confirmed = await api.patchTask(id, { notes });
+    currentTasks[idx] = confirmed;
+    render();
+  } catch (err) {
+    currentTasks[idx] = before;
+    render();
+    setStatus(`notes failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
 // --- F6: quick-add composer ------------------------------------------------
 /** Re-render the live token preview and toggle the submit-enabled state. */
 function updateComposerPreview(): void {
@@ -1223,6 +1342,10 @@ els.content.addEventListener("click", (e) => {
     openDuePicker(id);
     return;
   }
+  if (target.closest("[data-notes]")) {
+    openNotesEditor(id);
+    return;
+  }
   nav = select(nav, visibleIds, id);
   applySelection();
 });
@@ -1290,7 +1413,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
-  if (editing || duePicking) return; // inline edit / due picker handle their own keys
+  if (editing || duePicking || notesEditing) return; // inline edit / due picker / notes handle their own keys
 
   switch (e.key) {
     case "j":
@@ -1338,6 +1461,12 @@ document.addEventListener("keydown", (e) => {
       if (nav.selectedId !== null) {
         e.preventDefault();
         openDuePicker(nav.selectedId);
+      }
+      break;
+    case "i":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        openNotesEditor(nav.selectedId);
       }
       break;
     case "u":
@@ -1401,6 +1530,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["space / enter", "Toggle the selected task done"],
   ["e", "Edit the selected task's title"],
   ["d", "Set / change the due date"],
+  ["i", "Edit the selected task's notes"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
@@ -1493,6 +1623,14 @@ function buildCommands(): Command[] {
       disabled: !hasSel,
     },
     {
+      id: "notes",
+      title: "Edit notes on selected",
+      group: "Task",
+      keywords: ["note", "comment", "description", "detail"],
+      hint: "i",
+      disabled: !hasSel,
+    },
+    {
       id: "delete",
       title: "Delete selected task",
       group: "Task",
@@ -1529,6 +1667,9 @@ function runCommand(id: string): void {
       break;
     case "due":
       if (sel !== null) openDuePicker(sel);
+      break;
+    case "notes":
+      if (sel !== null) openNotesEditor(sel);
       break;
     case "delete":
       if (sel !== null) requestDelete(sel);
@@ -1777,6 +1918,7 @@ declare global {
       undo: () => void;
       edit: (id: number) => void;
       due: (id: number) => void;
+      notes: (id: number) => void;
       tag: (tag: string) => void;
       palette: (open: boolean) => void;
     };
@@ -1796,6 +1938,7 @@ window.tsk = {
   undo: undoDelete,
   edit: enterEditMode,
   due: openDuePicker,
+  notes: openNotesEditor,
   tag: navigateToTag,
   palette: (open: boolean) => (open ? openPalette() : closePalette()),
 };

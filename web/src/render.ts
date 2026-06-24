@@ -7,6 +7,7 @@
 
 import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
+import { renderNotesButton } from "./notes";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -68,6 +69,7 @@ export function renderRow(t: Task, now: Date): string {
       <div class="meta">
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
         ${dueCell}
+        ${renderNotesButton(t.notes)}
         <span class="priority ${escapeHTML(t.priority)}" title="${escapeHTML(t.priority)} priority">${priorityShort(t.priority)}</span>
         <button class="row-del" data-del type="button" aria-label="Delete task" title="Delete (x)">&times;</button>
       </div>

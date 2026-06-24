@@ -862,6 +862,131 @@ kbd {
   color: var(--color-accent);
 }
 
+/* F23: notes button (row meta) + expanding editor panel */
+.notes-btn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  cursor: pointer;
+  opacity: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.row:hover .notes-btn,
+.row.is-selected .notes-btn,
+.notes-btn:focus-visible {
+  opacity: 1;
+}
+.notes-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+/* A task that already HAS notes shows its glyph at all times (solid, no dash). */
+.notes-btn.has-notes {
+  opacity: 1;
+  color: var(--color-accent-strong);
+  border-style: solid;
+  border-color: var(--color-border-strong);
+}
+.notes-btn.has-notes:hover {
+  border-color: var(--color-accent);
+}
+.notes-n {
+  font-size: 10px;
+  color: var(--color-text-faint);
+}
+.notes-btn.has-notes .notes-n {
+  color: var(--color-accent);
+}
+
+.notes-pop {
+  position: absolute;
+  z-index: 40;
+  left: var(--sp-8);
+  right: var(--sp-4);
+  margin-top: var(--sp-1);
+  padding: var(--sp-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  cursor: default;
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.notes-area {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 4.5rem;
+  max-height: 50vh;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.notes-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.notes-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+.notes-foot-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.notes-cancel,
+.notes-save {
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-dim);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.notes-cancel:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-dim);
+}
+.notes-save {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #0b0a09;
+  font-weight: 600;
+}
+.notes-save:hover {
+  background: var(--color-accent-strong);
+  border-color: var(--color-accent-strong);
+}
+
 .due-pop {
   position: absolute;
   z-index: 40;
