@@ -33,12 +33,13 @@ import (
 // happening so you're not surprised by a "where's task #N?" question.
 func newLogCmd() *cobra.Command {
 	var (
-		limit    int
-		since    string
-		asJSON   bool
-		tag      string
-		priority string
-		format   string
+		limit        int
+		since        string
+		asJSON       bool
+		tag          string
+		strictAndTag string
+		priority     string
+		format       string
 	)
 	cmd := &cobra.Command{
 		Use:     "log",
@@ -47,12 +48,14 @@ func newLogCmd() *cobra.Command {
 		Long: `Show recently completed tasks, newest completion first.
 
 Bounds (compose: --since trims first, then filters, --limit caps last):
-  --limit N        cap to N rows (default 10; 0 = unlimited)
-  --since DUR      only include tasks completed within this duration
-                   (7d, 2w, 1m, 72h, 1h30m, ...)
-  --tag T          only include tasks tagged T
-  --priority P     only include tasks at exactly this priority
-                   (low/medium/high/urgent; short forms accepted)
+  --limit N            cap to N rows (default 10; 0 = unlimited)
+  --since DUR          only include tasks completed within this duration
+                       (7d, 2w, 1m, 72h, 1h30m, ...)
+  --tag T              only include tasks tagged T
+  --strict-and-tag CSV only include tasks carrying ALL listed tags
+                       (intersection; mutually exclusive with --tag)
+  --priority P         only include tasks at exactly this priority
+                       (low/medium/high/urgent; short forms accepted)
 
 Tasks without a Completed timestamp are excluded (the log is strictly
 time-ordered). A footer line notes how many such tasks were skipped
@@ -69,6 +72,7 @@ Examples:
   tsk log --since 7d                   # past week
   tsk log --since 1d --tag work
   tsk log --priority urgent            # recent urgent completions
+  tsk log --strict-and-tag release,p0  # completions carrying BOTH tags
   tsk log --since 7d --priority high --tag release  # all three filters
   tsk log --json | jq '.[].Title'
 `,
@@ -103,6 +107,19 @@ Examples:
 				prio = p
 				prioActive = true
 			}
+			// --tag + --strict-and-tag tag-axis selectors. They are
+			// mutually exclusive (each is a different filter shape:
+			// single-tag union vs multi-tag intersection), matching
+			// the rejection contract `tsk wip` /
+			// `tsk start --all` / `tsk pause --all` /
+			// `tsk depend --pending` use. CSV tokenization via the
+			// shared splitTagCSV helper (whitespace-tolerant, drops
+			// empties so `release,,p0` doesn't surprise).
+			tagTrim := strings.TrimSpace(tag)
+			strictAndTags := splitTagCSV(strictAndTag)
+			if tagTrim != "" && len(strictAndTags) > 0 {
+				return usageErrorf("--tag and --strict-and-tag are mutually exclusive (each is a different tag-selector axis; --tag is single-tag, --strict-and-tag is intersection over a CSV)")
+			}
 			outFormat, err := resolveLsFormat(format, asJSON)
 			if err != nil {
 				return err
@@ -111,13 +128,14 @@ Examples:
 			if err != nil {
 				return err
 			}
-			rows, skipped := collectLogRows(s.Tasks, time.Now(), sinceDur, tag, prio, prioActive, limit)
+			rows, skipped := collectLogRows(s.Tasks, time.Now(), sinceDur, tagTrim, strictAndTags, prio, prioActive, limit)
 			return emitLogRows(cmd.OutOrStdout(), rows, skipped, outFormat)
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 10, "cap to N rows (0 = unlimited)")
 	cmd.Flags().StringVar(&since, "since", "", "only include tasks completed within this duration (e.g. 7d, 2w, 1m)")
 	cmd.Flags().StringVar(&tag, "tag", "", "only include tasks with this tag")
+	cmd.Flags().StringVar(&strictAndTag, "strict-and-tag", "", "only include tasks carrying ALL listed tags (CSV; intersection). Sister of --tag's union-style single-tag filter: --tag work narrows to tasks carrying 'work'; --strict-and-tag work,p0 narrows to completions carrying BOTH 'work' AND 'p0'. Mutually exclusive with --tag. Mirrors `tsk wip --strict-and-tag`, `tsk pause --all --strict-and-tag`, `tsk start --all --strict-and-tag`, and `tsk depend --pending --strict-and-tag` so the five tag-axis intersection filters read symmetrically. Composes with --since and --priority as AND. Empty (default) = no filter.")
 	cmd.Flags().StringVar(&priority, "priority", "", "only include tasks at exactly this priority (low/medium/high/urgent, short forms accepted). Sister of --tag on the filtering axis. Mirrors the --priority filter on `tsk wip` / `tsk depend --pending` / `tsk start --all` / `tsk pause --all`. Composes with --since and --tag as AND. Empty (default) = no filter.")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: plain, table, or json")
@@ -131,7 +149,12 @@ Examples:
 // When prioActive is true, only tasks at exactly the named priority
 // survive the filter. Composes with `since` (recency) and `tag` axes
 // as AND — every filter must pass for a row to be retained.
-func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag string, prio model.Priority, prioActive bool, limit int) ([]model.Task, int) {
+//
+// strictAndTags (when non-empty) requires the task to carry ALL named
+// tags simultaneously (intersection). Mutually exclusive with `tag`
+// at the CLI layer — the helper just trusts the caller and applies
+// whichever non-empty selector is present.
+func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag string, strictAndTags []string, prio model.Priority, prioActive bool, limit int) ([]model.Task, int) {
 	var cutoff time.Time
 	if since > 0 {
 		cutoff = now.Add(-since)
@@ -151,6 +174,9 @@ func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag 
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if len(strictAndTags) > 0 && !taskHasAllTags(&t, strictAndTags) {
 			continue
 		}
 		if prioActive && t.Priority != prio {
