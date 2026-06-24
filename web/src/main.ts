@@ -16,6 +16,7 @@ import { parseQuickAdd, isSubmittable } from "./quickadd";
 import { renderComposerPreview } from "./composer";
 import { groupIntoSections, flattenSections } from "./sections";
 import { emptyNav, reconcile, move, select, type NavMove, type NavState } from "./keynav";
+import { renderToast, deletedMessage } from "./toast";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -79,16 +80,19 @@ const inFlight = new Set<number>();
 /** Keyboard selection state (F10) + the visible id order it walks. */
 let nav: NavState = emptyNav();
 let visibleIds: number[] = [];
+/** Ids hidden pending an undoable delete (F8); excluded from the rendered list. */
+const pendingDeletes = new Set<number>();
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
-  const sections = groupIntoSections(currentTasks, now);
+  const shown = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+  const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
   visibleIds = flattenSections(sections).map((t) => t.id);
   nav = reconcile(nav, visibleIds, prevIds);
   els.content.innerHTML = renderSections(sections, now);
-  els.count.innerHTML = summarize(currentTasks);
+  els.count.innerHTML = summarize(shown);
   applySelection();
 }
 
@@ -182,6 +186,100 @@ async function toggleTask(id: number): Promise<void> {
   }
 }
 
+// --- F8: delete with undo --------------------------------------------------
+
+interface PendingDelete {
+  task: Task;
+  timer: number;
+}
+/** Active undoable delete, if any. Only one at a time keeps the UX simple. */
+let pending: PendingDelete | null = null;
+const UNDO_SECONDS = 5;
+
+function toastEl(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-toast]");
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "toast";
+  el.setAttribute("data-toast", "");
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  el.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.dataset.toastAction !== undefined) undoDelete();
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+function hideToast(): void {
+  const el = document.querySelector<HTMLElement>("[data-toast]");
+  el?.classList.remove("is-open");
+}
+
+/**
+ * Request an undoable delete. The task is hidden immediately and a toast with
+ * an Undo button appears; only when the timer expires do we fire the actual
+ * DELETE. This preserves the task's id and full fidelity if you undo (a
+ * delete-then-recreate approach would lose both). If another delete is already
+ * pending, it is committed first so we never drop one silently.
+ */
+function requestDelete(id: number): void {
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+  // Commit any prior pending delete before starting a new one.
+  if (pending) commitDelete();
+
+  pendingDeletes.add(id);
+  render();
+
+  const el = toastEl();
+  el.innerHTML = renderToast({
+    message: deletedMessage(task.title),
+    actionLabel: "Undo",
+    seconds: UNDO_SECONDS,
+  });
+  el.classList.add("is-open");
+
+  const timer = window.setTimeout(commitDelete, UNDO_SECONDS * 1_000);
+  pending = { task, timer };
+}
+
+/** Fire the real DELETE for the pending task. Called on timer expiry. */
+async function commitDelete(): Promise<void> {
+  if (!pending) return;
+  const { task, timer } = pending;
+  window.clearTimeout(timer);
+  pending = null;
+  hideToast();
+  try {
+    await api.deleteTask(task.id);
+    currentTasks = currentTasks.filter((t) => t.id !== task.id);
+    pendingDeletes.delete(task.id);
+    render();
+  } catch (err) {
+    // Server refused — restore the row so nothing is silently lost.
+    pendingDeletes.delete(task.id);
+    render();
+    setStatus(`delete failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
+/** Cancel the pending delete and restore the row. */
+function undoDelete(): void {
+  if (!pending) return;
+  window.clearTimeout(pending.timer);
+  pendingDeletes.delete(pending.task.id);
+  const restoredId = pending.task.id;
+  pending = null;
+  hideToast();
+  render();
+  // Re-select the restored task so keyboard flow continues naturally.
+  nav = select(nav, visibleIds, restoredId);
+  applySelection();
+}
+
 // --- F6: quick-add composer ------------------------------------------------
 
 /** Re-render the live token preview and toggle the submit-enabled state. */
@@ -252,8 +350,8 @@ els.content.addEventListener("change", (e) => {
   toggleTask(id);
 });
 
-// Clicking a row selects it (so mouse + keyboard stay in sync). Ignore clicks
-// on the checkbox itself, which has its own change handler.
+// Clicking a row selects it (so mouse + keyboard stay in sync). The delete
+// button (data-del) requests an undoable delete instead of selecting.
 els.content.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
   if (!target || target instanceof HTMLInputElement) return;
@@ -261,6 +359,10 @@ els.content.addEventListener("click", (e) => {
   if (!row) return;
   const id = Number(row.dataset.id);
   if (!Number.isFinite(id) || id <= 0) return;
+  if (target.closest("[data-del]")) {
+    requestDelete(id);
+    return;
+  }
   nav = select(nav, visibleIds, id);
   applySelection();
 });
@@ -325,6 +427,20 @@ document.addEventListener("keydown", (e) => {
         toggleTask(nav.selectedId);
       }
       break;
+    case "x":
+    case "Delete":
+    case "Backspace":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        requestDelete(nav.selectedId);
+      }
+      break;
+    case "u":
+      if (pending) {
+        e.preventDefault();
+        undoDelete();
+      }
+      break;
     case "r":
       e.preventDefault();
       refresh();
@@ -349,6 +465,8 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["k / \u2191", "Move selection up"],
   ["g / G", "Jump to first / last"],
   ["space / enter", "Toggle the selected task done"],
+  ["x / del", "Delete the selected task (undoable)"],
+  ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
   ["r", "Refresh from disk"],
   ["esc", "Clear the add field / close this help"],
@@ -402,6 +520,8 @@ declare global {
       add: (line: string) => Promise<void>;
       selected: () => number | null;
       help: (open: boolean) => void;
+      del: (id: number) => void;
+      undo: () => void;
     };
   }
 }
@@ -415,6 +535,8 @@ window.tsk = {
   },
   selected: () => nav.selectedId,
   help: toggleHelp,
+  del: requestDelete,
+  undo: undoDelete,
 };
 
 refresh();

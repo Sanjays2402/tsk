@@ -65,6 +65,7 @@ export function renderRow(t: Task, now: Date): string {
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
         ${dueLabel ? `<span class="due" title="${escapeHTML(t.due ?? "")}">${escapeHTML(dueLabel)}</span>` : ""}
         <span class="priority ${escapeHTML(t.priority)}" title="${escapeHTML(t.priority)} priority">${priorityShort(t.priority)}</span>
+        <button class="row-del" data-del type="button" aria-label="Delete task" title="Delete (x)">&times;</button>
       </div>
     </li>`;
 }

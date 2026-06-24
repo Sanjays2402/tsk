@@ -364,6 +364,35 @@ body {
 .priority.medium { background: var(--color-prio-medium); color: #1c1408; }
 .priority.low    { background: var(--color-prio-low);    color: #fff; }
 
+/* Row delete affordance (F8) — hidden until row hover / selection / focus */
+.row-del {
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: 16px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.row:hover .row-del,
+.row.is-selected .row-del,
+.row-del:focus-visible {
+  opacity: 1;
+}
+.row-del:hover {
+  color: #fff;
+  background: var(--color-prio-urgent);
+}
+
 /* Empty state */
 .empty {
   padding: var(--sp-12) var(--sp-6);
@@ -472,6 +501,70 @@ kbd {
 .kbd-hint:hover {
   color: var(--color-accent);
   border-color: var(--color-accent);
+}
+
+/* F8: undo toast — bottom-center, with countdown progress bar */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-6);
+  transform: translateX(-50%) translateY(8px);
+  z-index: 60;
+  min-width: 260px;
+  max-width: 90vw;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-base) var(--ease-out),
+    transform var(--duration-base) var(--ease-out);
+}
+.toast.is-open {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.toast-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+}
+.toast-msg {
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+}
+.toast-action {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.toast-action:hover {
+  background: var(--color-accent-soft);
+}
+.toast-bar {
+  height: 2px;
+  background: var(--color-accent);
+  transform-origin: left;
+  animation: toast-countdown linear forwards;
+}
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 /* F10: help overlay */
