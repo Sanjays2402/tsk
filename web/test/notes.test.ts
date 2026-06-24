@@ -7,6 +7,7 @@ import {
   hasNotes,
   notesLineCount,
   renderNotesButton,
+  renderNotesSnippet,
 } from "../src/notes.ts";
 
 test("normalizeNotes trims trailing whitespace per line", () => {
@@ -71,4 +72,32 @@ test("renderNotesButton escapes the preview in the title attribute", () => {
   const html = renderNotesButton('<script>alert(1)</script>');
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
+});
+
+test("renderNotesSnippet is empty for blank notes, populated otherwise", () => {
+  assert.equal(renderNotesSnippet(undefined), "");
+  assert.equal(renderNotesSnippet("   \n\n"), "");
+  const html = renderNotesSnippet("remember the milk");
+  assert.match(html, /notes-snippet/);
+  assert.match(html, /data-notes/);
+  assert.match(html, /remember the milk/);
+});
+
+test("renderNotesSnippet shows the first non-blank line, truncated", () => {
+  const html = renderNotesSnippet("\n\nfirst line here\nsecond", 8);
+  assert.match(html, /first l\u2026/);
+  assert.doesNotMatch(html, /second/);
+});
+
+test("renderNotesSnippet notes a multi-line count in the tooltip", () => {
+  const html = renderNotesSnippet("one\ntwo\nthree");
+  assert.match(html, /\(3 lines\)/);
+  // single-line notes get no count suffix
+  assert.doesNotMatch(renderNotesSnippet("solo"), /lines\)/);
+});
+
+test("renderNotesSnippet escapes untrusted content", () => {
+  const html = renderNotesSnippet("<b>x</b> & <i>y</i>");
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+  assert.match(html, /&lt;b&gt;x/);
 });

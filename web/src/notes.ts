@@ -64,6 +64,22 @@ function escapeHTML(s: string): string {
 }
 
 /**
+ * Render an inline, faded one-line notes snippet shown beneath a row's title
+ * (F31) so you can recall a task's context without opening the editor. Carries
+ * `data-notes` so the same delegated listener that the meta button uses opens
+ * the editor on click. Returns "" when the task has no notes so the row stays
+ * single-line. The visible preview is the first non-blank line, truncated; the
+ * full first line (longer cap) goes in the title attribute for hover.
+ */
+export function renderNotesSnippet(notes: string | undefined, max = 72): string {
+  if (!hasNotes(notes)) return "";
+  const preview = notesPreview(notes ?? "", max);
+  const full = notesPreview(notes ?? "", 160);
+  const more = notesLineCount(notes) > 1 ? ` (${notesLineCount(notes)} lines)` : "";
+  return `<span class="notes-snippet" data-notes title="${escapeHTML(full)}${more} — click to edit"><span class="notes-snippet-ico" aria-hidden="true">&#9776;</span>${escapeHTML(preview)}</span>`;
+}
+
+/**
  * Render the notes button shown in a row's meta cluster. Carries `data-notes`
  * so a delegated listener opens the editor, and reflects whether the task has
  * notes (filled glyph + count) or not (a subtle "+note" affordance).

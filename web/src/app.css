@@ -301,6 +301,13 @@ body {
 .title-wrap {
   min-width: 0;
   display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+.title-line {
+  min-width: 0;
+  display: flex;
   align-items: center;
   gap: var(--sp-2);
 }
@@ -1092,6 +1099,32 @@ kbd {
 }
 .notes-btn.has-notes .notes-n {
   color: var(--color-accent);
+}
+
+/* F31: faded one-line notes preview under the title. Click opens the editor. */
+.notes-snippet {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.notes-snippet:hover {
+  color: var(--color-text-dim);
+}
+.notes-snippet-ico {
+  flex: none;
+  font-size: 9px;
+  opacity: 0.7;
+}
+.row.is-done .notes-snippet {
+  opacity: 0.6;
 }
 
 .notes-pop {

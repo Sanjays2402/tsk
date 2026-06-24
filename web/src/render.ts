@@ -7,7 +7,7 @@
 
 import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
-import { renderNotesButton } from "./notes";
+import { renderNotesButton, renderNotesSnippet } from "./notes";
 import { blockedClass, renderBlockedBadge, type DepTask } from "./deps";
 import { highlightTitle } from "./highlight";
 
@@ -80,14 +80,20 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
   // F30: when a search query is active, mark the matched characters in the
   // title. highlightTitle escapes the title itself, so it's safe in innerHTML.
   const titleHTML = ctx.query ? highlightTitle(t.title, ctx.query) : escapeHTML(t.title);
+  // F31: a faded one-line notes preview under the title (empty when no notes)
+  // so context is recallable without opening the editor.
+  const notesSnippet = renderNotesSnippet(t.notes);
   return `
     <li class="${classes}" data-id="${t.id}" draggable="true">
       <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>
       <input type="checkbox" class="check" data-toggle aria-label="Toggle done" ${t.done ? "checked" : ""}>
       <div class="title-wrap">
-        ${pinBtn}
-        <span class="title" title="${escapeHTML(t.title)}">${titleHTML}</span>
-        <span class="id">#${t.id}</span>
+        <div class="title-line">
+          ${pinBtn}
+          <span class="title" title="${escapeHTML(t.title)}">${titleHTML}</span>
+          <span class="id">#${t.id}</span>
+        </div>
+        ${notesSnippet}
       </div>
       <div class="meta">
         ${depBadge}
