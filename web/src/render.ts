@@ -6,6 +6,7 @@
  */
 
 import type { Task } from "./api";
+import { groupIntoSections } from "./sections";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -82,28 +83,34 @@ export function priorityShort(p: string): string {
   }
 }
 
-/** Render the full list view (header summary + list + empty state). */
+/**
+ * Render the full list view, grouped into Overdue / Today / Upcoming / No Due
+ * / Done sections (F9). Empty sections are omitted. Each section carries a
+ * count so you can see the shape of your day at a glance.
+ */
 export function renderTasks(tasks: Task[], now: Date): string {
   if (tasks.length === 0) {
     return `
       <div class="empty">
         <div class="glyph">✓</div>
         <div>No tasks yet.</div>
-        <div class="hint">Add one from the CLI: <code>tsk add "buy milk"</code></div>
+        <div class="hint">Add one above, or from the CLI: <code>tsk add "buy milk"</code></div>
       </div>`;
   }
-  // Stable order: undone first (sorted by priority desc, then id),
-  // then done (by id). Mirrors the TUI's mental model.
-  const sorted = [...tasks].sort((a, b) => {
-    if (a.done !== b.done) return a.done ? 1 : -1;
-    const order = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
-    const pa = order[a.priority] ?? 9;
-    const pb = order[b.priority] ?? 9;
-    if (pa !== pb) return pa - pb;
-    return a.id - b.id;
-  });
-  const rows = sorted.map((t) => renderRow(t, now)).join("");
-  return `<ul class="list">${rows}</ul>`;
+  const sections = groupIntoSections(tasks, now);
+  return sections
+    .map((section) => {
+      const rows = section.tasks.map((t) => renderRow(t, now)).join("");
+      return `
+      <section class="section section-${section.key}" data-section="${section.key}">
+        <div class="section-head">
+          <span class="section-label">${escapeHTML(section.label)}</span>
+          <span class="section-count">${section.tasks.length}</span>
+        </div>
+        <ul class="list">${rows}</ul>
+      </section>`;
+    })
+    .join("");
 }
 
 /** Compute the "12 undone / 5 done" statusline summary. */

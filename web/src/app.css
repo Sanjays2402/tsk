@@ -167,6 +167,51 @@ body {
 .composer-preview .pill.due { color: var(--color-today); border-color: currentColor; }
 .composer-preview .pill.tag { color: var(--color-accent); border-color: var(--color-accent); }
 
+/* Sections (F9) — Overdue / Today / Upcoming / No Due / Done */
+[data-content] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1);
+}
+.section-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+.section-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-bg);
+  background: var(--color-border-strong);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+.section-overdue .section-label { color: var(--color-overdue); }
+.section-overdue .section-count { background: var(--color-overdue); color: #fff; }
+.section-today .section-label { color: var(--color-today); }
+.section-today .section-count { background: var(--color-today); color: #1c1408; }
+.section-done { opacity: 0.78; }
+.section-done .section-label { color: var(--color-text-faint); }
+
 /* Task list — flat container, tight rows */
 .list {
   list-style: none;
