@@ -12,6 +12,8 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderTasks, summarize } from "./render";
+import { parseQuickAdd, isSubmittable } from "./quickadd";
+import { renderComposerPreview } from "./composer";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -22,6 +24,22 @@ root.innerHTML = `
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
       <div class="file" data-file>—</div>
     </header>
+    <form class="composer" data-composer autocomplete="off">
+      <div class="composer-field" data-field>
+        <span class="plus" aria-hidden="true">+</span>
+        <input
+          class="composer-input"
+          data-input
+          type="text"
+          name="quickadd"
+          placeholder="Add a task…  try: ship release !high @fri #work"
+          aria-label="Add a task. Use !priority @due #tag for inline metadata."
+          spellcheck="false"
+        >
+        <button class="composer-submit" type="submit" data-submit tabindex="-1">Add</button>
+      </div>
+      <div class="composer-preview" data-preview></div>
+    </form>
     <div data-content>
       <div class="skeleton" aria-busy="true" aria-label="loading tasks">
         <div class="bar w-80"></div>
@@ -41,6 +59,10 @@ const els = {
   file: must<HTMLElement>("[data-file]"),
   dot: must<HTMLElement>("[data-dot]"),
   count: must<HTMLElement>("[data-count]"),
+  composer: must<HTMLFormElement>("[data-composer]"),
+  field: must<HTMLElement>("[data-field]"),
+  input: must<HTMLInputElement>("[data-input]"),
+  preview: must<HTMLElement>("[data-preview]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -133,6 +155,61 @@ async function toggleTask(id: number): Promise<void> {
   }
 }
 
+// --- F6: quick-add composer ------------------------------------------------
+
+/** Re-render the live token preview and toggle the submit-enabled state. */
+function updateComposerPreview(): void {
+  const parsed = parseQuickAdd(els.input.value);
+  els.preview.innerHTML = renderComposerPreview(parsed);
+  els.field.classList.toggle("can-submit", isSubmittable(parsed));
+}
+
+/**
+ * Submit the composer: parse the inline syntax, POST the task, then refresh.
+ * The input clears immediately (optimistic) so you can keep typing the next
+ * task without waiting on the round-trip. On error we restore the text and
+ * flash a status so nothing is lost.
+ */
+async function submitComposer(): Promise<void> {
+  const raw = els.input.value;
+  const parsed = parseQuickAdd(raw);
+  if (!isSubmittable(parsed)) return;
+
+  els.input.value = "";
+  updateComposerPreview();
+  setStatus("adding…", false);
+  try {
+    await api.createTask({
+      title: parsed.title,
+      priority: parsed.priority,
+      due: parsed.due,
+      tags: parsed.tags.length ? parsed.tags : undefined,
+    });
+    await refresh();
+  } catch (err) {
+    // Restore what they typed so a typo'd due date isn't lost.
+    els.input.value = raw;
+    updateComposerPreview();
+    setStatus(`add failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+    els.input.focus();
+  }
+}
+
+els.input.addEventListener("input", updateComposerPreview);
+els.composer.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitComposer();
+});
+// Escape clears + blurs the composer.
+els.input.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    els.input.value = "";
+    updateComposerPreview();
+    els.input.blur();
+  }
+});
+
 /**
  * Event delegation: a single listener on the content container catches every
  * checkbox flip in the list. Cheap and immune to row re-renders.
@@ -155,15 +232,22 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// `r` to refresh, when not focused in an input.
+// `r` refreshes, `n` focuses the composer — both ignored while typing.
+function isTypingTarget(el: EventTarget | null): boolean {
+  const t = el as HTMLElement | null;
+  return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+}
+
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "r" || e.metaKey || e.ctrlKey || e.altKey) return;
-  const target = e.target as HTMLElement | null;
-  if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
-    return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (isTypingTarget(e.target)) return;
+  if (e.key === "r") {
+    e.preventDefault();
+    refresh();
+  } else if (e.key === "n") {
+    e.preventDefault();
+    els.input.focus();
   }
-  e.preventDefault();
-  refresh();
 });
 
 // Escape hatches for upcoming slices.
@@ -173,6 +257,7 @@ declare global {
       refresh: () => Promise<void>;
       tasks: () => Task[];
       toggle: (id: number) => Promise<void>;
+      add: (line: string) => Promise<void>;
     };
   }
 }
@@ -180,6 +265,10 @@ window.tsk = {
   refresh,
   tasks: () => currentTasks,
   toggle: toggleTask,
+  add: async (line: string) => {
+    els.input.value = line;
+    await submitComposer();
+  },
 };
 
 refresh();

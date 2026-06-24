@@ -1,0 +1,12 @@
+{
+  "//": "Typecheck config for the node:test suites. Extends the app config but",
+  "//2": "adds Node types and lets tests import sibling .ts files with extensions",
+  "//3": "(the app build never sees these — web/tsconfig.json includes only src).",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"]
+}

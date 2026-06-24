@@ -66,6 +66,107 @@ body {
   user-select: all;
 }
 
+/* Quick-add composer — slim Linear-ish single line with a live token preview */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.composer-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-soft);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.composer-field:focus-within {
+  border-color: var(--color-accent);
+  box-shadow:
+    var(--shadow-soft),
+    0 0 0 3px var(--color-accent-soft);
+}
+.composer-field .plus {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  line-height: 1;
+  color: var(--color-text-faint);
+  user-select: none;
+}
+.composer-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.4;
+}
+.composer-input::placeholder {
+  color: var(--color-text-faint);
+}
+.composer-submit {
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+.composer-field.can-submit .composer-submit {
+  opacity: 1;
+  pointer-events: auto;
+}
+.composer-field.can-submit .composer-submit:hover {
+  background: var(--color-accent-strong);
+}
+.composer-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 18px;
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+.composer-preview:empty {
+  display: none;
+}
+.composer-preview .ghost {
+  font-family: var(--font-mono);
+  color: var(--color-text-faint);
+}
+.composer-preview .pill {
+  font-family: var(--font-mono);
+  padding: 1px var(--sp-2);
+  border-radius: 999px;
+  line-height: 1.5;
+  border: 1px solid var(--color-border-strong);
+}
+.composer-preview .pill.prio { color: var(--color-bg); border: none; }
+.composer-preview .pill.prio.urgent { background: var(--color-prio-urgent); color: #fff; }
+.composer-preview .pill.prio.high   { background: var(--color-prio-high);   color: #fff; }
+.composer-preview .pill.prio.medium { background: var(--color-prio-medium); color: #1c1408; }
+.composer-preview .pill.prio.low    { background: var(--color-prio-low);    color: #fff; }
+.composer-preview .pill.due { color: var(--color-today); border-color: currentColor; }
+.composer-preview .pill.tag { color: var(--color-accent); border-color: var(--color-accent); }
+
 /* Task list — flat container, tight rows */
 .list {
   list-style: none;
