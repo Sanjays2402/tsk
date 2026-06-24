@@ -103,6 +103,8 @@ export const api = {
   patchTask: (id: number, patch: TaskPatch) =>
     request<Task>("PATCH", `/api/tasks/${id}`, patch),
   toggleTask: (id: number) => request<Task>("POST", `/api/tasks/${id}/toggle`),
+  moveTask: (id: number, before: number) =>
+    request<TaskListResponse>("POST", `/api/tasks/${id}/move`, { before }),
   deleteTask: (id: number) =>
     request<{ ok: boolean; id: number }>("DELETE", `/api/tasks/${id}`),
   stats: () => request<Stats>("GET", "/api/stats"),

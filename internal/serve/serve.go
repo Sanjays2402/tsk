@@ -210,6 +210,14 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		s.toggleTask(w, id)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "move" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.moveTask(w, r, id)
+		return
+	}
 	if len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "unknown task subroute")
 		return
@@ -380,6 +388,36 @@ func (s *Server) toggleTask(w http.ResponseWriter, id int) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskToDTO(*st.ByID(id)))
+}
+
+// moveTask repositions task `id` to sit immediately before the task named in
+// the request body's "before" field (0 = move to the end), persisting the new
+// order to .tsk.md. The slice order IS the file order, so a drag-to-reorder in
+// the web UI round-trips straight through here. Returns the full reordered
+// list so the client can re-render authoritatively without a second fetch.
+func (s *Server) moveTask(w http.ResponseWriter, r *http.Request, id int) {
+	var in moveInputDTO
+	if err := decodeJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	st, err := s.loadStore()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !st.Move(id, in.Before) {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("cannot move: unknown task id (%d before %d)", id, in.Before))
+		return
+	}
+	if err := st.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"file":  st.Path,
+		"tasks": tasksToDTO(st.Tasks),
+	})
 }
 
 func (s *Server) deleteTask(w http.ResponseWriter, id int) {

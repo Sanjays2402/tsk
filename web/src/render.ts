@@ -58,7 +58,8 @@ export function renderRow(t: Task, now: Date): string {
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
     : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
   return `
-    <li class="${classes}" data-id="${t.id}">
+    <li class="${classes}" data-id="${t.id}" draggable="true">
+      <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>
       <input type="checkbox" class="check" data-toggle aria-label="Toggle done" ${t.done ? "checked" : ""}>
       <div class="title-wrap">
         <span class="title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>

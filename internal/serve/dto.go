@@ -41,6 +41,13 @@ type taskPatchDTO struct {
 	Done     *bool     `json:"done,omitempty"`
 }
 
+// moveInputDTO is the body shape for POST /api/tasks/:id/move. Before is the
+// id of the task the moved task should sit immediately in front of; 0 means
+// "move to the end of the list".
+type moveInputDTO struct {
+	Before int `json:"before"`
+}
+
 // statsDTO mirrors the CLI stats but as a stable JSON schema.
 type statsDTO struct {
 	Total      int           `json:"total"`

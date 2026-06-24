@@ -165,6 +165,67 @@ func (s *Store) ReplaceTasks(tasks []model.Task) {
 	s.Tasks = tasks
 }
 
+// Move repositions the task with id `moved` so it sits immediately BEFORE the
+// task with id `before`, preserving the relative order of every other task.
+// The on-disk .tsk.md is rendered in s.Tasks order, so this is exactly what a
+// drag-to-reorder needs: the slice order IS the file order.
+//
+// Semantics:
+//   - before == 0 moves `moved` to the very end of the list.
+//   - before == moved is a no-op (you can't drop a task before itself).
+//   - an unknown `moved` or `before` id leaves the slice untouched and
+//     returns false, so callers can surface a 404 rather than silently
+//     reshuffling.
+//
+// Returns true when a move actually happened (or was a legitimate no-op on a
+// known id), false when an id was not found.
+func (s *Store) Move(moved, before int) bool {
+	from := s.indexOf(moved)
+	if from < 0 {
+		return false
+	}
+	// Dropping a task before itself, or before "nothing different", is a no-op
+	// but still a success — the caller asked for a known id.
+	if moved == before {
+		return true
+	}
+	var insertAt int
+	if before == 0 {
+		insertAt = len(s.Tasks) // append to the end
+	} else {
+		to := s.indexOf(before)
+		if to < 0 {
+			return false
+		}
+		insertAt = to
+	}
+	task := s.Tasks[from]
+	// Remove first, then compute the post-removal insertion index.
+	rest := append(s.Tasks[:from:from], s.Tasks[from+1:]...)
+	if from < insertAt {
+		insertAt-- // the removal shifted everything after `from` left by one
+	}
+	if insertAt > len(rest) {
+		insertAt = len(rest)
+	}
+	out := make([]model.Task, 0, len(s.Tasks))
+	out = append(out, rest[:insertAt]...)
+	out = append(out, task)
+	out = append(out, rest[insertAt:]...)
+	s.Tasks = out
+	return true
+}
+
+// indexOf returns the slice index of the task with the given id, or -1.
+func (s *Store) indexOf(id int) int {
+	for i := range s.Tasks {
+		if s.Tasks[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // SetDone toggles the completion state of the task with the given ID.
 //
 // As a side effect, transitioning to done CLEARS any in-progress

@@ -60,6 +60,7 @@ import {
   renderBulkBar,
   type BulkState,
 } from "./bulkselect";
+import { computeReorder, dropPosForY, type DropPos } from "./reorder";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -345,6 +346,107 @@ async function bulkDelete(): Promise<void> {
   } catch (err) {
     await refresh();
     setStatus(`bulk delete failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
+// --- F17: drag-to-reorder --------------------------------------------------
+
+/** The id of the row currently being dragged, or null. */
+let draggingId: number | null = null;
+/** The row currently showing a drop indicator, so we can clear it cheaply. */
+let dropRow: HTMLElement | null = null;
+
+/** Clear any drop-before/drop-after indicator from the last hovered row. */
+function clearDropIndicator(): void {
+  if (dropRow) {
+    dropRow.classList.remove("drop-before", "drop-after");
+    dropRow = null;
+  }
+}
+
+/** Begin a drag: remember the row id and mark it visually. */
+function onDragStart(e: DragEvent): void {
+  const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-id]");
+  if (!row) return;
+  // An in-progress inline edit / due picker shouldn't be draggable.
+  if (editing || duePicking) {
+    e.preventDefault();
+    return;
+  }
+  const id = Number(row.dataset.id);
+  if (!Number.isFinite(id) || id <= 0) return;
+  draggingId = id;
+  row.classList.add("is-dragging");
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    // Some browsers require data to be set for a drag to start.
+    e.dataTransfer.setData("text/plain", String(id));
+  }
+}
+
+/** While dragging over a row, show which edge the drop will land against. */
+function onDragOver(e: DragEvent): void {
+  if (draggingId === null) return;
+  const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-id]");
+  if (!row) return;
+  const overId = Number(row.dataset.id);
+  if (overId === draggingId) {
+    clearDropIndicator();
+    return;
+  }
+  e.preventDefault(); // allow the drop
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+  const rect = row.getBoundingClientRect();
+  const pos: DropPos = dropPosForY(rect.top, rect.height, e.clientY);
+  if (dropRow !== row) clearDropIndicator();
+  dropRow = row;
+  row.classList.toggle("drop-before", pos === "before");
+  row.classList.toggle("drop-after", pos === "after");
+}
+
+/** Complete a drop: compute the new order, optimistically apply, persist. */
+function onDrop(e: DragEvent): void {
+  if (draggingId === null) return;
+  const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-id]");
+  if (!row) return;
+  e.preventDefault();
+  const targetId = Number(row.dataset.id);
+  const rect = row.getBoundingClientRect();
+  const pos: DropPos = dropPosForY(rect.top, rect.height, e.clientY);
+  const moved = draggingId;
+  const order = currentTasks.map((t) => t.id);
+  const result = computeReorder(order, moved, targetId, pos);
+  if (result.changed) commitReorder(moved, result.before, result.order);
+}
+
+/** Reset drag visuals once the gesture ends (drop, cancel, or escape). */
+function onDragEnd(): void {
+  draggingId = null;
+  clearDropIndicator();
+  els.content.querySelectorAll<HTMLElement>(".is-dragging").forEach((r) => r.classList.remove("is-dragging"));
+}
+
+/**
+ * Persist a reorder. Strategy: reorder currentTasks locally to match the new
+ * id order (optimistic), render, then POST the move. On success, replace the
+ * model with the server's authoritative ordered list. On error, refetch to
+ * recover the true order.
+ */
+async function commitReorder(moved: number, before: number, newOrder: number[]): Promise<void> {
+  const byId = new Map(currentTasks.map((t) => [t.id, t]));
+  const reordered = newOrder.map((id) => byId.get(id)).filter((t): t is Task => t !== undefined);
+  // Keep any tasks not in newOrder (shouldn't happen, but be safe) at the end.
+  for (const t of currentTasks) if (!newOrder.includes(t.id)) reordered.push(t);
+  currentTasks = reordered;
+  render();
+  try {
+    const { tasks } = await api.moveTask(moved, before);
+    currentTasks = tasks;
+    render();
+  } catch (err) {
+    await refresh();
+    setStatus(`reorder failed: ${formatErr(err)}`, true);
     setTimeout(() => setStatus("ready", false), 4_000);
   }
 }
@@ -1044,6 +1146,17 @@ els.content.addEventListener("dblclick", (e) => {
   enterEditMode(id);
 });
 
+// F17: drag-to-reorder. Delegated on the content container so it survives
+// row re-renders. The whole row is draggable; the handle is just an affordance.
+els.content.addEventListener("dragstart", onDragStart);
+els.content.addEventListener("dragover", onDragOver);
+els.content.addEventListener("drop", onDrop);
+els.content.addEventListener("dragend", onDragEnd);
+els.content.addEventListener("dragleave", (e) => {
+  // Only clear when actually leaving the content area, not crossing rows.
+  if (!els.content.contains(e.relatedTarget as Node | null)) clearDropIndicator();
+});
+
 // Pick up external edits (CLI / TUI / hand-edit) when the tab regains focus.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
@@ -1187,6 +1300,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["d", "Set / change the due date"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
+  ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
   ["/", "Focus the filter box"],

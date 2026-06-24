@@ -226,7 +226,7 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
@@ -666,7 +666,7 @@ kbd {
 
 @media (max-width: 640px) {
   .app { padding: var(--sp-5) var(--sp-3) var(--sp-8); }
-  .row { grid-template-columns: auto 1fr; }
+  .row { grid-template-columns: auto auto 1fr; }
   .row .meta { grid-column: 1 / -1; padding-left: 28px; }
 }
 
@@ -1303,4 +1303,43 @@ kbd {
 /* Lift the list a touch so the bar never hides the last rows. */
 .app.has-bulk .layout {
   padding-bottom: var(--sp-12);
+}
+
+/* F17: drag-to-reorder — handle, dragging row, and drop indicator */
+.drag-handle {
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: var(--fs-md);
+  line-height: 1;
+  cursor: grab;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+  user-select: none;
+}
+.row:hover .drag-handle,
+.row.is-selected .drag-handle {
+  opacity: 1;
+}
+.drag-handle:hover {
+  color: var(--color-accent);
+}
+.drag-handle:active {
+  cursor: grabbing;
+}
+.row.is-dragging {
+  opacity: 0.45;
+  background: var(--color-surface-hi);
+}
+/* Drop indicators: a bright amber rule on the edge the row will land against. */
+.row.drop-before {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+.row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+/* On touch / no-hover devices the handle stays visible so reorder is reachable. */
+@media (hover: none) {
+  .drag-handle { opacity: 0.6; }
 }

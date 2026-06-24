@@ -74,7 +74,11 @@ function comparePriority(a: TaskLike, b: TaskLike): number {
   const pa = PRIORITY_RANK[a.priority] ?? 9;
   const pb = PRIORITY_RANK[b.priority] ?? 9;
   if (pa !== pb) return pa - pb;
-  return a.id - b.id;
+  // Equal priority: preserve the INPUT (file) order. groupIntoSections is fed
+  // tasks in .tsk.md order, and Array.prototype.sort is stable, so returning 0
+  // here keeps same-priority peers in file order — which is what makes
+  // drag-to-reorder (F17) visibly "stick" within a section.
+  return 0;
 }
 
 function compareDone(a: TaskLike, b: TaskLike): number {

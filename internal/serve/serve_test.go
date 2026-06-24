@@ -352,3 +352,72 @@ func TestParseDateMethodNotAllowed(t *testing.T) {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }
+
+func TestMoveReordersAndPersists(t *testing.T) {
+	s, file := newTestServer(t)
+	h := s.Handler()
+	// Seed three tasks: ids 1,2,3 in creation order.
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "alpha"})
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "bravo"})
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "charlie"})
+
+	// Drag #3 (charlie) to sit before #1 (alpha) -> charlie, alpha, bravo.
+	rec, body := do(t, h, http.MethodPost, "/api/tasks/3/move", map[string]any{"before": 1})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	tasks, ok := body["tasks"].([]any)
+	if !ok || len(tasks) != 3 {
+		t.Fatalf("move response tasks bad: %v", body)
+	}
+	first := tasks[0].(map[string]any)
+	if first["title"] != "charlie" {
+		t.Fatalf("after move, first title = %v, want charlie", first["title"])
+	}
+
+	// Confirm the new order is on disk in file order.
+	st, err := store.Load(file)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(st.Tasks) != 3 || st.Tasks[0].Title != "charlie" || st.Tasks[1].Title != "alpha" {
+		t.Fatalf("disk order wrong: %+v", st.Tasks)
+	}
+}
+
+func TestMoveToEndWithZeroBefore(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "a"})
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "b"})
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "c"})
+
+	// before:0 means move #1 (a) to the very end -> b, c, a.
+	rec, body := do(t, h, http.MethodPost, "/api/tasks/1/move", map[string]any{"before": 0})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move status = %d", rec.Code)
+	}
+	tasks := body["tasks"].([]any)
+	last := tasks[len(tasks)-1].(map[string]any)
+	if last["title"] != "a" {
+		t.Fatalf("after move-to-end, last title = %v, want a", last["title"])
+	}
+}
+
+func TestMoveUnknownIDReturns404(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "only"})
+	rec, _ := do(t, h, http.MethodPost, "/api/tasks/99/move", map[string]any{"before": 1})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestMoveMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServer(t)
+	rec, _ := do(t, s.Handler(), http.MethodGet, "/api/tasks/1/move", nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
