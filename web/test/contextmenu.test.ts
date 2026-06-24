@@ -18,6 +18,7 @@ test("menuItemsFor lists every per-row action in order", () => {
     "edit",
     "due",
     "notes",
+    "deps",
     "pin",
     "prio-up",
     "prio-down",
@@ -44,7 +45,7 @@ test("delete is danger and divided", () => {
 
 test("renderContextMenu carries an action hook per item", () => {
   const html = renderContextMenu(undone);
-  for (const a of ["toggle", "edit", "due", "notes", "pin", "prio-up", "prio-down", "delete"]) {
+  for (const a of ["toggle", "edit", "due", "notes", "deps", "pin", "prio-up", "prio-down", "delete"]) {
     assert.ok(html.includes(`data-row-action="${a}"`), `missing ${a}`);
   }
   assert.match(html, /role="menu"/);

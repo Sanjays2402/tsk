@@ -16,6 +16,7 @@ export type RowAction =
   | "edit"
   | "due"
   | "notes"
+  | "deps"
   | "pin"
   | "prio-up"
   | "prio-down"
@@ -50,6 +51,7 @@ export function menuItemsFor(task: MenuTask): MenuItem[] {
     { action: "edit", label: "Edit title", hint: "e" },
     { action: "due", label: "Set due date", hint: "d" },
     { action: "notes", label: "Edit notes", hint: "i" },
+    { action: "deps", label: "Edit blockers", hint: "b" },
     { action: "pin", label: task.pinned ? "Unpin" : "Pin to top", hint: "p", divider: true },
     { action: "prio-up", label: "Raise priority", hint: "]" },
     { action: "prio-down", label: "Lower priority", hint: "[" },

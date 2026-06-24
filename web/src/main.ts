@@ -91,6 +91,16 @@ import {
   type RowAction,
 } from "./contextmenu";
 import {
+  validateAddDep,
+  currentDeps,
+  withDepAdded,
+  withDepRemoved,
+  depCandidates,
+  renderDepEditor,
+  renderDepCandidates,
+  type DepGraphTask,
+} from "./depedit";
+import {
   filterCommands,
   moveIndex,
   clampIndex,
@@ -674,6 +684,9 @@ function runRowAction(action: RowAction, id: number): void {
     case "notes":
       openNotesEditor(id);
       break;
+    case "deps":
+      openDepEditor(id);
+      break;
     case "pin":
       togglePin(id);
       break;
@@ -781,8 +794,8 @@ function clearDropIndicator(): void {
 function onDragStart(e: DragEvent): void {
   const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-id]");
   if (!row) return;
-  // An in-progress inline edit / due picker / notes editor shouldn't be draggable.
-  if (editing || duePicking || notesEditing) {
+  // An in-progress inline edit / due picker / notes editor / dep editor shouldn't be draggable.
+  if (editing || duePicking || notesEditing || depEditing) {
     e.preventDefault();
     return;
   }
@@ -1819,6 +1832,185 @@ async function commitNotes(id: number, notes: string): Promise<void> {
   }
 }
 
+// --- F39: dependency editor (add/remove blockers) --------------------------
+
+/** True while the dependency editor popover is mounted. */
+let depEditing = false;
+
+/** Project currentTasks down to the minimal graph shape the editor needs. */
+function depGraph(): DepGraphTask[] {
+  return currentTasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    done: t.done,
+    depends_on: t.depends_on,
+  }));
+}
+
+/**
+ * F39: open the "blocked by" editor for a task. Shows the current blockers as
+ * removable chips and an add-input with a candidate dropdown (filtered to
+ * acyclic, non-self, not-yet-added tasks). Adds/removes mutate a local working
+ * set; each change PATCHes depends_on (optimistic + rollback like the other
+ * editors). Self-refs and cycles are refused client-side before any request.
+ */
+function openDepEditor(id: number): void {
+  if (depEditing || editing || duePicking || notesEditing) return;
+  const row = els.content.querySelector<HTMLElement>(`[data-id="${id}"]`);
+  if (!row) return;
+  if (!currentTasks.find((t) => t.id === id)) return;
+
+  depEditing = true;
+  closeContextMenu();
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const pop = document.createElement("div");
+  pop.className = "depedit-pop";
+  pop.setAttribute("data-depedit-pop", "");
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "Edit blockers");
+  pop.innerHTML = renderDepEditor(depGraph(), id);
+  row.appendChild(pop);
+
+  const input = pop.querySelector<HTMLInputElement>("[data-dep-input]")!;
+  const acList = pop.querySelector<HTMLElement>("[data-dep-ac]")!;
+  let candIndex = 0;
+  let candidates: DepGraphTask[] = [];
+  input.focus();
+
+  let settled = false;
+  const close = (): void => {
+    if (settled) return;
+    settled = true;
+    depEditing = false;
+    pop.remove();
+    document.removeEventListener("click", onAway, true);
+    render();
+    flushPendingLiveRefresh();
+  };
+
+  /** Repaint just the chips + empty-state after a working-set change. */
+  const repaintChips = (): void => {
+    const fresh = renderDepEditor(depGraph(), id);
+    // Replace everything above the input row by re-rendering and swapping the
+    // chips region. Simplest: re-render the whole pop body, re-grab refs.
+    pop.innerHTML = fresh;
+    wire();
+  };
+
+  const paintCandidates = (): void => {
+    const ac = pop.querySelector<HTMLElement>("[data-dep-ac]")!;
+    ac.innerHTML = renderDepCandidates(candidates, candIndex);
+    ac.hidden = candidates.length === 0;
+  };
+
+  const refreshCandidates = (): void => {
+    candidates = depCandidates(depGraph(), id, input.value);
+    candIndex = Math.min(candIndex, Math.max(0, candidates.length - 1));
+    paintCandidates();
+  };
+
+  const addDep = async (dep: number): Promise<void> => {
+    const check = validateAddDep(depGraph(), id, dep);
+    if (!check.ok) {
+      setStatus(check.message, true);
+      setTimeout(() => setStatus("ready", false), 3_000);
+      return;
+    }
+    const next = withDepAdded(currentDeps(depGraph(), id), dep);
+    input.value = "";
+    await commitDeps(id, next);
+    repaintChips();
+    refreshCandidates();
+  };
+
+  const removeDep = async (dep: number): Promise<void> => {
+    const next = withDepRemoved(currentDeps(depGraph(), id), dep);
+    await commitDeps(id, next);
+    repaintChips();
+    refreshCandidates();
+  };
+
+  /** (Re)bind the listeners after a body re-render. */
+  function wire(): void {
+    const freshInput = pop.querySelector<HTMLInputElement>("[data-dep-input]")!;
+    freshInput.focus();
+    freshInput.addEventListener("input", () => {
+      candIndex = 0;
+      candidates = depCandidates(depGraph(), id, freshInput.value);
+      paintCandidates();
+    });
+    freshInput.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "ArrowDown" && candidates.length) {
+        e.preventDefault();
+        candIndex = moveIndex(candIndex, candidates.length, 1);
+        paintCandidates();
+      } else if (e.key === "ArrowUp" && candidates.length) {
+        e.preventDefault();
+        candIndex = moveIndex(candIndex, candidates.length, -1);
+        paintCandidates();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        // Prefer the highlighted candidate; else parse a bare #id / id.
+        const chosen = candidates[candIndex];
+        if (chosen) {
+          addDep(chosen.id);
+        } else {
+          const n = parseInt(freshInput.value.replace(/^#/, "").trim(), 10);
+          if (Number.isFinite(n) && n > 0) addDep(n);
+        }
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
+    });
+    pop.querySelectorAll<HTMLElement>("[data-dep-remove]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        removeDep(Number(btn.dataset.depRemove));
+      });
+    });
+    const ac = pop.querySelector<HTMLElement>("[data-dep-ac]")!;
+    ac.addEventListener("mousedown", (e) => {
+      const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-dep-cand]");
+      if (!item) return;
+      e.preventDefault();
+      addDep(Number(item.dataset.depCand));
+    });
+  }
+
+  // Initial wire + candidates.
+  void acList;
+  wire();
+  candIndex = 0;
+  refreshCandidates();
+
+  const onAway = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) close();
+  };
+  setTimeout(() => document.addEventListener("click", onAway, true), 0);
+}
+
+/** Persist a new depends_on set via PATCH, optimistic with rollback (F39). */
+async function commitDeps(id: number, deps: number[]): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  currentTasks[idx] = { ...before, depends_on: deps.length ? deps : undefined };
+  // Don't full-render (would tear down the open popover); just refresh stats.
+  refreshStats();
+  try {
+    const confirmed = await api.patchTask(id, { depends_on: deps });
+    currentTasks[idx] = confirmed;
+  } catch (err) {
+    currentTasks[idx] = before;
+    setStatus(`blockers failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
 // --- F6: quick-add composer ------------------------------------------------
 /** Re-render the live token preview and toggle the submit-enabled state. */
 function updateComposerPreview(): void {
@@ -2475,7 +2667,7 @@ els.content.addEventListener("dragleave", (e) => {
 els.content.addEventListener("contextmenu", (e) => {
   const target = e.target as HTMLElement | null;
   if (!target) return;
-  if (target.closest("input, textarea, [data-due-pop], [data-notes-pop]")) return;
+  if (target.closest("input, textarea, [data-due-pop], [data-notes-pop], [data-depedit-pop]")) return;
   const row = target.closest<HTMLElement>("[data-id]");
   if (!row) return;
   const id = Number(row.dataset.id);
@@ -2671,6 +2863,13 @@ document.addEventListener("keydown", (e) => {
         openNotesEditor(nav.selectedId);
       }
       break;
+    case "b":
+      // F39: edit blockers (dependency editor) on the selected row.
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        openDepEditor(nav.selectedId);
+      }
+      break;
     case "p":
       if (nav.selectedId !== null) {
         e.preventDefault();
@@ -2743,6 +2942,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["e", "Edit the selected task's title"],
   ["d", "Set / change the due date"],
   ["i", "Edit the selected task's notes"],
+  ["b", "Edit the selected task's blockers"],
   ["p", "Pin / unpin the selected task"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
@@ -2852,6 +3052,14 @@ function buildCommands(): Command[] {
       disabled: !hasSel,
     },
     {
+      id: "deps",
+      title: "Edit blockers on selected",
+      group: "Task",
+      keywords: ["depend", "depends", "blocker", "blocked", "prereq", "prerequisite"],
+      hint: "b",
+      disabled: !hasSel,
+    },
+    {
       id: "pin",
       title: selPinned ? "Unpin selected task" : "Pin selected task",
       group: "Task",
@@ -2922,6 +3130,9 @@ function runCommand(id: string): void {
       break;
     case "notes":
       if (sel !== null) openNotesEditor(sel);
+      break;
+    case "deps":
+      if (sel !== null) openDepEditor(sel);
       break;
     case "pin":
       if (sel !== null) togglePin(sel);
