@@ -98,6 +98,7 @@ func newGraphCmd() *cobra.Command {
 		includePinned        bool
 		includeAll           bool
 		filterCompletedSince string
+		filterStartedSince   string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -206,6 +207,8 @@ Examples:
   tsk graph --reachable 7 --json --include-pinned                   # add per-node 'pinned' boolean (high-importance bookmark axis)
   tsk graph --reachable 7 --json --include-all                      # full-fat envelope: every opt-in field (priority+tags+due+completed+started+pinned)
   tsk graph --reachable 7 --json --filter-completed-since 7d        # only nodes completed in the last 7 days (recency-trimmed envelope)
+  tsk graph --reachable 7 --json --filter-started-since 24h         # only nodes started in the last day (in-progress recency)
+  tsk graph --reachable 7 --json --filter-completed-since 7d --filter-started-since 7d  # UNION: anything actively moving
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -323,6 +326,36 @@ Examples:
 				filterCompletedDur = d
 				filterCompletedActive = true
 			}
+			// --filter-started-since trims the subgraph to nodes
+			// whose task is currently in-progress AND was started
+			// within the recency window (e.g. 7d, 24h). The OPEN
+			// sister of --filter-completed-since: completed-since
+			// surfaces RECENTLY-FINISHED work, started-since
+			// surfaces RECENTLY-BEGUN work. Together they enable
+			// "what's active in this dep chain?" reports —
+			// composing both gives the UNION of recent activity
+			// at either end of the work-state pair. Same
+			// validation contract as --filter-completed-since
+			// (requires --json, positive duration only, empty
+			// value is no-op). The root id is always preserved
+			// regardless of the filter, matching the symmetric
+			// semantic completed-since uses.
+			var filterStartedDur time.Duration
+			filterStartedActive := false
+			if strings.TrimSpace(filterStartedSince) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-started-since only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterStartedSince))
+				if err != nil {
+					return usageErrorf("invalid --filter-started-since %q: %v", filterStartedSince, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-started-since must be a positive duration, got %q", filterStartedSince)
+				}
+				filterStartedDur = d
+				filterStartedActive = true
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -392,7 +425,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -470,7 +503,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -496,6 +529,7 @@ Examples:
 	cmd.Flags().BoolVar(&includeAll, "include-all", false, "for --json: turn on EVERY --include-* opt-in field at once (priority, tags, due, completed, started, pinned). Ergonomic shortcut for \"give me the full-fat envelope\" use cases — pre-commit dashboards, comprehensive snapshot tests, completion-velocity + elapsed-time analyses that need every axis. Equivalent to passing --include-priority --include-tags --include-due --include-completed --include-started --include-pinned together; setting --include-all alongside the individual flags is idempotent (true OR true == true). The default stays minimal so existing snapshot fixtures and jq pipelines that don't need the extra fields keep their byte-identical historical shape. Useful when scripting `jq` queries that join multiple axes (e.g. `select(.priority == \"urgent\" and .due < \"2026-07-01\" and .completed == null and .pinned)`) without remembering each opt-in flag name.")
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	cmd.Flags().StringVar(&filterCompletedSince, "filter-completed-since", "", "for --json: trim the subgraph envelope to nodes whose task was completed within this duration window (e.g. 7d, 24h, 2w, 1h30m). The ROOT id is always kept (the consumer asked about THIS root); every other node must be done AND completed-within-window to survive. Edges touching a filtered-out node are dropped (no point linking to a node we removed). Useful for completion-velocity dashboards (\"what shipped this week in this dep chain?\"), recent-impact reports (\"which prereqs just closed?\"), and change-summary CI gates. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append (each appended record reflects the filter at call time). Empty (default) = no filter. The envelope gains a top-level `filter_completed_since` field naming the window in canonical humanized form when active, so scripts can distinguish a filtered from un-filtered envelope.")
+	cmd.Flags().StringVar(&filterStartedSince, "filter-started-since", "", "for --json: trim the subgraph envelope to nodes whose task is currently in-progress AND was started within this duration window (e.g. 7d, 24h, 2w, 1h30m). The OPEN sister of --filter-completed-since: completed-since surfaces RECENTLY-FINISHED work, started-since surfaces RECENTLY-BEGUN work. Useful for \"what's actively in flight in this dep chain?\" reports, currently-working impact analysis, and pomodoro/elapsed-time dashboards. The ROOT id is always kept (same semantic as completed-since). Edges touching a filtered-out node are dropped. When BOTH --filter-completed-since and --filter-started-since are set, the composition semantic is UNION (logical OR) — a node survives if EITHER recently-completed OR recently-started. This is the only useful composition since done and in-progress are mutually exclusive states on the same task. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append. Empty (default) = no filter. The envelope gains a top-level `filter_started_since` field naming the window in canonical humanized form when active, so scripts can distinguish either filter (or both) by which marker fields are present.")
 	return cmd
 }
 
@@ -1371,6 +1405,7 @@ type subgraphDoc struct {
 	Edges                []subgraphEdge `json:"edges"`
 	Filter               string         `json:"filter,omitempty"`
 	FilterCompletedSince string         `json:"filter_completed_since,omitempty"`
+	FilterStartedSince   string         `json:"filter_started_since,omitempty"`
 }
 
 // emitSubgraphJSON renders the stable JSON envelope for the
@@ -1446,7 +1481,7 @@ type subgraphDoc struct {
 // started surfaces work-began time. Useful for elapsed-time
 // analysis on currently-working tasks and "what's in flight in
 // this chain?" gates. Composes with all other --include-* opt-ins.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool, filterCompletedActive bool, filterCompletedDur time.Duration) error {
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool, filterCompletedActive bool, filterCompletedDur time.Duration, filterStartedActive bool, filterStartedDur time.Duration) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1461,18 +1496,31 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	// --filter-completed-since filtering: keep only nodes whose
-	// task is done AND completed within the window. The root id
-	// is ALWAYS kept regardless of the filter — the consumer
-	// asked about THIS root; the answer "your root isn't itself
-	// recently-completed but here's the recently-completed
-	// subset around it" is more useful than "your root
-	// disappeared from its own subgraph". Dangling-edge nodes
-	// (no task) are dropped under any active filter (they have
-	// no completed timestamp to evaluate).
+	// --filter-completed-since / --filter-started-since filtering:
+	// each recency filter trims to nodes matching its predicate
+	// (done+recently-completed for completed-since, in-progress+
+	// recently-started for started-since). The ROOT id is ALWAYS
+	// kept regardless of either filter — the consumer asked about
+	// THIS root; the answer "your root isn't itself recently-active
+	// but here's the recently-active subset around it" is more
+	// useful than "your root disappeared from its own subgraph".
+	// Dangling-edge nodes (no task) are dropped under any active
+	// filter (they have no timestamps to evaluate).
+	//
+	// Composition semantic when BOTH filters are active: UNION
+	// (logical OR). A node survives if EITHER recently-completed
+	// OR recently-started. This matches the "what's actively
+	// moving?" use case the two filters were designed for — done
+	// and in-progress are mutually exclusive states on the same
+	// task (tsk done clears Started; tsk start requires not-done),
+	// so an AND interpretation would always yield zero nodes
+	// (no single task satisfies both at once). UNION is the only
+	// composition that produces a useful result.
 	kept := make(map[int]bool, len(ids))
-	if filterCompletedActive {
-		cutoff := time.Now().Add(-filterCompletedDur)
+	if filterCompletedActive || filterStartedActive {
+		now := time.Now()
+		completedCutoff := now.Add(-filterCompletedDur)
+		startedCutoff := now.Add(-filterStartedDur)
 		for _, id := range ids {
 			if id == rootID {
 				kept[id] = true
@@ -1482,13 +1530,18 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 			if t == nil {
 				continue
 			}
-			if !t.Done || t.Completed == nil {
-				continue
+			// Apply each active filter; node survives if it
+			// matches AT LEAST ONE active predicate (UNION).
+			matched := false
+			if filterCompletedActive && t.Done && t.Completed != nil && !t.Completed.Before(completedCutoff) {
+				matched = true
 			}
-			if t.Completed.Before(cutoff) {
-				continue
+			if !matched && filterStartedActive && t.Started != nil && !t.Started.Before(startedCutoff) {
+				matched = true
 			}
-			kept[id] = true
+			if matched {
+				kept[id] = true
+			}
 		}
 		// Trim the ids slice to the kept set so the node-render
 		// loop below only emits surviving nodes.
@@ -1583,12 +1636,13 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 	jsonEdges := make([]subgraphEdge, 0, len(edges))
 	for _, e := range edges {
 		// Drop edges whose endpoints didn't survive the
-		// completed-since filter. When the filter is inactive
-		// kept is empty AND filterCompletedActive is false, so
-		// we accept every edge. When active, both endpoints must
-		// be in the kept set (otherwise the edge points at a
-		// non-rendered node and would be meaningless).
-		if filterCompletedActive {
+		// completed-since / started-since filter. When neither
+		// filter is active, kept is empty AND both flags are
+		// false, so we accept every edge. When either is active,
+		// both endpoints must be in the kept set (otherwise the
+		// edge points at a non-rendered node and would be
+		// meaningless).
+		if filterCompletedActive || filterStartedActive {
 			if !kept[e.from] || !kept[e.to] {
 				continue
 			}
@@ -1612,6 +1666,13 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		// for consistency with --since reporting elsewhere
 		// (depend --pending, wip --stale).
 		doc.FilterCompletedSince = humanizeDuration(filterCompletedDur)
+	}
+	if filterStartedActive {
+		// Sister marker for --filter-started-since. Same
+		// canonical humanized form as FilterCompletedSince so
+		// scripts can detect either / both filters and
+		// distinguish them by which field is present.
+		doc.FilterStartedSince = humanizeDuration(filterStartedDur)
 	}
 	enc := json.NewEncoder(w)
 	if !compact {
