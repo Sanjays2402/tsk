@@ -96,3 +96,80 @@ export function arraysEqual(a: number[], b: number[]): boolean {
 export function dropPosForY(top: number, height: number, clientY: number): DropPos {
   return clientY < top + height / 2 ? "before" : "after";
 }
+
+/**
+ * F40: compute a reorder that's CONSTRAINED to a single section (e.g. Pinned).
+ * Dragging within a section should only shuffle that section's members; the
+ * `before` id we persist must therefore be resolved against the GLOBAL file
+ * order so `store.Move` drops the task in the right absolute slot, while the
+ * *visible* result only moves the dragged row among its section peers.
+ *
+ * Inputs:
+ *   - globalOrder: every task id in file order (what /move rewrites)
+ *   - sectionIds:  the ids currently shown in this section, in display order
+ *   - moved/target/pos: the drag gesture, where target is a section peer
+ *
+ * Strategy: compute the new SECTION order first (simple, local), then translate
+ * "moved now sits in front of X within the section" into a global `before`:
+ *   - if moved lands before some section peer P, persist before:P
+ *   - if moved lands at the section's end, persist before: the id of whatever
+ *     globally follows the section's last member (or 0 = file end)
+ * The moved id keeps all NON-section tasks exactly where they were globally.
+ */
+export function computeSectionReorder(
+  globalOrder: number[],
+  sectionIds: number[],
+  moved: number,
+  target: number,
+  pos: DropPos,
+): ReorderResult {
+  const from = sectionIds.indexOf(moved);
+  const ti = sectionIds.indexOf(target);
+  if (from < 0 || ti < 0 || moved === target) {
+    return { order: globalOrder.slice(), before: moved, changed: false };
+  }
+  // New SECTION order after the move.
+  const insertBeforeIdx = pos === "before" ? ti : ti + 1;
+  const withoutMoved = sectionIds.filter((id) => id !== moved);
+  // Adjust the insert index for the removal of `moved` when it preceded target.
+  const adj = from < insertBeforeIdx ? insertBeforeIdx - 1 : insertBeforeIdx;
+  const nextSection = [
+    ...withoutMoved.slice(0, adj),
+    moved,
+    ...withoutMoved.slice(adj),
+  ];
+  // The section peer the moved id now sits in front of (or null = section end).
+  const posInSection = nextSection.indexOf(moved);
+  const nextPeer = posInSection + 1 < nextSection.length ? nextSection[posInSection + 1] : null;
+
+  // Translate to a global `before`.
+  let beforeId: number;
+  if (nextPeer !== null) {
+    beforeId = nextPeer;
+  } else {
+    // Moved to the END of the section: persist before whatever globally follows
+    // the section's last (non-moved) member; 0 if that's the file end.
+    const lastPeer = withoutMoved[withoutMoved.length - 1];
+    const gi = globalOrder.indexOf(lastPeer);
+    beforeId = gi >= 0 && gi + 1 < globalOrder.length ? globalOrder[gi + 1] : 0;
+    // Guard: if the global-next is the moved id itself, look one further.
+    if (beforeId === moved) {
+      beforeId = gi + 2 < globalOrder.length ? globalOrder[gi + 2] : 0;
+    }
+  }
+  if (beforeId === moved) {
+    return { order: globalOrder.slice(), before: moved, changed: false };
+  }
+  // Build the resulting GLOBAL order: remove moved, insert before beforeId.
+  const without = globalOrder.filter((id) => id !== moved);
+  let insertAt: number;
+  if (beforeId === 0) {
+    insertAt = without.length;
+  } else {
+    insertAt = without.indexOf(beforeId);
+    if (insertAt < 0) insertAt = without.length;
+  }
+  const next = [...without.slice(0, insertAt), moved, ...without.slice(insertAt)];
+  const changed = !arraysEqual(globalOrder, next);
+  return { order: next, before: beforeId, changed };
+}

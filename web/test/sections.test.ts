@@ -116,7 +116,10 @@ test("Pinned renders first, above Overdue", () => {
   );
 });
 
-test("Pinned section sorts by priority then file order", () => {
+test("Pinned section preserves file order (F40: hand-curated, drag-reorderable)", () => {
+  // Pins are NOT priority-sorted — they keep the order they appear in the file
+  // so a manual drag-reorder sticks. Here urgent #2 comes AFTER low #1 in file
+  // order and must stay there.
   const tasks = [
     task({ id: 1, pinned: true, priority: "low" }),
     task({ id: 2, pinned: true, priority: "urgent" }),
@@ -126,7 +129,7 @@ test("Pinned section sorts by priority then file order", () => {
   assert.equal(pinned.key, "pinned");
   assert.deepEqual(
     pinned.tasks.map((t) => t.id),
-    [2, 3, 1],
+    [1, 2, 3], // file order, not priority order
   );
 });
 

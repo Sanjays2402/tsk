@@ -18,9 +18,12 @@
  * which floats a task to the top of `top`/`next`. Pinned + done tasks stay in
  * Done (a finished pin isn't something you need surfaced).
  *
- * Within each undone bucket, tasks sort by priority (urgent -> low) then id.
- * Done sorts most-recently-completed first when timestamps exist, else by id
- * descending so the freshest completions sit on top.
+ * Within each undone DUE bucket, tasks sort by priority (urgent -> low) then
+ * file order. The Pinned bucket is the exception (F40): it preserves FILE
+ * ORDER exactly (hand-curated), so you can drag-to-reorder your pinned "work
+ * on these" list into any sequence you like and it sticks — priority does not
+ * override it. Done sorts most-recently-completed first when timestamps exist,
+ * else by id descending so the freshest completions sit on top.
  */
 
 export type SectionKey = "pinned" | "overdue" | "today" | "upcoming" | "nodue" | "done";
@@ -93,13 +96,15 @@ function comparePriority(a: TaskLike, b: TaskLike): number {
 }
 
 /**
- * Order the Pinned section (F27). Pinned items are the user's hand-curated
- * "work on these" list, so we rank by priority first (urgent floats up), then
- * fall back to file order for equal-priority peers — same stable contract as
- * comparePriority so drag-to-reorder still sticks among pins.
+ * Order the Pinned section (F40). Pinned items are the user's hand-curated
+ * "work on these" list, so we preserve FILE ORDER exactly — `groupIntoSections`
+ * is fed tasks in `.tsk.md` order and Array.prototype.sort is stable, so
+ * returning 0 keeps every pin in the order the file (and thus drag-to-reorder
+ * via the /move endpoint) dictates. Priority deliberately does NOT reorder
+ * pins, so a manual sequence sticks until you drag it again.
  */
-function comparePinned(a: TaskLike, b: TaskLike): number {
-  return comparePriority(a, b);
+function comparePinned(_a: TaskLike, _b: TaskLike): number {
+  return 0;
 }
 
 function compareDone(a: TaskLike, b: TaskLike): number {

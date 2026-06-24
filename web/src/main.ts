@@ -74,7 +74,7 @@ import {
   renderBulkBar,
   type BulkState,
 } from "./bulkselect";
-import { computeReorder, dropPosForY, type DropPos } from "./reorder";
+import { computeReorder, computeSectionReorder, dropPosForY, type DropPos } from "./reorder";
 import {
   parseTagOps,
   isNoopTagOps,
@@ -779,6 +779,8 @@ function openContextMenu(id: number, x: number, y: number): void {
 
 /** The id of the row currently being dragged, or null. */
 let draggingId: number | null = null;
+/** The section key the dragged row started in (F40: drags stay in-section). */
+let draggingSection: string | null = null;
 /** The row currently showing a drop indicator, so we can clear it cheaply. */
 let dropRow: HTMLElement | null = null;
 
@@ -802,12 +804,25 @@ function onDragStart(e: DragEvent): void {
   const id = Number(row.dataset.id);
   if (!Number.isFinite(id) || id <= 0) return;
   draggingId = id;
+  draggingSection = sectionOfRow(row);
   row.classList.add("is-dragging");
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = "move";
     // Some browsers require data to be set for a drag to start.
     e.dataTransfer.setData("text/plain", String(id));
   }
+}
+
+/** The section key a row belongs to (from its enclosing <section data-section>). */
+function sectionOfRow(row: HTMLElement): string | null {
+  return row.closest<HTMLElement>("[data-section]")?.dataset.section ?? null;
+}
+
+/** The visible ids currently rendered in a given section, in display order. */
+function sectionVisibleIds(key: string): number[] {
+  const sec = els.content.querySelector<HTMLElement>(`[data-section="${key}"]`);
+  if (!sec) return [];
+  return Array.from(sec.querySelectorAll<HTMLElement>("[data-id]")).map((r) => Number(r.dataset.id));
 }
 
 /** While dragging over a row, show which edge the drop will land against. */
@@ -817,6 +832,13 @@ function onDragOver(e: DragEvent): void {
   if (!row) return;
   const overId = Number(row.dataset.id);
   if (overId === draggingId) {
+    clearDropIndicator();
+    return;
+  }
+  // F40: reordering is constrained to within a single section. A cross-section
+  // drag is rejected (no drop indicator, default "no-drop" cursor) so you can't
+  // drag a Pinned task into Overdue, etc.
+  if (draggingSection !== null && sectionOfRow(row) !== draggingSection) {
     clearDropIndicator();
     return;
   }
@@ -837,17 +859,28 @@ function onDrop(e: DragEvent): void {
   if (!row) return;
   e.preventDefault();
   const targetId = Number(row.dataset.id);
+  // F40: only allow a drop within the same section as the dragged row.
+  const targetSection = sectionOfRow(row);
+  if (draggingSection !== null && targetSection !== draggingSection) return;
   const rect = row.getBoundingClientRect();
   const pos: DropPos = dropPosForY(rect.top, rect.height, e.clientY);
   const moved = draggingId;
   const order = currentTasks.map((t) => t.id);
-  const result = computeReorder(order, moved, targetId, pos);
+  // F40: a drag within the Pinned section reorders ONLY the pinned peers, with
+  // the global `before` resolved so .tsk.md keeps a coherent file order. Other
+  // sections still use the simpler global reorder (they already map 1:1 to file
+  // order for their drags).
+  const result =
+    targetSection === "pinned"
+      ? computeSectionReorder(order, sectionVisibleIds("pinned"), moved, targetId, pos)
+      : computeReorder(order, moved, targetId, pos);
   if (result.changed) commitReorder(moved, result.before, result.order);
 }
 
 /** Reset drag visuals once the gesture ends (drop, cancel, or escape). */
 function onDragEnd(): void {
   draggingId = null;
+  draggingSection = null;
   clearDropIndicator();
   els.content.querySelectorAll<HTMLElement>(".is-dragging").forEach((r) => r.classList.remove("is-dragging"));
 }
