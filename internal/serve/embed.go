@@ -3,6 +3,7 @@ package serve
 import (
 	"embed"
 	"io/fs"
+	"mime"
 )
 
 // staticAssets embeds the built SPA bundle. The web client compiles into
@@ -12,6 +13,14 @@ import (
 //
 //go:embed all:web_dist
 var staticAssets embed.FS
+
+// init registers MIME types Go's stdlib does not know about so the embedded
+// FileServer serves them with the correct Content-Type. .webmanifest in
+// particular is unregistered on most platforms; without this a PWA install
+// prompt is silently suppressed because the manifest is served as text/plain.
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // EmbeddedSPA returns an fs.FS rooted at the SPA's index.html, or nil when
 // nothing has been built yet (in which case the server falls back to the

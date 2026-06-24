@@ -82,6 +82,7 @@ import {
   type FileFingerprint,
   type LiveStatus,
 } from "./live";
+import { registerServiceWorker } from "./pwa";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -1805,4 +1806,6 @@ applyStatsVisibility();
 applyTheme();
 // F21: open the live-reload stream so external edits flow into the open tab.
 connectLive();
+// F22: register the offline-shell service worker (no-op where unsupported).
+registerServiceWorker();
 refresh();
