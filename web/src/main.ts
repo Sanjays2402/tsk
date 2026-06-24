@@ -48,6 +48,18 @@ import {
   type ThemeMode,
 } from "./theme";
 import { parseHash, tagHash, type Route } from "./router";
+import {
+  emptyBulk,
+  isBulkActive,
+  isSelected as isBulkSelected,
+  toggleOne,
+  selectRange,
+  clearBulk,
+  reconcileBulk,
+  selectedInOrder,
+  renderBulkBar,
+  type BulkState,
+} from "./bulkselect";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -113,6 +125,7 @@ root.innerHTML = `
       </div>
       <aside class="stats-panel" data-stats-panel hidden aria-label="Task statistics"></aside>
     </div>
+    <div class="bulkbar" data-bulkbar role="region" aria-label="Bulk actions" hidden></div>
     <footer class="statusline">
       <span class="count" data-count></span>
       <span data-build><kbd class="kbd-hint" data-help-open>?</kbd> shortcuts &middot; <a href="/api/tasks" style="color:inherit">api</a></span>
@@ -144,6 +157,7 @@ const els = {
   tagpageName: must<HTMLElement>("[data-tagpage-name]"),
   tagpageCount: must<HTMLElement>("[data-tagpage-count]"),
   tagpageClear: must<HTMLAnchorElement>("[data-tagpage-clear]"),
+  bulkbar: must<HTMLElement>("[data-bulkbar]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -178,6 +192,8 @@ try {
 }
 /** Current hash route (F15): all-tasks or a single-tag page. */
 let route: Route = parseHash(typeof location !== "undefined" ? location.hash : "");
+/** Bulk selection (F16): a set of ids for multi-toggle / multi-delete. */
+let bulk: BulkState = emptyBulk();
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -197,7 +213,9 @@ function render(): void {
   els.count.innerHTML = summarize(shown);
   renderFilterBar(routed, shown.length);
   renderTagPage(routed.length);
+  bulk = reconcileBulk(bulk, visibleIds);
   applySelection();
+  renderBulkSelection();
 }
 
 /** Reflect the F15 tag-page banner: name, matching count, and visibility. */
@@ -249,6 +267,85 @@ function applySelection(): void {
       `[data-id="${nav.selectedId}"]`,
     );
     sel?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+// --- F16: bulk selection ---------------------------------------------------
+
+/** Paint the bulk-selected rows + the floating action bar. */
+function renderBulkSelection(): void {
+  const rows = els.content.querySelectorAll<HTMLElement>("[data-id]");
+  rows.forEach((row) => {
+    const on = isBulkSelected(bulk, Number(row.dataset.id));
+    row.classList.toggle("is-bulk", on);
+  });
+  must<HTMLElement>("[data-app]").classList.toggle("has-bulk", isBulkActive(bulk));
+  const count = bulk.ids.size;
+  els.bulkbar.hidden = count === 0;
+  els.bulkbar.innerHTML = renderBulkBar(count);
+}
+
+/** Toggle a single row into/out of the bulk set (cmd/ctrl-click). */
+function bulkToggleOne(id: number): void {
+  bulk = toggleOne(bulk, id);
+  renderBulkSelection();
+}
+
+/** Extend the bulk set as a range to id (shift-click), walking visible order. */
+function bulkSelectRange(id: number): void {
+  bulk = selectRange(bulk, visibleIds, id);
+  renderBulkSelection();
+}
+
+/** Clear the entire bulk selection. */
+function bulkClear(): void {
+  bulk = clearBulk();
+  renderBulkSelection();
+}
+
+/**
+ * Toggle done for every bulk-selected task, then clear the selection. Each
+ * task is flipped to the OPPOSITE of its current state (so a mixed selection
+ * converges by individual state, mirroring per-row toggle semantics). Fires
+ * the calls in parallel and refreshes once.
+ */
+async function bulkToggleDone(): Promise<void> {
+  const ids = selectedInOrder(bulk, visibleIds);
+  if (ids.length === 0) return;
+  bulkClear();
+  setStatus(`toggling ${ids.length}…`, false);
+  try {
+    await Promise.all(ids.map((id) => api.toggleTask(id)));
+    await refresh();
+  } catch (err) {
+    await refresh();
+    setStatus(`bulk toggle failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
+/**
+ * Delete every bulk-selected task. Unlike the single-row delete (which offers
+ * a 5s undo for one task), a bulk delete is a deliberate multi-item action, so
+ * it commits immediately after a confirm. Fires the DELETEs in parallel.
+ */
+async function bulkDelete(): Promise<void> {
+  const ids = selectedInOrder(bulk, visibleIds);
+  if (ids.length === 0) return;
+  const ok =
+    typeof confirm === "function"
+      ? confirm(`Delete ${ids.length} task${ids.length === 1 ? "" : "s"}? This can't be undone.`)
+      : true;
+  if (!ok) return;
+  bulkClear();
+  setStatus(`deleting ${ids.length}…`, false);
+  try {
+    await Promise.all(ids.map((id) => api.deleteTask(id)));
+    await refresh();
+  } catch (err) {
+    await refresh();
+    setStatus(`bulk delete failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
   }
 }
 
@@ -834,7 +931,6 @@ els.filterClear.addEventListener("click", () => {
 // --- F13: stats sidebar wiring ---------------------------------------------
 
 els.statsToggle.addEventListener("click", () => toggleStats(!statsOpen));
-
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-stat-tag]");
@@ -842,6 +938,16 @@ els.statsPanel.addEventListener("click", (e) => {
   const tag = row.dataset.statTag ?? "";
   if (!tag) return;
   setFilter({ tags: filter.tags.includes(tag) ? filter.tags : [...filter.tags, tag] });
+});
+
+// --- F16: bulk action bar wiring -------------------------------------------
+
+els.bulkbar.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("button");
+  if (!btn) return;
+  if (btn.dataset.bulkToggle !== undefined) bulkToggleDone();
+  else if (btn.dataset.bulkDelete !== undefined) bulkDelete();
+  else if (btn.dataset.bulkClear !== undefined) bulkClear();
 });
 
 // --- F14: theme toggle wiring ----------------------------------------------
@@ -896,6 +1002,18 @@ els.content.addEventListener("click", (e) => {
   if (!row) return;
   const id = Number(row.dataset.id);
   if (!Number.isFinite(id) || id <= 0) return;
+  // F16: modifier-clicks drive bulk selection instead of normal nav select.
+  // Shift = range from anchor; cmd/ctrl = toggle one. Suppress text selection.
+  if (e.shiftKey) {
+    e.preventDefault();
+    bulkSelectRange(id);
+    return;
+  }
+  if (e.metaKey || e.ctrlKey) {
+    e.preventDefault();
+    bulkToggleOne(id);
+    return;
+  }
   if (target.closest("[data-del]")) {
     requestDelete(id);
     return;
@@ -1037,6 +1155,12 @@ document.addEventListener("keydown", (e) => {
       cycleTheme();
       break;
     case "Escape":
+      // F16: a bulk selection is the first thing Escape clears.
+      if (isBulkActive(bulk)) {
+        e.preventDefault();
+        bulkClear();
+        break;
+      }
       // On a tag page (and not otherwise busy), Escape returns to all tasks.
       if (route.kind === "tag") {
         e.preventDefault();
@@ -1062,6 +1186,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["e", "Edit the selected task's title"],
   ["d", "Set / change the due date"],
   ["x / del", "Delete the selected task (undoable)"],
+  ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
   ["/", "Focus the filter box"],
