@@ -140,22 +140,26 @@ Fresh slices. F26-F30 are the standing T6 backlog; these extend it with
 follow-ons sensible after the T5 production cluster (live-reload, PWA,
 notes, settings, saved views) plus long-tail UI the surface still lacks.
 
-- [ ] **F31** Notes in the command palette + detail: a "view notes" preview
+- [x] **F31** Notes in the command palette + detail: a "view notes" preview
       and quick-jump; surface a notes snippet on the row (one-line, faded)
       when present so you don't have to open the editor to remember context.
-- [ ] **F32** Saved-view enhancements: reorder views (drag the chips), an
+      (tick T7 2026-06-24)
+- [x] **F32** Saved-view enhancements: reorder views (drag the chips), an
       "update this view to the current filter" action, and persist the active
       view in the URL hash (`#view/<id>`) so it's shareable/bookmarkable.
-- [ ] **F33** Live-reload polish: a subtle toast ("file changed on disk —
+      (tick T7 2026-06-24)
+- [x] **F33** Live-reload polish: a subtle toast ("file changed on disk —
       refreshed") when an external edit lands, and a per-tab "pause live"
       toggle for when you're hand-editing the .tsk.md and don't want churn.
-- [ ] **F34** Settings: a "reset to defaults" button, an export/import of the
+      (tick T7 2026-06-24)
+- [x] **F34** Settings: a "reset to defaults" button, an export/import of the
       whole client config (settings + saved views) as a JSON blob, and a
       compact-mode density that also hides the meta cluster until hover.
-- [ ] **F35** PWA depth: a real install button (beforeinstallprompt capture)
+      (tick T7 2026-06-24)
+- [x] **F35** PWA depth: a real install button (beforeinstallprompt capture)
       in the settings drawer, plus an offline banner when the SSE stream is
       down AND the network is unreachable (distinguish "server restarting"
-      from "you're offline").
+      from "you're offline"). (tick T7 2026-06-24)
 - [ ] **F36** Bulk edit beyond toggle/delete: bulk set priority, bulk add/
       remove a tag, bulk set due — extend the floating bar with a small
       action menu over the existing bulk-selection model.
@@ -443,9 +447,62 @@ config export/import, PWA install button + offline banner, bulk edit
 (priority/tag/due), row context menu, quick-add depends:/tag-autocomplete.
 T8 backlog appended below so the loop never starves.
 
+### T7 — 2026-06-24 13:06 PT — depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted — `/Volumes` held only Macintosh HD; the SSD is
+physically absent. The lock wrapper's `(repo cd failed)` confirms the stale
+hard-coded path. Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main` (same origin, was exactly at
+origin/main f6efb37, clean tree, .cron-state tracked in git so no state
+divergence). Pushed a clean fast-forward f6efb37..b0e3dcb. This remains the
+documented fallback (see T2-T6 notes); future ticks resolve the repo here when
+the SSD is out.
+
+- F31 feat(web): one-line notes snippet under the row title (29c3392)
+- F32 feat(web): saved-view enhancements — reorder, update, URL hash (d9ccaa2)
+- F33 feat(web): live-reload polish — change toast + pause-live toggle (864f6bc)
+- F34 feat(web): settings reset + config export/import + reveal-on-hover meta (acf67b7)
+- F35 feat(web): PWA install button + honest offline/server banner (9757b37)
+- (+ chore b0e3dcb: rebuilt embedded SPA bundle for all five slices)
+
+All five slices are pure-frontend over the existing JSON API (no backend
+change this tick). Each ships a dependency-free logic module unit-tested under
+node --test: F31 extends notes.ts (renderNotesSnippet, 4 tests); F32 extends
+views.ts (updateView/moveView/chip opts) + router.ts (view route) (16 tests);
+F33 extends live.ts (paused status + liveChangeMessage, 4 tests); F34 adds
+config.ts (bundle build/serialize/parse/validate) + extends settings.ts
+(hideMeta) (17 tests); F35 extends pwa.ts (classifyConnectivity / banner /
+canInstall, 6 tests). 31 new web tests total (253 -> 284).
+
+Toolchain note: config.ts is the first src module to import sibling pure
+modules, so it uses explicit `.ts` import specifiers and tsconfig gained
+`allowImportingTsExtensions` (additive, noEmit already set) so both Vite and the
+node --test runner resolve them. Verified: tsc app + tsc test clean, vite build
+ok (32 modules, JS 22.24KB gz, CSS 7.47KB gz).
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across ALL packages (incl. internal/serve with the
+freshly-embedded T7 bundle, internal/commands 58.9s), web `npm run check` 284
+pass, `npm run build` ok.
+
+End-to-end proof: built the binary, ran tsk init + 2 tasks (one with notes) +
+`tsk serve`. /api/tasks returned the notes round-tripped; a PATCH notes via the
+API wrote 6-space continuation lines to .tsk.md and `tsk show 1` read them back
+(storage contract intact). The served bundle carries every slice's code:
+notes-snippet, data-view-update + data-view-drag + #view/, "changed on disk" +
+live.paused, data-config-export/import/reset + data-hide-meta + tsk-web-config,
+data-config-install + offline-banner + beforeinstallprompt.
+
+Roadmap status: F1-F35 done. F36-F38 (T7) + F39-F46 (T8) unstarted — bulk edit
+(priority/tag/due), row context menu, quick-add upgrades, then dependency
+editing, pinned drag-reorder, touch priority picker, unblocked toast, tag/notes
+highlight, keyboard priority cycle, blocked-toggle guard, blocked/pinned stats
+— 11 slices queued so the loop never starves.
+
 ### T8 — depth (appended T6 2026-06-24 so the loop never starves)
 
-Fresh slices for after the T7 cluster. F31-F38 are the standing T7 backlog;
+Fresh slices for after the T7 cluster. F36-F38 are the standing T7 backlog;
 these extend it with follow-ons sensible after the T6 dependency/pin/priority/
 mobile/highlight work plus long-tail UI the surface still lacks.
 
