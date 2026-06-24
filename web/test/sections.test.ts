@@ -86,3 +86,58 @@ test("flattenSections yields visible top-to-bottom order", () => {
 test("empty input yields no sections", () => {
   assert.deepEqual(groupIntoSections([], NOW), []);
 });
+
+// --- F27: Pinned section -----------------------------------------------------
+
+test("a pinned undone task floats into the Pinned section regardless of due", () => {
+  assert.equal(sectionFor(task({ id: 1, pinned: true, due: "2026-06-30" }), NOW), "pinned");
+  assert.equal(sectionFor(task({ id: 2, pinned: true }), NOW), "pinned");
+  assert.equal(sectionFor(task({ id: 3, pinned: true, due: "2026-06-20" }), NOW), "pinned");
+});
+
+test("a pinned DONE task stays in Done (a finished pin isn't surfaced)", () => {
+  assert.equal(sectionFor(task({ id: 1, pinned: true, done: true }), NOW), "done");
+});
+
+test("Pinned renders first, above Overdue", () => {
+  const tasks = [
+    task({ id: 1, due: "2026-06-20" }), // overdue
+    task({ id: 2, pinned: true, due: "2026-06-30" }), // pinned (would be upcoming)
+    task({ id: 3, done: true }), // done
+  ];
+  const sections = groupIntoSections(tasks, NOW);
+  assert.deepEqual(
+    sections.map((s) => s.key),
+    ["pinned", "overdue", "done"],
+  );
+  assert.deepEqual(
+    sections.find((s) => s.key === "pinned")!.tasks.map((t) => t.id),
+    [2],
+  );
+});
+
+test("Pinned section sorts by priority then file order", () => {
+  const tasks = [
+    task({ id: 1, pinned: true, priority: "low" }),
+    task({ id: 2, pinned: true, priority: "urgent" }),
+    task({ id: 3, pinned: true, priority: "high" }),
+  ];
+  const [pinned] = groupIntoSections(tasks, NOW);
+  assert.equal(pinned.key, "pinned");
+  assert.deepEqual(
+    pinned.tasks.map((t) => t.id),
+    [2, 3, 1],
+  );
+});
+
+test("pinned task is pulled out of its due bucket (not double-counted)", () => {
+  const tasks = [
+    task({ id: 1, pinned: true, due: "2026-06-20" }), // overdue + pinned
+    task({ id: 2, due: "2026-06-20" }), // overdue
+  ];
+  const sections = groupIntoSections(tasks, NOW);
+  const overdue = sections.find((s) => s.key === "overdue")!;
+  assert.deepEqual(overdue.tasks.map((t) => t.id), [2]); // #1 moved to Pinned
+  const pinned = sections.find((s) => s.key === "pinned")!;
+  assert.deepEqual(pinned.tasks.map((t) => t.id), [1]);
+});

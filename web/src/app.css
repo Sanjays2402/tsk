@@ -211,6 +211,10 @@ body {
 .section-today .section-count { background: var(--color-today); color: #1c1408; }
 .section-done { opacity: 0.78; }
 .section-done .section-label { color: var(--color-text-faint); }
+/* F27: Pinned section — gold accent so the "work on these" group reads first. */
+.section-pinned .section-label { color: var(--color-accent); }
+.section-pinned .section-label::before { content: "\2605\00a0"; }
+.section-pinned .section-count { background: var(--color-accent); color: var(--color-bg); }
 
 /* Task list — flat container, tight rows */
 .list {
@@ -422,6 +426,43 @@ body {
 .row-del:hover {
   color: #fff;
   background: var(--color-prio-urgent);
+}
+
+/* F27: pin star — sits before the title, lit gold when pinned. */
+.pin-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: 13px;
+  line-height: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.row:hover .pin-btn,
+.row.is-selected .pin-btn,
+.pin-btn:focus-visible {
+  opacity: 1;
+}
+.pin-btn.is-on {
+  opacity: 1;
+  color: var(--color-accent);
+}
+.pin-btn:hover {
+  color: var(--color-accent);
+  transform: scale(1.18);
+}
+.row.is-pinned {
+  box-shadow: inset 2px 0 0 var(--color-accent);
 }
 
 /* F26: dependency awareness — "blocked by #N" badge + greyed-out blocked row. */

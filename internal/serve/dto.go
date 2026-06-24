@@ -13,6 +13,7 @@ type taskDTO struct {
 	ID        int      `json:"id"`
 	Title     string   `json:"title"`
 	Done      bool     `json:"done"`
+	Pinned    bool     `json:"pinned,omitempty"` // F27: sticky-flag (floats to top)
 	Priority  string   `json:"priority"`
 	Due       string   `json:"due,omitempty"` // YYYY-MM-DD or ""
 	Tags      []string `json:"tags"`          // [] when none
@@ -43,6 +44,7 @@ type taskPatchDTO struct {
 	Tags     *[]string `json:"tags,omitempty"`
 	Notes    *string   `json:"notes,omitempty"`
 	Done     *bool     `json:"done,omitempty"`
+	Pinned    *bool    `json:"pinned,omitempty"`     // F27: set/clear the sticky flag
 	DependsOn *[]int   `json:"depends_on,omitempty"` // F26: replace the blocker set
 }
 
@@ -75,6 +77,7 @@ func taskToDTO(t model.Task) taskDTO {
 		ID:       t.ID,
 		Title:    t.Title,
 		Done:     t.Done,
+		Pinned:   t.Pinned,
 		Priority: t.Priority.String(),
 		Tags:     append([]string{}, t.Tags...), // ensure non-nil for JSON
 		Notes:    t.Notes,

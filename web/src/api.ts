@@ -12,6 +12,7 @@ export interface Task {
   id: number;
   title: string;
   done: boolean;
+  pinned?: boolean; // F27: sticky-flag — floats to a Pinned section
   priority: Priority;
   due?: string; // YYYY-MM-DD; missing or "" = no due date
   tags: string[];
@@ -62,6 +63,7 @@ export interface TaskPatch {
   tags?: string[];
   notes?: string;
   done?: boolean;
+  pinned?: boolean; // F27
   depends_on?: number[]; // F26
 }
 
@@ -105,6 +107,7 @@ export const api = {
   patchTask: (id: number, patch: TaskPatch) =>
     request<Task>("PATCH", `/api/tasks/${id}`, patch),
   toggleTask: (id: number) => request<Task>("POST", `/api/tasks/${id}/toggle`),
+  pinTask: (id: number) => request<Task>("POST", `/api/tasks/${id}/pin`),
   moveTask: (id: number, before: number) =>
     request<TaskListResponse>("POST", `/api/tasks/${id}/move`, { before }),
   deleteTask: (id: number) =>

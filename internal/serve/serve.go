@@ -228,6 +228,14 @@ func (s *Server) handleTaskByID(w http.ResponseWriter, r *http.Request) {
 		s.moveTask(w, r, id)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "pin" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		s.togglePin(w, id)
+		return
+	}
 	if len(parts) != 1 {
 		writeError(w, http.StatusNotFound, "unknown task subroute")
 		return
@@ -371,6 +379,9 @@ func (s *Server) updateTask(w http.ResponseWriter, r *http.Request, id int) {
 	if in.Notes != nil {
 		t.Notes = strings.TrimSpace(*in.Notes)
 	}
+	if in.Pinned != nil {
+		t.Pinned = *in.Pinned
+	}
 	if in.DependsOn != nil {
 		deps, err := sanitizeDeps(st, id, *in.DependsOn)
 		if err != nil {
@@ -401,6 +412,29 @@ func (s *Server) toggleTask(w http.ResponseWriter, id int) {
 		return
 	}
 	st.SetDone(id, !t.Done)
+	if err := st.Save(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, taskToDTO(*st.ByID(id)))
+}
+
+// togglePin flips the sticky `Pinned` flag (F27) on a single task and persists
+// it as `pin:true` in the .tsk.md metadata comment — the same flag the CLI's
+// `tsk pin`/`tsk unpin` and the TUI's pin toggle read. Returns the updated
+// task so the client can re-render authoritatively.
+func (s *Server) togglePin(w http.ResponseWriter, id int) {
+	st, err := s.loadStore()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	t := st.ByID(id)
+	if t == nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("no task with id %d", id))
+		return
+	}
+	t.Pinned = !t.Pinned
 	if err := st.Save(); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

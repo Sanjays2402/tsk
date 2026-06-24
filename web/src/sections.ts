@@ -6,22 +6,29 @@
  * render.ts consumes the ordered buckets; main.ts never sees the raw sort.
  *
  * Buckets, in display order:
+ *   - Pinned     undone + pinned (floats to the very top, F27)
  *   - Overdue    undone, due before today
  *   - Today      undone, due today
  *   - Upcoming   undone, due after today
  *   - No Due     undone, no due date
  *   - Done       completed (regardless of due)
  *
+ * A pinned undone task is pulled OUT of its due-based bucket into Pinned so it
+ * stays visible regardless of priority/due — matching the CLI's `tsk pin`,
+ * which floats a task to the top of `top`/`next`. Pinned + done tasks stay in
+ * Done (a finished pin isn't something you need surfaced).
+ *
  * Within each undone bucket, tasks sort by priority (urgent -> low) then id.
  * Done sorts most-recently-completed first when timestamps exist, else by id
  * descending so the freshest completions sit on top.
  */
 
-export type SectionKey = "overdue" | "today" | "upcoming" | "nodue" | "done";
+export type SectionKey = "pinned" | "overdue" | "today" | "upcoming" | "nodue" | "done";
 
 export interface TaskLike {
   id: number;
   done: boolean;
+  pinned?: boolean; // F27: sticky-flag
   priority: string;
   due?: string; // YYYY-MM-DD or undefined/""
   completed?: string; // RFC3339 or undefined
@@ -34,6 +41,7 @@ export interface Section<T extends TaskLike> {
 }
 
 const SECTION_ORDER: ReadonlyArray<{ key: SectionKey; label: string }> = [
+  { key: "pinned", label: "Pinned" },
   { key: "overdue", label: "Overdue" },
   { key: "today", label: "Today" },
   { key: "upcoming", label: "Upcoming" },
@@ -60,6 +68,9 @@ function dayNum(due: string | undefined): number | null {
 /** Classify a single task into its section, relative to `now`. */
 export function sectionFor(t: TaskLike, now: Date): SectionKey {
   if (t.done) return "done";
+  // F27: a pinned, still-undone task floats to the Pinned section regardless
+  // of its due date, so it stays in view.
+  if (t.pinned) return "pinned";
   const due = dayNum(t.due);
   if (due === null) return "nodue";
   const today = Math.floor(
@@ -81,6 +92,16 @@ function comparePriority(a: TaskLike, b: TaskLike): number {
   return 0;
 }
 
+/**
+ * Order the Pinned section (F27). Pinned items are the user's hand-curated
+ * "work on these" list, so we rank by priority first (urgent floats up), then
+ * fall back to file order for equal-priority peers — same stable contract as
+ * comparePriority so drag-to-reorder still sticks among pins.
+ */
+function comparePinned(a: TaskLike, b: TaskLike): number {
+  return comparePriority(a, b);
+}
+
 function compareDone(a: TaskLike, b: TaskLike): number {
   // Most recently completed first; tasks with timestamps outrank those without.
   if (a.completed && b.completed) {
@@ -98,6 +119,7 @@ function compareDone(a: TaskLike, b: TaskLike): number {
  */
 export function groupIntoSections<T extends TaskLike>(tasks: T[], now: Date): Section<T>[] {
   const buckets: Record<SectionKey, T[]> = {
+    pinned: [],
     overdue: [],
     today: [],
     upcoming: [],
@@ -107,6 +129,7 @@ export function groupIntoSections<T extends TaskLike>(tasks: T[], now: Date): Se
   for (const t of tasks) {
     buckets[sectionFor(t, now)].push(t);
   }
+  buckets.pinned.sort(comparePinned);
   buckets.overdue.sort(comparePriority);
   buckets.today.sort(comparePriority);
   buckets.upcoming.sort(comparePriority);

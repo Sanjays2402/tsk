@@ -833,6 +833,38 @@ async function toggleTask(id: number): Promise<void> {
   }
 }
 
+/**
+ * F27: toggle the pin flag on a task. Optimistic flip (so it jumps to/from the
+ * Pinned section instantly), server confirm, rollback on error. The pin
+ * round-trips to .tsk.md as `pin:true` — the same flag the CLI/TUI read.
+ */
+async function togglePin(id: number): Promise<void> {
+  const key = -id; // distinct in-flight namespace from toggle (avoids clobber)
+  if (inFlight.has(key)) return;
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  currentTasks[idx] = { ...before, pinned: !before.pinned };
+  inFlight.add(key);
+  render();
+  // Keep the just-pinned task selected so keyboard flow follows it to its new
+  // section position.
+  nav = select(nav, visibleIds, id);
+  applySelection();
+  try {
+    const confirmed = await api.pinTask(id);
+    currentTasks[idx] = confirmed;
+    render();
+  } catch (err) {
+    currentTasks[idx] = before;
+    render();
+    setStatus(`pin failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
 // --- F8: delete with undo --------------------------------------------------
 
 interface PendingDelete {
@@ -1599,6 +1631,11 @@ els.content.addEventListener("click", (e) => {
     requestDelete(id);
     return;
   }
+  // F27: the pin star toggles the sticky flag (floats to/from Pinned section).
+  if (target.closest("[data-pin]")) {
+    togglePin(id);
+    return;
+  }
   // F26: the "blocked by #N" badge jumps to (selects + scrolls to) the blocker.
   const depJump = target.closest<HTMLElement>("[data-dep-jump]");
   if (depJump) {
@@ -1773,6 +1810,12 @@ document.addEventListener("keydown", (e) => {
         openNotesEditor(nav.selectedId);
       }
       break;
+    case "p":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        togglePin(nav.selectedId);
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -1839,6 +1882,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["e", "Edit the selected task's title"],
   ["d", "Set / change the due date"],
   ["i", "Edit the selected task's notes"],
+  ["p", "Pin / unpin the selected task"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
@@ -1905,6 +1949,7 @@ let paletteResults: Command[] = [];
 function buildCommands(): Command[] {
   const sel = nav.selectedId;
   const hasSel = sel !== null;
+  const selPinned = sel !== null && (currentTasks.find((t) => t.id === sel)?.pinned ?? false);
   const viewCommands: Command[] = views.map((v) => ({
     id: `view:${v.id}`,
     title: `View: ${v.name}`,
@@ -1943,6 +1988,14 @@ function buildCommands(): Command[] {
       group: "Task",
       keywords: ["note", "comment", "description", "detail"],
       hint: "i",
+      disabled: !hasSel,
+    },
+    {
+      id: "pin",
+      title: selPinned ? "Unpin selected task" : "Pin selected task",
+      group: "Task",
+      keywords: ["pin", "sticky", "favorite", "star", "top"],
+      hint: "p",
       disabled: !hasSel,
     },
     {
@@ -1994,6 +2047,9 @@ function runCommand(id: string): void {
       break;
     case "notes":
       if (sel !== null) openNotesEditor(sel);
+      break;
+    case "pin":
+      if (sel !== null) togglePin(sel);
       break;
     case "delete":
       if (sel !== null) requestDelete(sel);

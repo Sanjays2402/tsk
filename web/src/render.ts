@@ -61,7 +61,8 @@ export interface RowContext {
 export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
   const dueState = dueClassFor(t.due, t.done, now);
   const dep = ctx.done ? blockedClass(t as DepTask, ctx.done) : "";
-  const classes = ["row", t.done ? "is-done" : "", dueState, dep]
+  const pin = t.pinned ? "is-pinned" : "";
+  const classes = ["row", t.done ? "is-done" : "", dueState, dep, pin]
     .filter(Boolean)
     .join(" ");
   const dueLabel = t.due ? formatDue(t.due, now) : null;
@@ -72,11 +73,13 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
     : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
   const depBadge = ctx.done ? renderBlockedBadge(t as DepTask, ctx.done) : "";
+  const pinBtn = `<button class="pin-btn${t.pinned ? " is-on" : ""}" data-pin type="button" aria-pressed="${t.pinned ? "true" : "false"}" aria-label="${t.pinned ? "Unpin task" : "Pin task"}" title="${t.pinned ? "Unpin (p)" : "Pin to top (p)"}" tabindex="-1">${t.pinned ? "★" : "☆"}</button>`;
   return `
     <li class="${classes}" data-id="${t.id}" draggable="true">
       <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>
       <input type="checkbox" class="check" data-toggle aria-label="Toggle done" ${t.done ? "checked" : ""}>
       <div class="title-wrap">
+        ${pinBtn}
         <span class="title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
         <span class="id">#${t.id}</span>
       </div>
