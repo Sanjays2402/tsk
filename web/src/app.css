@@ -457,6 +457,87 @@ button.priority:focus-visible {
   background: var(--color-prio-urgent);
 }
 
+/* F37: per-row "⋯" overflow button — opens the context menu. Same reveal-on-
+   hover behaviour as the delete button so the row stays clean at rest. */
+.row-menu {
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: 16px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.row:hover .row-menu,
+.row.is-selected .row-menu,
+.row-menu:focus-visible {
+  opacity: 1;
+}
+.row-menu:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hi);
+}
+
+/* F37: the floating context menu itself — fixed-position, viewport-clamped. */
+.ctxmenu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  padding: var(--sp-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.ctxmenu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ctxmenu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ctxmenu-item:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.ctxmenu-item.is-divider {
+  margin-top: var(--sp-1);
+  border-top: 1px solid var(--color-border);
+  padding-top: calc(var(--sp-2) + 1px);
+}
+.ctxmenu-item.is-danger:hover {
+  background: color-mix(in srgb, var(--color-prio-urgent) 16%, transparent);
+  color: var(--color-prio-urgent);
+}
+.ctxmenu-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
+}
+
 /* F27: pin star — sits before the title, lit gold when pinned. */
 .pin-btn {
   border: none;

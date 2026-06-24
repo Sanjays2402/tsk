@@ -79,6 +79,11 @@ import {
   type Priority as BulkPriority,
 } from "./bulkedit";
 import {
+  renderContextMenu,
+  clampMenuPosition,
+  type RowAction,
+} from "./contextmenu";
+import {
   filterCommands,
   moveIndex,
   clampIndex,
@@ -631,6 +636,118 @@ function bulkSetDue(raw: string): void {
   const due = raw.trim(); // "" clears; server validates non-empty
   const ids = selectedInOrder(bulk, visibleIds);
   bulkPatch(ids, () => ({ due }), due === "" ? "clear due on" : "set due on");
+}
+
+// --- F37: row context menu -------------------------------------------------
+
+/**
+ * Dispatch a per-row action by id. This is the SINGLE code path shared by the
+ * context menu (F37), so the menu, the command palette, and the keyboard
+ * hotkeys all converge on the same behaviour. Selecting the row first keeps the
+ * keyboard cursor in sync with whatever the pointer acted on.
+ */
+function runRowAction(action: RowAction, id: number): void {
+  nav = select(nav, visibleIds, id);
+  applySelection();
+  switch (action) {
+    case "toggle":
+      toggleTask(id);
+      break;
+    case "edit":
+      enterEditMode(id);
+      break;
+    case "due":
+      openDuePicker(id);
+      break;
+    case "notes":
+      openNotesEditor(id);
+      break;
+    case "pin":
+      togglePin(id);
+      break;
+    case "prio-up":
+      cyclePriority(id, false);
+      break;
+    case "prio-down":
+      cyclePriority(id, true);
+      break;
+    case "delete":
+      requestDelete(id);
+      break;
+  }
+}
+
+/** Remove any open row context menu and drop its outside-interaction guards. */
+function closeContextMenu(): void {
+  document.querySelector("[data-ctxmenu]")?.remove();
+  document.removeEventListener("click", onContextAway, true);
+  document.removeEventListener("keydown", onContextKey, true);
+  window.removeEventListener("resize", closeContextMenu);
+  window.removeEventListener("scroll", closeContextMenu, true);
+}
+
+function onContextAway(e: MouseEvent): void {
+  if ((e.target as HTMLElement | null)?.closest("[data-ctxmenu]")) return;
+  closeContextMenu();
+}
+
+function onContextKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeContextMenu();
+  }
+}
+
+/**
+ * Open the row context menu for a task at viewport coords (x, y). Built from the
+ * pure renderContextMenu markup; positioned with clampMenuPosition so it never
+ * spills off-screen. Outside-click, Escape, resize, and scroll all dismiss it.
+ */
+function openContextMenu(id: number, x: number, y: number): void {
+  closeContextMenu();
+  closeBulkEdit();
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const menu = document.createElement("div");
+  menu.className = "ctxmenu";
+  menu.setAttribute("data-ctxmenu", "");
+  menu.innerHTML = renderContextMenu({ id: task.id, done: task.done, pinned: task.pinned });
+  // Render off-screen first to measure, then clamp into the viewport.
+  menu.style.left = "0px";
+  menu.style.top = "0px";
+  menu.style.visibility = "hidden";
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  const { left, top } = clampMenuPosition(
+    x,
+    y,
+    rect.width,
+    rect.height,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  menu.style.visibility = "visible";
+
+  menu.addEventListener("click", (e) => {
+    const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-row-action]");
+    if (!item) return;
+    const action = item.dataset.rowAction as RowAction;
+    closeContextMenu();
+    runRowAction(action, id);
+  });
+
+  // Defer the guards so the opening interaction doesn't immediately close it.
+  setTimeout(() => {
+    document.addEventListener("click", onContextAway, true);
+    document.addEventListener("keydown", onContextKey, true);
+    window.addEventListener("resize", closeContextMenu);
+    window.addEventListener("scroll", closeContextMenu, true);
+  }, 0);
 }
 
 // --- F17: drag-to-reorder --------------------------------------------------
@@ -2121,6 +2238,14 @@ els.content.addEventListener("click", (e) => {
     requestDelete(id);
     return;
   }
+  // F37: the "⋯" overflow button opens the row context menu, anchored to it.
+  const menuBtn = target.closest<HTMLElement>("[data-row-menu]");
+  if (menuBtn) {
+    e.preventDefault();
+    const rect = menuBtn.getBoundingClientRect();
+    openContextMenu(id, rect.left, rect.bottom + 4);
+    return;
+  }
   // F27: the pin star toggles the sticky flag (floats to/from Pinned section).
   if (target.closest("[data-pin]")) {
     togglePin(id);
@@ -2177,6 +2302,21 @@ els.content.addEventListener("dragend", onDragEnd);
 els.content.addEventListener("dragleave", (e) => {
   // Only clear when actually leaving the content area, not crossing rows.
   if (!els.content.contains(e.relatedTarget as Node | null)) clearDropIndicator();
+});
+
+// F37: right-click a row opens the context menu at the pointer. We suppress the
+// native menu on rows only (so the browser menu still works elsewhere). Clicks
+// on the inline editors / inputs keep their default context menu.
+els.content.addEventListener("contextmenu", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (!target) return;
+  if (target.closest("input, textarea, [data-due-pop], [data-notes-pop]")) return;
+  const row = target.closest<HTMLElement>("[data-id]");
+  if (!row) return;
+  const id = Number(row.dataset.id);
+  if (!Number.isFinite(id) || id <= 0) return;
+  e.preventDefault();
+  openContextMenu(id, e.clientX, e.clientY);
 });
 
 // --- F28: long-press to bulk-select on touch devices ------------------------
