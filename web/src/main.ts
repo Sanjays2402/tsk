@@ -61,6 +61,13 @@ import {
   type BulkState,
 } from "./bulkselect";
 import { computeReorder, dropPosForY, type DropPos } from "./reorder";
+import {
+  filterCommands,
+  moveIndex,
+  clampIndex,
+  renderPaletteList,
+  type Command,
+} from "./palette";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -129,7 +136,7 @@ root.innerHTML = `
     <div class="bulkbar" data-bulkbar role="region" aria-label="Bulk actions" hidden></div>
     <footer class="statusline">
       <span class="count" data-count></span>
-      <span data-build><kbd class="kbd-hint" data-help-open>?</kbd> shortcuts &middot; <a href="/api/tasks" style="color:inherit">api</a></span>
+      <span data-build><kbd class="kbd-hint" data-cmdk-open>⌘K</kbd> &middot; <kbd class="kbd-hint" data-help-open>?</kbd> shortcuts &middot; <a href="/api/tasks" style="color:inherit">api</a></span>
     </footer>
   </div>
 `;
@@ -1178,6 +1185,15 @@ function navMove(dir: NavMove): void {
 }
 
 document.addEventListener("keydown", (e) => {
+  // F18: Cmd/Ctrl-K opens the palette from anywhere (even while typing).
+  if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+    e.preventDefault();
+    if (paletteOpen) closePalette();
+    else openPalette();
+    return;
+  }
+  // While the palette is open it owns the keyboard; its own input handles keys.
+  if (paletteOpen) return;
   // The help overlay swallows Escape/?; handle that first.
   if (helpOpen) {
     if (e.key === "Escape" || e.key === "?") {
@@ -1292,6 +1308,7 @@ document.addEventListener("keydown", (e) => {
 let helpOpen = false;
 
 const HELP_ROWS: ReadonlyArray<[string, string]> = [
+  ["cmd/ctrl K", "Open the command palette"],
   ["j / \u2193", "Move selection down"],
   ["k / \u2191", "Move selection up"],
   ["g / G", "Jump to first / last"],
@@ -1347,6 +1364,215 @@ function toggleHelp(open: boolean): void {
 
 // Clickable "?" hint in the footer opens the help overlay.
 must<HTMLElement>("[data-help-open]").addEventListener("click", () => toggleHelp(true));
+// Clickable "⌘K" hint in the footer opens the command palette.
+must<HTMLElement>("[data-cmdk-open]").addEventListener("click", () => openPalette());
+
+// --- F18: Cmd-K command palette --------------------------------------------
+
+let paletteOpen = false;
+let paletteIndex = 0;
+let paletteResults: Command[] = [];
+
+/**
+ * Build the command registry from the live app state. Rebuilt each open so
+ * enabled/disabled flags (e.g. undo) and the current selection reflect reality.
+ */
+function buildCommands(): Command[] {
+  const sel = nav.selectedId;
+  const hasSel = sel !== null;
+  return [
+    { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
+    {
+      id: "toggle",
+      title: "Toggle selected done",
+      group: "Task",
+      keywords: ["complete", "check", "done"],
+      hint: "space",
+      disabled: !hasSel,
+    },
+    {
+      id: "edit",
+      title: "Edit selected title",
+      group: "Task",
+      keywords: ["rename"],
+      hint: "e",
+      disabled: !hasSel,
+    },
+    {
+      id: "due",
+      title: "Set due date on selected",
+      group: "Task",
+      keywords: ["date", "deadline", "schedule"],
+      hint: "d",
+      disabled: !hasSel,
+    },
+    {
+      id: "delete",
+      title: "Delete selected task",
+      group: "Task",
+      keywords: ["remove", "trash"],
+      hint: "x",
+      disabled: !hasSel,
+    },
+    { id: "undo", title: "Undo last delete", group: "Task", keywords: ["restore"], hint: "u", disabled: !pending },
+    { id: "filter", title: "Focus filter / search", group: "View", keywords: ["search", "find"], hint: "/", disabled: Boolean(els.filterbar.hidden) },
+    { id: "stats", title: statsOpen ? "Hide stats panel" : "Show stats panel", group: "View", keywords: ["metrics", "summary"], hint: "s" },
+    { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
+    { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
+    { id: "help", title: "Show keyboard shortcuts", group: "View", keywords: ["keys", "?"], hint: "?" },
+    { id: "alltasks", title: "Go to all tasks", group: "View", keywords: ["home", "clear tag"], disabled: route.kind !== "tag" },
+  ];
+}
+
+/** Dispatch a command by id, then close the palette. */
+function runCommand(id: string): void {
+  closePalette();
+  const sel = nav.selectedId;
+  switch (id) {
+    case "add":
+      els.input.focus();
+      break;
+    case "toggle":
+      if (sel !== null) toggleTask(sel);
+      break;
+    case "edit":
+      if (sel !== null) enterEditMode(sel);
+      break;
+    case "due":
+      if (sel !== null) openDuePicker(sel);
+      break;
+    case "delete":
+      if (sel !== null) requestDelete(sel);
+      break;
+    case "undo":
+      undoDelete();
+      break;
+    case "filter":
+      if (!els.filterbar.hidden) {
+        els.filterInput.focus();
+        els.filterInput.select();
+      }
+      break;
+    case "stats":
+      toggleStats(!statsOpen);
+      break;
+    case "theme":
+      cycleTheme();
+      break;
+    case "refresh":
+      refresh();
+      break;
+    case "help":
+      toggleHelp(true);
+      break;
+    case "alltasks":
+      if (route.kind === "tag") navigateToAll();
+      break;
+  }
+}
+
+function ensurePaletteEl(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-cmdk]");
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "cmdk-overlay";
+  el.setAttribute("data-cmdk", "");
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  el.setAttribute("aria-label", "Command palette");
+  el.innerHTML = `
+    <div class="cmdk-card">
+      <input class="cmdk-input" data-cmdk-input type="text" spellcheck="false"
+             placeholder="Type a command…" aria-label="Command palette" role="combobox"
+             aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list">
+      <ul class="cmdk-list" id="cmdk-list" data-cmdk-list role="listbox"></ul>
+      <div class="cmdk-foot"><kbd>↑↓</kbd> navigate <kbd>↵</kbd> run <kbd>esc</kbd> close</div>
+    </div>`;
+  // Backdrop click closes; clicks inside the card don't.
+  el.addEventListener("click", (e) => {
+    if (e.target === el) closePalette();
+  });
+  const input = el.querySelector<HTMLInputElement>("[data-cmdk-input]")!;
+  const list = el.querySelector<HTMLElement>("[data-cmdk-list]")!;
+  input.addEventListener("input", () => updatePalette(input.value));
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      paletteIndex = moveIndex(paletteIndex, paletteResults.length, 1);
+      paintPalette();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      paletteIndex = moveIndex(paletteIndex, paletteResults.length, -1);
+      paintPalette();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const cmd = paletteResults[paletteIndex];
+      if (cmd && !cmd.disabled) runCommand(cmd.id);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closePalette();
+    }
+  });
+  // Click a row to run it.
+  list.addEventListener("click", (e) => {
+    const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-cmd-id]");
+    if (!row) return;
+    const id = row.dataset.cmdId ?? "";
+    const cmd = paletteResults.find((c) => c.id === id);
+    if (cmd && !cmd.disabled) runCommand(id);
+  });
+  // Track hover to move the highlight (mouse + keyboard stay in sync).
+  list.addEventListener("mousemove", (e) => {
+    const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-cmd-id]");
+    if (!row) return;
+    const id = row.dataset.cmdId ?? "";
+    const i = paletteResults.findIndex((c) => c.id === id);
+    if (i >= 0 && i !== paletteIndex) {
+      paletteIndex = i;
+      paintPalette();
+    }
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+const allCommands = (): Command[] => buildCommands();
+
+/** Recompute results for the query and repaint, resetting the highlight. */
+function updatePalette(query: string): void {
+  paletteResults = filterCommands(allCommands(), query);
+  paletteIndex = clampIndex(paletteIndex, paletteResults.length);
+  paintPalette();
+}
+
+/** Repaint the list + active highlight, scrolling it into view. */
+function paintPalette(): void {
+  const el = ensurePaletteEl();
+  const list = el.querySelector<HTMLElement>("[data-cmdk-list]")!;
+  list.innerHTML = renderPaletteList(paletteResults, paletteIndex);
+  const active = list.querySelector<HTMLElement>(".is-active");
+  active?.scrollIntoView({ block: "nearest" });
+}
+
+function openPalette(): void {
+  if (paletteOpen) return;
+  paletteOpen = true;
+  paletteIndex = 0;
+  const el = ensurePaletteEl();
+  el.classList.add("is-open");
+  const input = el.querySelector<HTMLInputElement>("[data-cmdk-input]")!;
+  input.value = "";
+  updatePalette("");
+  input.focus();
+}
+
+function closePalette(): void {
+  if (!paletteOpen) return;
+  paletteOpen = false;
+  const el = document.querySelector<HTMLElement>("[data-cmdk]");
+  el?.classList.remove("is-open");
+}
+
 
 // Escape hatches for upcoming slices.
 declare global {
@@ -1363,6 +1589,7 @@ declare global {
       edit: (id: number) => void;
       due: (id: number) => void;
       tag: (tag: string) => void;
+      palette: (open: boolean) => void;
     };
   }
 }
@@ -1381,6 +1608,7 @@ window.tsk = {
   edit: enterEditMode,
   due: openDuePicker,
   tag: navigateToTag,
+  palette: (open: boolean) => (open ? openPalette() : closePalette()),
 };
 
 // Restore the persisted stats-panel state before the first paint.
