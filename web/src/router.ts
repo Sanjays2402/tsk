@@ -7,17 +7,21 @@
  * Routes:
  *   #              -> { kind: "all" }        the full list
  *   #tag/<name>    -> { kind: "tag", tag }   a single-tag filtered page
+ *   #view/<id>     -> { kind: "view", id }   a recalled saved view (F32)
  *
  * Tag names are percent-encoded in the hash so tags with spaces or reserved
  * characters survive a round-trip. Names are lower-cased to match the store's
- * tag normalization (the CLI/store lower-case tags).
+ * tag normalization (the CLI/store lower-case tags). View ids are opaque
+ * tokens (makeId output) and are NOT lower-cased.
  */
 
 export type Route =
   | { kind: "all" }
-  | { kind: "tag"; tag: string };
+  | { kind: "tag"; tag: string }
+  | { kind: "view"; id: string };
 
 const TAG_PREFIX = "tag/";
+const VIEW_PREFIX = "view/";
 
 /** The all-tasks route singleton. */
 export const ALL_ROUTE: Route = { kind: "all" };
@@ -37,6 +41,11 @@ export function parseHash(hash: string): Route {
     if (tag === "") return ALL_ROUTE;
     return { kind: "tag", tag };
   }
+  if (h.startsWith(VIEW_PREFIX)) {
+    const id = safeDecode(h.slice(VIEW_PREFIX.length)).trim();
+    if (id === "") return ALL_ROUTE;
+    return { kind: "view", id };
+  }
   return ALL_ROUTE;
 }
 
@@ -44,6 +53,9 @@ export function parseHash(hash: string): Route {
 export function formatHash(route: Route): string {
   if (route.kind === "tag") {
     return `#${TAG_PREFIX}${encodeURIComponent(route.tag)}`;
+  }
+  if (route.kind === "view") {
+    return `#${VIEW_PREFIX}${encodeURIComponent(route.id)}`;
   }
   return "#";
 }
@@ -53,10 +65,16 @@ export function tagHash(tag: string): string {
   return formatHash({ kind: "tag", tag: tag.toLowerCase() });
 }
 
-/** Two routes are equal when same kind (+ tag). */
+/** Convenience: the hash for a given saved-view id (F32). */
+export function viewHash(id: string): string {
+  return formatHash({ kind: "view", id });
+}
+
+/** Two routes are equal when same kind (+ tag / id). */
 export function routesEqual(a: Route, b: Route): boolean {
   if (a.kind !== b.kind) return false;
   if (a.kind === "tag" && b.kind === "tag") return a.tag === b.tag;
+  if (a.kind === "view" && b.kind === "view") return a.id === b.id;
   return true;
 }
 

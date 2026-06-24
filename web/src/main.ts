@@ -54,7 +54,7 @@ import {
   modeTitle,
   type ThemeMode,
 } from "./theme";
-import { parseHash, tagHash, type Route } from "./router";
+import { parseHash, tagHash, viewHash, type Route } from "./router";
 import {
   emptyBulk,
   isBulkActive,
@@ -105,9 +105,12 @@ import {
   serializeViews,
   addView,
   removeView,
+  updateView,
+  moveView,
   activeView,
   renderViewChips,
   filterIsEmpty,
+  filtersEqual,
   STORAGE_KEY as VIEWS_KEY,
   type SavedView,
   type ViewFilter,
@@ -271,8 +274,14 @@ try {
 } catch {
   // ignore
 }
-/** Current hash route (F15): all-tasks or a single-tag page. */
+/** Current hash route (F15): all-tasks, a single-tag page, or a saved view (F32). */
 let route: Route = parseHash(typeof location !== "undefined" ? location.hash : "");
+/**
+ * F32: set just before we programmatically change the hash (e.g. recalling a
+ * view writes `#view/<id>`), so the resulting hashchange doesn't re-trigger a
+ * route apply and fight the state we just set.
+ */
+let suppressNextHashRoute = false;
 /** Bulk selection (F16): a set of ids for multi-toggle / multi-delete. */
 let bulk: BulkState = emptyBulk();
 /** Saved views (F25): named filter combinations, persisted in localStorage. */
@@ -282,6 +291,13 @@ try {
 } catch {
   // ignore (private mode / storage disabled)
 }
+/**
+ * F32: the id of the view the user last recalled, so we can offer an "update
+ * this view to the current filter" affordance once they tweak the filter away
+ * from what was saved. Cleared when the filter is cleared or another view is
+ * recalled.
+ */
+let recalledViewId: string | null = null;
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -763,7 +779,24 @@ function navigateToAll(): void {
 
 /** React to a route change (hashchange or programmatic): re-read + repaint. */
 function onRouteChange(): void {
+  // F32: a programmatic hash write (recalling a view) sets this so we don't
+  // double-apply the route we just established.
+  if (suppressNextHashRoute) {
+    suppressNextHashRoute = false;
+    route = parseHash(location.hash);
+    return;
+  }
   route = parseHash(location.hash);
+  // F32: a #view/<id> hash recalls that saved view's filter. We clear the route
+  // back to "all" afterwards because a view is a filter state, not a page.
+  if (route.kind === "view") {
+    const id = route.id;
+    route = { kind: "all" };
+    if (views.some((v) => v.id === id)) {
+      recallView(id);
+      return;
+    }
+  }
   // Leaving a tag page after filtering shouldn't strand a stale selection.
   render();
 }
@@ -1415,7 +1448,14 @@ function renderViewsRow(): void {
   // worth saving — otherwise it stays out of the way.
   const savable = !filterIsEmpty(f);
   els.viewsRow.hidden = !hasViews && !savable;
-  els.viewsChips.innerHTML = renderViewChips(views, f);
+  // F32: if the last-recalled view still exists but its saved filter no longer
+  // matches the live filter, that chip becomes "updatable" so you can save your
+  // tweaks back onto it.
+  const recalled = recalledViewId ? views.find((v) => v.id === recalledViewId) : undefined;
+  const updatableId = recalled && !filtersEqual(recalled.filter, f) && !filterIsEmpty(f)
+    ? recalled.id
+    : null;
+  els.viewsChips.innerHTML = renderViewChips(views, f, { draggable: true, updatableId });
   // Disable "save view" when there's nothing to save, or the exact filter is
   // already saved (activeView non-null means an identical view exists).
   const dup = activeView(views, f) !== null;
@@ -1455,14 +1495,45 @@ function recallView(id: string): void {
     hideDone: v.filter.hideDone,
   };
   els.filterInput.value = v.filter.query;
+  // F32: remember which view is active (drives the "update" affordance) and
+  // reflect it into the URL hash so the view is shareable/bookmarkable.
+  recalledViewId = id;
+  const want = viewHash(id);
+  if (location.hash !== want) {
+    suppressNextHashRoute = true;
+    location.hash = want;
+  }
   render();
   setStatus(`view: ${v.name}`, false);
   setTimeout(() => setStatus("ready", false), 1_500);
 }
 
+/** F32: overwrite a saved view's filter with the live filter, then repaint. */
+function updateViewToCurrent(id: string): void {
+  const f = currentViewFilter();
+  if (filterIsEmpty(f)) return;
+  const v = views.find((x) => x.id === id);
+  views = updateView(views, id, f);
+  saveViews();
+  recalledViewId = id; // it now matches again
+  render();
+  setStatus(`updated view${v ? ` "${v.name}"` : ""}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/** F32: persist a drag-reorder of the saved-view chips. */
+function reorderViews(movedId: string, beforeId: string | null): void {
+  const next = moveView(views, movedId, beforeId);
+  if (next === views) return; // no-op drop
+  views = next;
+  saveViews();
+  render();
+}
+
 /** Forget a saved view by id. */
 function deleteView(id: string): void {
   views = removeView(views, id);
+  if (recalledViewId === id) recalledViewId = null;
   saveViews();
   render();
 }
@@ -1508,6 +1579,7 @@ els.filterHideDone.addEventListener("click", () => {
 els.filterClear.addEventListener("click", () => {
   els.filterInput.value = "";
   filter = emptyFilter();
+  recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
   els.filterInput.focus();
 });
@@ -1523,10 +1595,60 @@ els.viewsChips.addEventListener("click", (e) => {
     deleteView(del.dataset.viewDel ?? "");
     return;
   }
+  // F32: the circular-arrow button overwrites the saved view with the live filter.
+  const upd = target?.closest<HTMLElement>("[data-view-update]");
+  if (upd) {
+    e.stopPropagation();
+    updateViewToCurrent(upd.dataset.viewUpdate ?? "");
+    return;
+  }
   const recall = target?.closest<HTMLElement>("[data-view-recall]");
   if (recall) {
     recallView(recall.dataset.viewRecall ?? "");
   }
+});
+
+// F32: drag-to-reorder the saved-view chips. Delegated on the chip row so it
+// survives re-renders. The drop computes the `before` chip and persists.
+let draggingViewId: string | null = null;
+els.viewsChips.addEventListener("dragstart", (e) => {
+  const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-view-id]");
+  if (!chip) return;
+  draggingViewId = chip.dataset.viewId ?? null;
+  chip.classList.add("is-dragging");
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", draggingViewId ?? "");
+  }
+});
+els.viewsChips.addEventListener("dragover", (e) => {
+  if (draggingViewId === null) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+});
+els.viewsChips.addEventListener("drop", (e) => {
+  if (draggingViewId === null) return;
+  e.preventDefault();
+  const chip = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-view-id]");
+  // Drop onto a chip -> land before it (left half) or after (right half).
+  // Drop onto empty row space -> move to the end (beforeId = null).
+  let beforeId: string | null = null;
+  if (chip && chip.dataset.viewId !== draggingViewId) {
+    const rect = chip.getBoundingClientRect();
+    const after = e.clientX > rect.left + rect.width / 2;
+    if (after) {
+      const sibling = chip.nextElementSibling as HTMLElement | null;
+      beforeId = sibling?.dataset.viewId ?? null;
+    } else {
+      beforeId = chip.dataset.viewId ?? null;
+    }
+  }
+  reorderViews(draggingViewId, beforeId);
+  draggingViewId = null;
+});
+els.viewsChips.addEventListener("dragend", () => {
+  draggingViewId = null;
+  els.viewsChips.querySelectorAll(".is-dragging").forEach((c) => c.classList.remove("is-dragging"));
 });
 
 // --- F13: stats sidebar wiring ---------------------------------------------
@@ -2467,4 +2589,14 @@ applySettings();
 connectLive();
 // F22: register the offline-shell service worker (no-op where unsupported).
 registerServiceWorker();
+// F32: if the page loaded on a #view/<id> hash, recall that saved view once
+// the initial route is read. (recallView itself runs after refresh paints.)
+if (route.kind === "view") {
+  const bootViewId = route.id;
+  route = { kind: "all" };
+  if (views.some((v) => v.id === bootViewId)) {
+    // Defer until after the first refresh so the filter applies to a painted list.
+    setTimeout(() => recallView(bootViewId), 0);
+  }
+}
 refresh();

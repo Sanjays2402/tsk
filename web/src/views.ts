@@ -129,6 +129,44 @@ export function removeView(views: SavedView[], id: string): SavedView[] {
   return views.filter((v) => v.id !== id);
 }
 
+/**
+ * Overwrite an existing view's filter with the given one (F32 "update this view
+ * to the current filter"). Keeps the view's id + name; only the captured filter
+ * changes. An empty filter is rejected (returns the list unchanged) so a view
+ * never silently degrades into "match everything". A no-op when the id is
+ * unknown. Returns a NEW array.
+ */
+export function updateView(views: SavedView[], id: string, filter: ViewFilter): SavedView[] {
+  if (filterIsEmpty(filter)) return views;
+  const norm = normalizeFilter(filter);
+  return views.map((v) => (v.id === id ? { ...v, filter: norm } : v));
+}
+
+/**
+ * Reorder the views list (F32 drag-to-reorder chips): move `movedId` to sit
+ * immediately before `beforeId`. A null/unknown `beforeId` moves it to the end.
+ * Dropping a view onto itself, or in a spot that doesn't change the order, is a
+ * no-op (returns the SAME array reference so callers can skip a redundant
+ * save). Otherwise returns a NEW array. Mirrors the store.Move(before) contract
+ * the drag-reorder of tasks already uses.
+ */
+export function moveView(views: SavedView[], movedId: string, beforeId: string | null): SavedView[] {
+  const from = views.findIndex((v) => v.id === movedId);
+  if (from < 0 || movedId === beforeId) return views;
+  const without = views.filter((v) => v.id !== movedId);
+  let insertAt: number;
+  if (beforeId === null) {
+    insertAt = without.length;
+  } else {
+    insertAt = without.findIndex((v) => v.id === beforeId);
+    if (insertAt < 0) insertAt = without.length;
+  }
+  const next = [...without.slice(0, insertAt), views[from], ...without.slice(insertAt)];
+  // No-op guard: same order means nothing moved.
+  if (next.every((v, i) => v.id === views[i].id)) return views;
+  return next;
+}
+
 /** Find the view whose filter matches the live one, or null. */
 export function activeView(views: SavedView[], filter: ViewFilter): SavedView | null {
   if (filterIsEmpty(filter)) return null;
@@ -156,13 +194,34 @@ export function describeView(v: SavedView): string {
  * Render the saved-views chip row. Each chip carries `data-view-id` for recall
  * and a `data-view-del` button to forget it. The chip matching the live filter
  * gets `is-active`. Returns "" when there are no views so the row collapses.
+ *
+ * F32 options:
+ *   - draggable: mark chips draggable + carry `data-view-drag` so the row can
+ *     reorder them by dragging.
+ *   - updatableId: the one view whose filter has diverged from the live filter
+ *     (you recalled it, then tweaked) — that chip shows a `data-view-update`
+ *     button to overwrite the saved view with the current filter.
  */
-export function renderViewChips(views: SavedView[], filter: ViewFilter): string {
+export interface ViewChipOpts {
+  draggable?: boolean;
+  updatableId?: string | null;
+}
+
+export function renderViewChips(
+  views: SavedView[],
+  filter: ViewFilter,
+  opts: ViewChipOpts = {},
+): string {
   if (views.length === 0) return "";
+  const dragAttrs = opts.draggable ? ` draggable="true" data-view-drag` : "";
   return views
     .map((v) => {
       const active = filtersEqual(v.filter, filter) ? " is-active" : "";
-      return `<span class="view-chip${active}" data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${escapeHTML(v.name)}</button><button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      const update =
+        opts.updatableId && opts.updatableId === v.id
+          ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
+          : "";
+      return `<span class="view-chip${active}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

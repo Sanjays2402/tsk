@@ -9,6 +9,8 @@ import {
   serializeViews,
   addView,
   removeView,
+  updateView,
+  moveView,
   activeView,
   describeView,
   renderViewChips,
@@ -73,6 +75,44 @@ test("removeView drops by id", () => {
   assert.deepEqual(removeView(views, "nope"), views);
 });
 
+test("updateView overwrites the captured filter, keeping id + name", () => {
+  const views = addView([], "Work", { ...EMPTY, tags: ["work"] });
+  const id = views[0].id;
+  const next = updateView(views, id, { ...EMPTY, priorities: ["urgent"] });
+  assert.equal(next[0].id, id);
+  assert.equal(next[0].name, "Work");
+  assert.deepEqual(next[0].filter.priorities, ["urgent"]);
+  assert.deepEqual(next[0].filter.tags, []);
+});
+
+test("updateView rejects an empty filter and unknown ids", () => {
+  const views = addView([], "Work", { ...EMPTY, tags: ["work"] });
+  assert.equal(updateView(views, views[0].id, EMPTY), views); // empty -> unchanged
+  const same = updateView(views, "nope", { ...EMPTY, tags: ["x"] });
+  assert.deepEqual(same[0].filter.tags, ["work"]); // unknown id -> no change
+});
+
+test("moveView reorders before a target / to the end", () => {
+  let v = addView([], "A", { ...EMPTY, tags: ["a"] });
+  v = addView(v, "B", { ...EMPTY, tags: ["b"] });
+  v = addView(v, "C", { ...EMPTY, tags: ["c"] });
+  const [a, b, c] = v.map((x) => x.id);
+  // Move C before A -> C, A, B
+  assert.deepEqual(moveView(v, c, a).map((x) => x.name), ["C", "A", "B"]);
+  // Move A to the end (beforeId null) -> B, C, A
+  assert.deepEqual(moveView(v, a, null).map((x) => x.name), ["B", "C", "A"]);
+  // Move B before C -> A, B, C is a no-op (already there): same ref
+  assert.equal(moveView(v, b, c), v);
+});
+
+test("moveView no-ops on self-drop and unknown ids return same ref", () => {
+  let v = addView([], "A", { ...EMPTY, tags: ["a"] });
+  v = addView(v, "B", { ...EMPTY, tags: ["b"] });
+  const [a] = v.map((x) => x.id);
+  assert.equal(moveView(v, a, a), v); // self
+  assert.equal(moveView(v, "nope", a), v); // unknown moved
+});
+
 test("activeView matches the live filter, null when empty or unmatched", () => {
   const views = addView([], "Hi", { ...EMPTY, priorities: ["high"] });
   assert.equal(activeView(views, { ...EMPTY, priorities: ["high"] })?.name, "Hi");
@@ -129,6 +169,20 @@ test("renderViewChips marks the active view and carries recall/del hooks", () =>
   assert.doesNotMatch(renderViewChips(views, EMPTY), /is-active/);
   // Empty list collapses.
   assert.equal(renderViewChips([], EMPTY), "");
+});
+
+test("renderViewChips: draggable + update affordance (F32)", () => {
+  const views = addView([], "Work", { ...EMPTY, tags: ["work"] });
+  const id = views[0].id;
+  // draggable adds the drag hooks.
+  const drag = renderViewChips(views, EMPTY, { draggable: true });
+  assert.match(drag, /draggable="true"/);
+  assert.match(drag, /data-view-drag/);
+  // updatableId surfaces the update button on that one chip only.
+  const upd = renderViewChips(views, { ...EMPTY, tags: ["work"] }, { updatableId: id });
+  assert.match(upd, /data-view-update="/);
+  // No update button when updatableId doesn't match.
+  assert.doesNotMatch(renderViewChips(views, EMPTY, { updatableId: "other" }), /data-view-update/);
 });
 
 test("renderViewChips escapes view names", () => {

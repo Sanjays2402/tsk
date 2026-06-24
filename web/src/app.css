@@ -911,6 +911,28 @@ kbd {
 .view-chip-name:hover {
   color: var(--color-text);
 }
+/* F32: "update this view to the current filter" affordance (circular arrow). */
+.view-chip-update {
+  font-size: var(--fs-sm);
+  line-height: 1;
+  color: var(--color-accent);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--color-border-strong);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.view-chip-update:hover {
+  color: var(--color-accent-strong);
+}
+/* F32: drag-to-reorder feedback on the chips. */
+.view-chip[data-view-drag] {
+  cursor: grab;
+}
+.view-chip.is-dragging {
+  opacity: 0.5;
+}
 .view-chip-del {
   font-size: var(--fs-sm);
   line-height: 1;
