@@ -99,6 +99,7 @@ func newGraphCmd() *cobra.Command {
 		includeAll           bool
 		filterCompletedSince string
 		filterStartedSince   string
+		filterTouchedSince   string
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -209,6 +210,7 @@ Examples:
   tsk graph --reachable 7 --json --filter-completed-since 7d        # only nodes completed in the last 7 days (recency-trimmed envelope)
   tsk graph --reachable 7 --json --filter-started-since 24h         # only nodes started in the last day (in-progress recency)
   tsk graph --reachable 7 --json --filter-completed-since 7d --filter-started-since 7d  # UNION: anything actively moving
+  tsk graph --reachable 7 --json --filter-touched-since 7d          # shortcut for the above: any recent activity
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -355,6 +357,53 @@ Examples:
 				}
 				filterStartedDur = d
 				filterStartedActive = true
+			}
+			// --filter-touched-since is an ergonomic shortcut for
+			// "show me everything actively moving in the last N"
+			// — equivalent to setting BOTH --filter-completed-since
+			// AND --filter-started-since to the same value. Sister
+			// of --include-all's "turn on all opt-ins" pattern:
+			// one flag that flips on both recency axes at the
+			// SAME window so jq pipelines for the common
+			// "what's actively moving?" use case don't need to
+			// re-state the duration twice.
+			//
+			// Composition with the individual filters: if --filter-
+			// completed-since OR --filter-started-since is ALSO
+			// set explicitly, the individual flag WINS for that
+			// axis. This matches --include-all's "idempotent OR"
+			// pattern (turning on all opt-ins doesn't override
+			// the individual flags when they're set to true) —
+			// but here it means an explicit --filter-completed-
+			// since 1h alongside --filter-touched-since 7d would
+			// use 1h for completed (the more-specific flag) and
+			// 7d for started (touched filling in the unset axis).
+			// This lets users write `--filter-touched-since 7d`
+			// for the common case and ALSO `--filter-completed-
+			// since 24h --filter-touched-since 7d` for the more
+			// precise "completions in 24h OR starts in 7d" form.
+			if strings.TrimSpace(filterTouchedSince) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-touched-since only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterTouchedSince))
+				if err != nil {
+					return usageErrorf("invalid --filter-touched-since %q: %v", filterTouchedSince, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-touched-since must be a positive duration, got %q", filterTouchedSince)
+				}
+				// Flip on each axis only when not already set
+				// by the more-specific individual flag. This is
+				// the "individual wins" composition rule.
+				if !filterCompletedActive {
+					filterCompletedDur = d
+					filterCompletedActive = true
+				}
+				if !filterStartedActive {
+					filterStartedDur = d
+					filterStartedActive = true
+				}
 			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
@@ -530,6 +579,7 @@ Examples:
 	cmd.Flags().StringVar(&outputPath, "output", "", "write the rendered graph to this file instead of stdout; extension must match --format (.txt/.dot/.svg). With --json also writes the subgraph envelope (.json required, or .jsonl with --append). Useful for `tsk graph --format svg --output deps.svg` or `tsk graph --reachable 7 --json --output impact.json` without shell redirection.")
 	cmd.Flags().StringVar(&filterCompletedSince, "filter-completed-since", "", "for --json: trim the subgraph envelope to nodes whose task was completed within this duration window (e.g. 7d, 24h, 2w, 1h30m). The ROOT id is always kept (the consumer asked about THIS root); every other node must be done AND completed-within-window to survive. Edges touching a filtered-out node are dropped (no point linking to a node we removed). Useful for completion-velocity dashboards (\"what shipped this week in this dep chain?\"), recent-impact reports (\"which prereqs just closed?\"), and change-summary CI gates. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append (each appended record reflects the filter at call time). Empty (default) = no filter. The envelope gains a top-level `filter_completed_since` field naming the window in canonical humanized form when active, so scripts can distinguish a filtered from un-filtered envelope.")
 	cmd.Flags().StringVar(&filterStartedSince, "filter-started-since", "", "for --json: trim the subgraph envelope to nodes whose task is currently in-progress AND was started within this duration window (e.g. 7d, 24h, 2w, 1h30m). The OPEN sister of --filter-completed-since: completed-since surfaces RECENTLY-FINISHED work, started-since surfaces RECENTLY-BEGUN work. Useful for \"what's actively in flight in this dep chain?\" reports, currently-working impact analysis, and pomodoro/elapsed-time dashboards. The ROOT id is always kept (same semantic as completed-since). Edges touching a filtered-out node are dropped. When BOTH --filter-completed-since and --filter-started-since are set, the composition semantic is UNION (logical OR) — a node survives if EITHER recently-completed OR recently-started. This is the only useful composition since done and in-progress are mutually exclusive states on the same task. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append. Empty (default) = no filter. The envelope gains a top-level `filter_started_since` field naming the window in canonical humanized form when active, so scripts can distinguish either filter (or both) by which marker fields are present.")
+	cmd.Flags().StringVar(&filterTouchedSince, "filter-touched-since", "", "for --json: ergonomic shortcut equivalent to setting BOTH --filter-completed-since AND --filter-started-since to the same value. The one-flag form of the \"what's actively moving in the last N?\" query (UNION of recent completions and recent starts). Sister of --include-all's \"turn on all opt-ins\" pattern — one flag flips on both recency axes at the same window so jq pipelines don't need to re-state the duration twice. Composition: if --filter-completed-since OR --filter-started-since is ALSO set explicitly, the individual flag WINS for that axis (this lets `--filter-completed-since 24h --filter-touched-since 7d` mean \"completions in 24h OR starts in 7d\" — the precise per-axis form). Both `filter_completed_since` and `filter_started_since` marker fields are set on the envelope when --filter-touched-since is in use, so the on-disk shape stays compatible with scripts that look for the individual markers. Requires --json. Empty (default) = no filter.")
 	return cmd
 }
 
