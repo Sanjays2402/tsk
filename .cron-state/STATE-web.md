@@ -160,15 +160,16 @@ notes, settings, saved views) plus long-tail UI the surface still lacks.
       in the settings drawer, plus an offline banner when the SSE stream is
       down AND the network is unreachable (distinguish "server restarting"
       from "you're offline"). (tick T7 2026-06-24)
-- [ ] **F36** Bulk edit beyond toggle/delete: bulk set priority, bulk add/
+- [x] **F36** Bulk edit beyond toggle/delete: bulk set priority, bulk add/
       remove a tag, bulk set due — extend the floating bar with a small
-      action menu over the existing bulk-selection model.
-- [ ] **F37** Row context menu (right-click / long-press): every per-row
+      action menu over the existing bulk-selection model. (tick T8 2026-06-24)
+- [x] **F37** Row context menu (right-click / long-press): every per-row
       action (edit, due, notes, pin, clone, delete) in one menu, sharing the
-      command dispatch the palette already uses.
-- [ ] **F38** Quick-add upgrades: a `depends:#N` token in the composer, an
+      command dispatch the palette already uses. (tick T8 2026-06-24)
+- [x] **F38** Quick-add upgrades: a `depends:#N` token in the composer, an
       autocomplete dropdown for `#tags` (from collectTags) and `@due`
       presets, and a multi-line paste that splits into N tasks.
+      (tick T8 2026-06-24)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view,
 quick-jump to a tag from the palette, undo stack beyond single delete, etc.).
@@ -500,19 +501,71 @@ editing, pinned drag-reorder, touch priority picker, unblocked toast, tag/notes
 highlight, keyboard priority cycle, blocked-toggle guard, blocked/pinned stats
 — 11 slices queued so the loop never starves.
 
+### T8 — 2026-06-24 14:06 PT — depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted — `/Volumes` held only Macintosh HD; the lock wrapper
+logged `(repo cd failed)`, confirming the stale hard-coded path. Worked from the
+fully-synced internal worktree `/Users/sanjay/Projects/tsk-features/main` (same
+origin, was exactly at origin/main 958dfcb, clean tree, .cron-state tracked in
+git so no state divergence). Pushed a clean fast-forward 958dfcb..8b69c18. This
+remains the documented fallback (see T2-T7 notes).
+
+- F36 feat(web): bulk edit selected — priority/tag/due (4e06989)
+- F37 feat(web): row context menu — right-click / overflow button (a40af3e)
+- F38 feat(web): quick-add upgrades — depends: token, autocomplete, paste (230f045)
+- F39 feat(web): dependency editor — add/remove blockers + cycle guard (4d61c85)
+- F40 feat(web): pinned-section drag-reorder, stable hand-curated order (73ca9c3)
+- (+ chore 8b69c18: rebuilt embedded SPA bundle for all five slices)
+
+Backend change this tick: POST /api/tasks gains an optional depends_on (F38)
+validated through the existing sanitizeDeps + rolled back atomically if a dep id
+is bad (4 new Go tests in create_deps_test.go). Everything else is pure frontend
+over the existing JSON API. New pure modules: bulkedit.ts (15), contextmenu.ts
+(9), autocomplete.ts (16), depedit.ts (18) + extended quickadd.ts (multi-paste +
+depends token) and reorder.ts (computeSectionReorder, 8) and sections.ts
+(comparePinned -> file order). 74 new web tests (284 -> 358).
+
+One shared-surface win: F37's runRowAction is the SINGLE dispatcher behind the
+context menu, the command palette, AND the keyboard hotkeys, so they can't
+drift. F39 reuses it (Edit blockers) and adds the `b` hotkey + palette entry.
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across ALL packages (incl. internal/serve with the
+freshly-embedded T8 bundle + the create-deps path, internal/commands 58.5s), web
+`npm run check` 358 pass, `npm run build` ok — JS 27.19KB gz, CSS 8.03KB gz, 36
+modules.
+
+End-to-end proof: built the binary, ran tsk init + 2 tasks + `tsk serve`. F38:
+POST /api/tasks {depends_on:[1,2]} -> 201 with depends_on:[1,2], persisted to
+.tsk.md as `depends:1,2` and `tsk show 3` read `depends: #1, #2` back; a bad dep
+id (999) -> 400 AND rolled back (store stayed at 3 tasks, no orphan). The served
+bundle carries every slice's hooks: data-bulk-edit, data-bulk-set-prio,
+data-row-action, data-ctxmenu, depends:, data-ac-value, data-dep-input,
+data-dep-cand, data-section (F40 section reorder). The hand-editable .tsk.md
+storage contract is intact.
+
+Roadmap status: F1-F40 done. F41-F46 (rest of T8) + F47-F54 (T9, appended this
+tick) unstarted — touch priority picker, unblocked toast, tag/notes highlight,
+keyboard priority cycle, blocked-toggle guard, blocked/pinned stats, then bulk-
+edit depth, context submenus, autocomplete everywhere, dep mini-graph, all-
+section reorder, multi-paste review, palette row-actions, touch context menu —
+14 slices queued so the loop never starves.
+
 ### T8 — depth (appended T6 2026-06-24 so the loop never starves)
 
 Fresh slices for after the T7 cluster. F36-F38 are the standing T7 backlog;
 these extend it with follow-ons sensible after the T6 dependency/pin/priority/
 mobile/highlight work plus long-tail UI the surface still lacks.
 
-- [ ] **F39** Dependency EDITING in the UI: a small "blocked by" editor on the
+- [x] **F39** Dependency EDITING in the UI: a small "blocked by" editor on the
       row / in a popover to add+remove prereqs (the backend PATCH depends_on
       already supports it; T6 only shipped the read + jump). Autocomplete over
       open task ids, refuse self/cycle client-side before the PATCH.
-- [ ] **F40** Pinned-section drag-reorder + a "pin to a fixed slot" so the
+      (tick T8 2026-06-24)
+- [x] **F40** Pinned-section drag-reorder + a "pin to a fixed slot" so the
       Pinned group has a stable hand-curated order (currently priority-sorted);
-      persist the order through the existing /move endpoint.
+      persist the order through the existing /move endpoint. (tick T8 2026-06-24)
 - [ ] **F41** Priority cycle on touch: long-press the chip to open a 4-way
       priority picker (tap-to-set) since alt/shift-click isn't reachable on a
       phone; reuse the F28 long-press machine.
@@ -534,3 +587,36 @@ mobile/highlight work plus long-tail UI the surface still lacks.
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an
 in-UI dependency graph mini-map, undo stack beyond single delete, etc.).
+
+### T9 — depth (appended T8 2026-06-24 so the loop never starves)
+
+Fresh slices for after the F41-F46 backlog. F41-F46 are the standing T8
+queue (touch priority picker, unblocked toast, tag/notes highlight, keyboard
+priority cycle, blocked-toggle guard, blocked/pinned stats); these extend the
+runway with follow-ons sensible after the T8 bulk-edit / context-menu /
+quick-add / dependency-editor / pinned-reorder cluster.
+
+- [ ] **F47** Bulk edit depth: a bulk "set/clear due via the NL picker preview"
+      (reuse the F12 parse-date endpoint live inside the bulk-due popover), and
+      a bulk pin/unpin + bulk "add blocker" over the F36 selection model.
+- [ ] **F48** Context-menu submenus: nest the priority levels and a "due
+      presets" flyout inside the F37 row menu so you can set them without a
+      separate popover; keyboard-navigable (arrow into submenu).
+- [ ] **F49** Autocomplete depth: extend the F38 composer dropdown to the inline
+      EDIT field (F7) and the filter box (F11) so #tag/@due completion is
+      everywhere; add a `!priority` completion too.
+- [ ] **F50** Dependency mini-graph: in the dep editor (F39), render a tiny
+      ASCII/SVG "what blocks what" preview of the selected task's immediate
+      neighborhood (reuse the upstream/reachable JSON the server already emits).
+- [ ] **F51** Drag-reorder depth: extend the section-constrained F40 reorder to
+      ALL undone sections (overdue/today/upcoming/nodue) with a clear "manual
+      order overrides priority within this section" affordance + a reset.
+- [ ] **F52** Multi-paste review: when a multi-line paste (F38) lands, show a
+      tiny confirm sheet listing the N parsed tasks (title + chips) with a
+      per-line remove before committing, so a bad paste doesn't dump junk.
+- [ ] **F53** Command palette: surface the row context-menu actions (F37) for
+      the selected task as a palette group, and add "Edit blockers" + the bulk
+      verbs so everything is reachable keyboard-only from Cmd-K.
+- [ ] **F54** Row context menu on touch: wire a long-press (reuse the F28
+      machine) to open the F37 menu instead of only bulk-select, with a press-
+      and-hold disambiguation (short hold = menu, longer = multi-select).
