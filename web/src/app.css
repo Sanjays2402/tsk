@@ -1789,6 +1789,81 @@ kbd {
   padding-bottom: var(--sp-12);
 }
 
+/* F36: bulk-edit popover (priority menu / tag editor / due editor). Anchored
+   above the bulk bar, mirrors the due-pop styling for a consistent feel. */
+.bulkedit-pop {
+  position: absolute;
+  bottom: calc(100% + var(--sp-2));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 41;
+  width: max-content;
+  max-width: 90vw;
+  padding: var(--sp-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  cursor: default;
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.bulkedit-pop-row {
+  display: flex;
+  gap: var(--sp-1);
+  align-items: center;
+}
+.bulkedit-input {
+  width: min(320px, 80vw);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.bulkedit-prio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.bulkedit-prio:hover {
+  color: var(--color-text);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.bulkedit-prio.urgent { color: var(--color-urgent, var(--color-overdue)); }
+.bulkedit-prio.high { color: var(--color-high, var(--color-accent)); }
+.bulkedit-prio-word {
+  font-size: var(--fs-xs);
+  text-transform: capitalize;
+}
+.bulkedit-hint {
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}
+.bulkedit-hint code {
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+}
+
 /* F28: mobile/touch polish — bottom action SHEET + bigger hit targets.
    On narrow screens the floating pill becomes a full-width sheet docked to the
    bottom edge (thumb-reachable), and on no-hover (touch) devices the per-row

@@ -69,6 +69,16 @@ import {
 } from "./bulkselect";
 import { computeReorder, dropPosForY, type DropPos } from "./reorder";
 import {
+  parseTagOps,
+  isNoopTagOps,
+  applyTagOps,
+  renderBulkEditCluster,
+  renderBulkPriorityMenu,
+  renderBulkTagEditor,
+  renderBulkDueEditor,
+  type Priority as BulkPriority,
+} from "./bulkedit";
+import {
   filterCommands,
   moveIndex,
   clampIndex,
@@ -411,6 +421,14 @@ function renderBulkSelection(): void {
   const count = bulk.ids.size;
   els.bulkbar.hidden = count === 0;
   els.bulkbar.innerHTML = renderBulkBar(count);
+  // F36: inject the bulk-edit cluster (priority / tag / due) into the bar's
+  // actions group, beside the core toggle/delete/clear from F16.
+  if (count > 0) {
+    const actions = els.bulkbar.querySelector<HTMLElement>(".bulkbar-actions");
+    if (actions) {
+      actions.insertAdjacentHTML("afterbegin", renderBulkEditCluster());
+    }
+  }
 }
 
 /** Toggle a single row into/out of the bulk set (cmd/ctrl-click). */
@@ -428,6 +446,7 @@ function bulkSelectRange(id: number): void {
 /** Clear the entire bulk selection. */
 function bulkClear(): void {
   bulk = clearBulk();
+  closeBulkEdit();
   renderBulkSelection();
 }
 
@@ -475,6 +494,143 @@ async function bulkDelete(): Promise<void> {
     setStatus(`bulk delete failed: ${formatErr(err)}`, true);
     setTimeout(() => setStatus("ready", false), 4_000);
   }
+}
+
+// --- F36: bulk edit (priority / tag / due) ---------------------------------
+
+/** The bulk-edit popover currently open ("priority" | "tag" | "due"), or null. */
+let bulkEditOpen: "priority" | "tag" | "due" | null = null;
+
+/** Remove any open bulk-edit popover and drop its outside-click guard. */
+function closeBulkEdit(): void {
+  bulkEditOpen = null;
+  document.querySelector("[data-bulkedit-pop]")?.remove();
+  document.removeEventListener("click", onBulkEditAway, true);
+}
+
+/** Outside-click closes the bulk-edit popover (capture so it beats row clicks). */
+function onBulkEditAway(e: MouseEvent): void {
+  const t = e.target as HTMLElement | null;
+  if (t?.closest("[data-bulkedit-pop]")) return;
+  if (t?.closest("[data-bulk-edit]")) return; // the opener toggles itself
+  closeBulkEdit();
+}
+
+/**
+ * Open the bulk-edit popover for one of the three actions, anchored above the
+ * bulk bar. Re-clicking the same opener closes it (toggle). The popover content
+ * is a pure render from bulkedit.ts; the inputs/buttons inside carry data hooks
+ * a delegated listener dispatches on.
+ */
+function openBulkEdit(kind: "priority" | "tag" | "due"): void {
+  if (bulkEditOpen === kind) {
+    closeBulkEdit();
+    return;
+  }
+  closeBulkEdit();
+  if (bulk.ids.size === 0) return;
+  bulkEditOpen = kind;
+  const pop = document.createElement("div");
+  pop.className = `bulkedit-pop bulkedit-${kind}`;
+  pop.setAttribute("data-bulkedit-pop", "");
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", `Bulk set ${kind}`);
+  const body =
+    kind === "priority"
+      ? renderBulkPriorityMenu()
+      : kind === "tag"
+        ? renderBulkTagEditor()
+        : renderBulkDueEditor();
+  pop.innerHTML = body;
+  els.bulkbar.appendChild(pop);
+
+  if (kind === "priority") {
+    pop.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-bulk-set-prio]");
+      if (!btn) return;
+      const prio = btn.dataset.bulkSetPrio as BulkPriority;
+      bulkSetPriority(prio);
+    });
+  } else {
+    const input = pop.querySelector<HTMLInputElement>("input")!;
+    input.focus();
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (kind === "tag") bulkApplyTags(input.value);
+        else bulkSetDue(input.value);
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeBulkEdit();
+      }
+    });
+  }
+  // Defer the outside-click guard so the opening click doesn't immediately close it.
+  setTimeout(() => document.addEventListener("click", onBulkEditAway, true), 0);
+}
+
+/** Run a PATCH for every selected id in parallel, then refresh once. */
+async function bulkPatch(
+  ids: number[],
+  patchFor: (t: Task) => Parameters<typeof api.patchTask>[1] | null,
+  verb: string,
+): Promise<void> {
+  if (ids.length === 0) return;
+  bulkClear();
+  closeBulkEdit();
+  setStatus(`${verb} ${ids.length}…`, false);
+  try {
+    await Promise.all(
+      ids.map((id) => {
+        const t = currentTasks.find((x) => x.id === id);
+        if (!t) return Promise.resolve();
+        const patch = patchFor(t);
+        if (!patch) return Promise.resolve();
+        return api.patchTask(id, patch);
+      }),
+    );
+    await refresh();
+  } catch (err) {
+    await refresh();
+    setStatus(`bulk ${verb} failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
+/** F36: set the same priority on every selected task. */
+function bulkSetPriority(prio: BulkPriority): void {
+  const ids = selectedInOrder(bulk, visibleIds);
+  bulkPatch(ids, () => ({ priority: prio }), `set ${prio} on`);
+}
+
+/** F36: add/remove tags on every selected task (per-task tag-list rewrite). */
+function bulkApplyTags(command: string): void {
+  const ops = parseTagOps(command);
+  if (isNoopTagOps(ops)) {
+    closeBulkEdit();
+    return;
+  }
+  const ids = selectedInOrder(bulk, visibleIds);
+  bulkPatch(
+    ids,
+    (t) => {
+      const next = applyTagOps(t.tags, ops);
+      // Skip the PATCH when this task's tags don't actually change.
+      if (next.length === t.tags.length && next.every((tag, i) => tag === t.tags[i])) {
+        return null;
+      }
+      return { tags: next };
+    },
+    "tag",
+  );
+}
+
+/** F36: set the same due date (natural language) on every selected task. */
+function bulkSetDue(raw: string): void {
+  const due = raw.trim(); // "" clears; server validates non-empty
+  const ids = selectedInOrder(bulk, visibleIds);
+  bulkPatch(ids, () => ({ due }), due === "" ? "clear due on" : "set due on");
 }
 
 // --- F17: drag-to-reorder --------------------------------------------------
@@ -1839,6 +1995,11 @@ els.statsPanel.addEventListener("click", (e) => {
 els.bulkbar.addEventListener("click", (e) => {
   const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("button");
   if (!btn) return;
+  // F36: the priority/tag/due openers toggle their popover.
+  if (btn.dataset.bulkEdit !== undefined) {
+    openBulkEdit(btn.dataset.bulkEdit as "priority" | "tag" | "due");
+    return;
+  }
   if (btn.dataset.bulkToggle !== undefined) bulkToggleDone();
   else if (btn.dataset.bulkDelete !== undefined) bulkDelete();
   else if (btn.dataset.bulkClear !== undefined) bulkClear();
