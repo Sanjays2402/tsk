@@ -18,6 +18,7 @@ export interface Task {
   notes?: string;
   created?: string; // RFC3339
   completed?: string;
+  depends_on?: number[]; // F26: ids this task is blocked by
 }
 
 export interface TaskListResponse {
@@ -61,6 +62,7 @@ export interface TaskPatch {
   tags?: string[];
   notes?: string;
   done?: boolean;
+  depends_on?: number[]; // F26
 }
 
 export class ApiError extends Error {

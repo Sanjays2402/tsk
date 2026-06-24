@@ -371,6 +371,14 @@ func (s *Server) updateTask(w http.ResponseWriter, r *http.Request, id int) {
 	if in.Notes != nil {
 		t.Notes = strings.TrimSpace(*in.Notes)
 	}
+	if in.DependsOn != nil {
+		deps, err := sanitizeDeps(st, id, *in.DependsOn)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		t.DependsOn = deps
+	}
 	if in.Done != nil {
 		st.SetDone(id, *in.Done)
 	}
@@ -398,6 +406,37 @@ func (s *Server) toggleTask(w http.ResponseWriter, id int) {
 		return
 	}
 	writeJSON(w, http.StatusOK, taskToDTO(*st.ByID(id)))
+}
+
+// sanitizeDeps validates and normalizes a proposed DependsOn set for task
+// `self` (F26): it drops duplicates, refuses self-references, and rejects any
+// id that doesn't exist in the store. The returned slice preserves first-seen
+// order so a hand-curated chain keeps its intended reading order. A nil/empty
+// input yields a nil slice (clearing the deps), which round-trips to no
+// `depends:` key in the file.
+func sanitizeDeps(st *store.Store, self int, raw []int) ([]int, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	seen := make(map[int]struct{}, len(raw))
+	out := make([]int, 0, len(raw))
+	for _, dep := range raw {
+		if dep == self {
+			return nil, fmt.Errorf("a task cannot depend on itself (#%d)", self)
+		}
+		if _, dup := seen[dep]; dup {
+			continue
+		}
+		if st.ByID(dep) == nil {
+			return nil, fmt.Errorf("no task with id %d to depend on", dep)
+		}
+		seen[dep] = struct{}{}
+		out = append(out, dep)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
 }
 
 // moveTask repositions task `id` to sit immediately before the task named in

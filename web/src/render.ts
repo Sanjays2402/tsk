@@ -8,6 +8,7 @@
 import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
 import { renderNotesButton } from "./notes";
+import { blockedClass, renderBlockedBadge, type DepTask } from "./deps";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -47,10 +48,22 @@ export function dueClassFor(due: string | undefined, done: boolean, now: Date): 
   return "";
 }
 
+/**
+ * Per-render context threaded into row rendering. `done` is the id->done index
+ * (F26) used to compute blocked state; absent context means "no dependency
+ * decoration" (keeps renderRow usable in isolation / tests).
+ */
+export interface RowContext {
+  done?: Map<number, boolean>;
+}
+
 /** Render a single task row as HTML. */
-export function renderRow(t: Task, now: Date): string {
+export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
   const dueState = dueClassFor(t.due, t.done, now);
-  const classes = ["row", t.done ? "is-done" : "", dueState].filter(Boolean).join(" ");
+  const dep = ctx.done ? blockedClass(t as DepTask, ctx.done) : "";
+  const classes = ["row", t.done ? "is-done" : "", dueState, dep]
+    .filter(Boolean)
+    .join(" ");
   const dueLabel = t.due ? formatDue(t.due, now) : null;
   const tagsHTML = t.tags
     .map((tag) => `<button class="tag" type="button" data-tagnav="${escapeHTML(tag)}" title="Open #${escapeHTML(tag)} page">${escapeHTML(tag)}</button>`)
@@ -58,6 +71,7 @@ export function renderRow(t: Task, now: Date): string {
   const dueCell = dueLabel
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
     : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
+  const depBadge = ctx.done ? renderBlockedBadge(t as DepTask, ctx.done) : "";
   return `
     <li class="${classes}" data-id="${t.id}" draggable="true">
       <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>
@@ -67,6 +81,7 @@ export function renderRow(t: Task, now: Date): string {
         <span class="id">#${t.id}</span>
       </div>
       <div class="meta">
+        ${depBadge}
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
         ${dueCell}
         ${renderNotesButton(t.notes)}
@@ -95,8 +110,8 @@ export function priorityShort(p: string): string {
  * / Done sections (F9). Empty sections are omitted. Each section carries a
  * count so you can see the shape of your day at a glance.
  */
-export function renderTasks(tasks: Task[], now: Date): string {
-  return renderSections(groupIntoSections(tasks, now), now);
+export function renderTasks(tasks: Task[], now: Date, ctx: RowContext = {}): string {
+  return renderSections(groupIntoSections(tasks, now), now, ctx);
 }
 
 /**
@@ -104,7 +119,11 @@ export function renderTasks(tasks: Task[], now: Date): string {
  * group once and reuse the same Section[] for both the DOM and keyboard-nav
  * order, guaranteeing the two never drift.
  */
-export function renderSections(sections: Section<Task>[], now: Date): string {
+export function renderSections(
+  sections: Section<Task>[],
+  now: Date,
+  ctx: RowContext = {},
+): string {
   if (sections.length === 0) {
     return `
       <div class="empty">
@@ -115,7 +134,7 @@ export function renderSections(sections: Section<Task>[], now: Date): string {
   }
   return sections
     .map((section) => {
-      const rows = section.tasks.map((t) => renderRow(t, now)).join("");
+      const rows = section.tasks.map((t) => renderRow(t, now, ctx)).join("");
       return `
       <section class="section section-${section.key}" data-section="${section.key}">
         <div class="section-head">

@@ -424,6 +424,43 @@ body {
   background: var(--color-prio-urgent);
 }
 
+/* F26: dependency awareness — "blocked by #N" badge + greyed-out blocked row. */
+.dep-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-overdue);
+  background: color-mix(in srgb, var(--color-overdue) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-overdue) 36%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.dep-badge:hover {
+  background: color-mix(in srgb, var(--color-overdue) 24%, transparent);
+  border-color: var(--color-overdue);
+}
+.dep-badge:focus-visible {
+  outline: 2px solid var(--color-overdue);
+  outline-offset: 1px;
+}
+.row.is-blocked .title {
+  color: var(--color-text-dim);
+}
+.row.is-blocked .check {
+  opacity: 0.5;
+}
+.row.is-blocked:hover .check {
+  opacity: 1;
+}
+
 /* Empty state */
 .empty {
   padding: var(--sp-12) var(--sp-6);

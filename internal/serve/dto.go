@@ -19,6 +19,10 @@ type taskDTO struct {
 	Notes     string   `json:"notes,omitempty"`
 	Created   string   `json:"created,omitempty"`   // RFC3339
 	Completed string   `json:"completed,omitempty"` // RFC3339
+	// DependsOn is the set of task ids this task is blocked by (F26). Omitted
+	// when empty so existing fixtures stay byte-identical for dependency-free
+	// tasks. The client greys out a task whose deps aren't all done yet.
+	DependsOn []int `json:"depends_on,omitempty"`
 }
 
 // taskInputDTO is the body shape for POST /api/tasks.
@@ -39,6 +43,7 @@ type taskPatchDTO struct {
 	Tags     *[]string `json:"tags,omitempty"`
 	Notes    *string   `json:"notes,omitempty"`
 	Done     *bool     `json:"done,omitempty"`
+	DependsOn *[]int   `json:"depends_on,omitempty"` // F26: replace the blocker set
 }
 
 // moveInputDTO is the body shape for POST /api/tasks/:id/move. Before is the
@@ -73,6 +78,9 @@ func taskToDTO(t model.Task) taskDTO {
 		Priority: t.Priority.String(),
 		Tags:     append([]string{}, t.Tags...), // ensure non-nil for JSON
 		Notes:    t.Notes,
+	}
+	if len(t.DependsOn) > 0 {
+		out.DependsOn = append([]int{}, t.DependsOn...)
 	}
 	if t.Due != nil {
 		out.Due = t.Due.Format(model.DateLayout)

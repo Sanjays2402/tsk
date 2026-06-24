@@ -12,6 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
+import { doneIndex } from "./deps";
 import { parseQuickAdd, isSubmittable } from "./quickadd";
 import { renderComposerPreview } from "./composer";
 import { groupIntoSections, flattenSections } from "./sections";
@@ -290,7 +291,10 @@ function render(): void {
   const prevIds = visibleIds;
   visibleIds = flattenSections(sections).map((t) => t.id);
   nav = reconcile(nav, visibleIds, prevIds);
-  els.content.innerHTML = renderSections(sections, now);
+  // F26: build the done-index over ALL live tasks (not just the filtered view)
+  // so a blocker hidden by the current filter still counts as blocking.
+  const doneIdx = doneIndex(notDeleted);
+  els.content.innerHTML = renderSections(sections, now, { done: doneIdx });
   els.count.innerHTML = summarize(shown);
   renderFilterBar(routed, shown.length);
   renderTagPage(routed.length);
@@ -1595,6 +1599,13 @@ els.content.addEventListener("click", (e) => {
     requestDelete(id);
     return;
   }
+  // F26: the "blocked by #N" badge jumps to (selects + scrolls to) the blocker.
+  const depJump = target.closest<HTMLElement>("[data-dep-jump]");
+  if (depJump) {
+    const blockerId = Number(depJump.dataset.depJump);
+    if (Number.isFinite(blockerId) && blockerId > 0) jumpToTask(blockerId);
+    return;
+  }
   // F15: a row tag pill navigates to that tag's page.
   const tagnav = target.closest<HTMLElement>("[data-tagnav]");
   if (tagnav) {
@@ -1653,6 +1664,28 @@ function isTypingTarget(el: EventTarget | null): boolean {
 /** Move the keyboard selection and repaint just the selection state. */
 function navMove(dir: NavMove): void {
   nav = move(nav, visibleIds, dir);
+  applySelection();
+}
+
+/**
+ * F26: jump to a task by id — select it and scroll it into view. Used by the
+ * "blocked by #N" badge so you can hop straight to the blocker. If the target
+ * isn't currently visible (filtered out, on another tag page), clear the filter
+ * / route first so the jump always lands.
+ */
+function jumpToTask(id: number): void {
+  if (!visibleIds.includes(id)) {
+    // The blocker is hidden by the active filter or tag route — reset to the
+    // full board so the jump can land, then re-render.
+    if (route.kind === "tag") navigateToAll();
+    if (isFilterActive(filter)) {
+      filter = emptyFilter();
+      filter.hideDone = settings.hideDone;
+      els.filterInput.value = "";
+      render();
+    }
+  }
+  nav = select(nav, visibleIds, id);
   applySelection();
 }
 
