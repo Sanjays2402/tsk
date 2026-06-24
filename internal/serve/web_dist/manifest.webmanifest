@@ -1,0 +1,26 @@
+{
+  "name": "tsk — keyboard-first tasks",
+  "short_name": "tsk",
+  "description": "A fast, keyboard-first task manager over a single hand-editable .tsk.md file.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0a09",
+  "theme_color": "#0b0a09",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}
