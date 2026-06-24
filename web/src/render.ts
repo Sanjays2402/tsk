@@ -6,7 +6,7 @@
  */
 
 import type { Task } from "./api";
-import { groupIntoSections } from "./sections";
+import { groupIntoSections, type Section } from "./sections";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -89,7 +89,16 @@ export function priorityShort(p: string): string {
  * count so you can see the shape of your day at a glance.
  */
 export function renderTasks(tasks: Task[], now: Date): string {
-  if (tasks.length === 0) {
+  return renderSections(groupIntoSections(tasks, now), now);
+}
+
+/**
+ * Render pre-grouped sections. Split from renderTasks so callers (main.ts) can
+ * group once and reuse the same Section[] for both the DOM and keyboard-nav
+ * order, guaranteeing the two never drift.
+ */
+export function renderSections(sections: Section<Task>[], now: Date): string {
+  if (sections.length === 0) {
     return `
       <div class="empty">
         <div class="glyph">✓</div>
@@ -97,7 +106,6 @@ export function renderTasks(tasks: Task[], now: Date): string {
         <div class="hint">Add one above, or from the CLI: <code>tsk add "buy milk"</code></div>
       </div>`;
   }
-  const sections = groupIntoSections(tasks, now);
   return sections
     .map((section) => {
       const rows = section.tasks.map((t) => renderRow(t, now)).join("");

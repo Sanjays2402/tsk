@@ -11,9 +11,11 @@
  */
 
 import { api, ApiError, type Task } from "./api";
-import { renderTasks, summarize } from "./render";
+import { renderSections, summarize } from "./render";
 import { parseQuickAdd, isSubmittable } from "./quickadd";
 import { renderComposerPreview } from "./composer";
+import { groupIntoSections, flattenSections } from "./sections";
+import { emptyNav, reconcile, move, select, type NavMove, type NavState } from "./keynav";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -49,7 +51,7 @@ root.innerHTML = `
     </div>
     <footer class="statusline">
       <span class="count" data-count></span>
-      <span data-build>tsk web &middot; <a href="/api/tasks" style="color:inherit">api</a></span>
+      <span data-build><kbd class="kbd-hint" data-help-open>?</kbd> shortcuts &middot; <a href="/api/tasks" style="color:inherit">api</a></span>
     </footer>
   </div>
 `;
@@ -74,12 +76,37 @@ function must<T extends HTMLElement>(sel: string): T {
 let currentTasks: Task[] = [];
 /** Per-task in-flight toggle guard, prevents double-fire on rapid clicks. */
 const inFlight = new Set<number>();
+/** Keyboard selection state (F10) + the visible id order it walks. */
+let nav: NavState = emptyNav();
+let visibleIds: number[] = [];
 
-/** Render the current state to the DOM. */
+/** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
-  els.content.innerHTML = renderTasks(currentTasks, now);
+  const sections = groupIntoSections(currentTasks, now);
+  const prevIds = visibleIds;
+  visibleIds = flattenSections(sections).map((t) => t.id);
+  nav = reconcile(nav, visibleIds, prevIds);
+  els.content.innerHTML = renderSections(sections, now);
   els.count.innerHTML = summarize(currentTasks);
+  applySelection();
+}
+
+/** Reflect nav.selectedId onto the DOM and scroll it into view. */
+function applySelection(): void {
+  const rows = els.content.querySelectorAll<HTMLElement>("[data-id]");
+  rows.forEach((row) => {
+    const on = Number(row.dataset.id) === nav.selectedId;
+    row.classList.toggle("is-selected", on);
+    if (on) row.setAttribute("aria-current", "true");
+    else row.removeAttribute("aria-current");
+  });
+  if (nav.selectedId !== null) {
+    const sel = els.content.querySelector<HTMLElement>(
+      `[data-id="${nav.selectedId}"]`,
+    );
+    sel?.scrollIntoView({ block: "nearest" });
+  }
 }
 
 /** Re-fetch and re-render the list. Idempotent; safe to call any time. */
@@ -225,6 +252,19 @@ els.content.addEventListener("change", (e) => {
   toggleTask(id);
 });
 
+// Clicking a row selects it (so mouse + keyboard stay in sync). Ignore clicks
+// on the checkbox itself, which has its own change handler.
+els.content.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (!target || target instanceof HTMLInputElement) return;
+  const row = target.closest("[data-id]") as HTMLElement | null;
+  if (!row) return;
+  const id = Number(row.dataset.id);
+  if (!Number.isFinite(id) || id <= 0) return;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+});
+
 // Pick up external edits (CLI / TUI / hand-edit) when the tab regains focus.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
@@ -232,23 +272,125 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-// `r` refreshes, `n` focuses the composer — both ignored while typing.
+// --- F10: keyboard navigation ----------------------------------------------
+
 function isTypingTarget(el: EventTarget | null): boolean {
   const t = el as HTMLElement | null;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
 }
 
+/** Move the keyboard selection and repaint just the selection state. */
+function navMove(dir: NavMove): void {
+  nav = move(nav, visibleIds, dir);
+  applySelection();
+}
+
 document.addEventListener("keydown", (e) => {
+  // The help overlay swallows Escape/?; handle that first.
+  if (helpOpen) {
+    if (e.key === "Escape" || e.key === "?") {
+      e.preventDefault();
+      toggleHelp(false);
+    }
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
-  if (e.key === "r") {
-    e.preventDefault();
-    refresh();
-  } else if (e.key === "n") {
-    e.preventDefault();
-    els.input.focus();
+
+  switch (e.key) {
+    case "j":
+    case "ArrowDown":
+      e.preventDefault();
+      navMove("next");
+      break;
+    case "k":
+    case "ArrowUp":
+      e.preventDefault();
+      navMove("prev");
+      break;
+    case "g":
+    case "Home":
+      e.preventDefault();
+      navMove("first");
+      break;
+    case "G":
+    case "End":
+      e.preventDefault();
+      navMove("last");
+      break;
+    case " ":
+    case "Enter":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        toggleTask(nav.selectedId);
+      }
+      break;
+    case "r":
+      e.preventDefault();
+      refresh();
+      break;
+    case "n":
+      e.preventDefault();
+      els.input.focus();
+      break;
+    case "?":
+      e.preventDefault();
+      toggleHelp(true);
+      break;
   }
 });
+
+// --- F10: help overlay ------------------------------------------------------
+
+let helpOpen = false;
+
+const HELP_ROWS: ReadonlyArray<[string, string]> = [
+  ["j / \u2193", "Move selection down"],
+  ["k / \u2191", "Move selection up"],
+  ["g / G", "Jump to first / last"],
+  ["space / enter", "Toggle the selected task done"],
+  ["n", "Focus the add-task field"],
+  ["r", "Refresh from disk"],
+  ["esc", "Clear the add field / close this help"],
+  ["?", "Toggle this help"],
+];
+
+function ensureHelpEl(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-help]");
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "help-overlay";
+  el.setAttribute("data-help", "");
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  el.setAttribute("aria-label", "Keyboard shortcuts");
+  el.innerHTML = `
+    <div class="help-card">
+      <div class="help-title">Keyboard shortcuts</div>
+      <dl class="help-list">
+        ${HELP_ROWS.map(
+          ([keys, desc]) =>
+            `<div class="help-row"><dt><kbd>${escapeAttr(keys)}</kbd></dt><dd>${escapeAttr(desc)}</dd></div>`,
+        ).join("")}
+      </dl>
+      <div class="help-foot">Press <kbd>?</kbd> or <kbd>esc</kbd> to close</div>
+    </div>`;
+  // Click the backdrop (not the card) to dismiss.
+  el.addEventListener("click", (e) => {
+    if (e.target === el) toggleHelp(false);
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+function toggleHelp(open: boolean): void {
+  helpOpen = open;
+  const el = ensureHelpEl();
+  el.classList.toggle("is-open", open);
+}
+
+// Clickable "?" hint in the footer opens the help overlay.
+must<HTMLElement>("[data-help-open]").addEventListener("click", () => toggleHelp(true));
 
 // Escape hatches for upcoming slices.
 declare global {
@@ -258,6 +400,8 @@ declare global {
       tasks: () => Task[];
       toggle: (id: number) => Promise<void>;
       add: (line: string) => Promise<void>;
+      selected: () => number | null;
+      help: (open: boolean) => void;
     };
   }
 }
@@ -269,6 +413,8 @@ window.tsk = {
     els.input.value = line;
     await submitComposer();
   },
+  selected: () => nav.selectedId,
+  help: toggleHelp,
 };
 
 refresh();

@@ -444,6 +444,102 @@ body {
   100% { background-position: -200% 0; }
 }
 
+/* F10: keyboard selection highlight */
+.row.is-selected {
+  background: var(--color-surface-hi);
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+.row.is-selected .title {
+  color: var(--color-text);
+}
+
+/* F10: footer keyboard hint + kbd glyphs */
+kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  line-height: 1;
+  padding: 2px 5px;
+  border: 1px solid var(--color-border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-hi);
+  color: var(--color-text-dim);
+  white-space: nowrap;
+}
+.kbd-hint {
+  cursor: pointer;
+}
+.kbd-hint:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* F10: help overlay */
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.help-overlay.is-open {
+  display: flex;
+}
+@keyframes help-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.help-card {
+  width: 100%;
+  max-width: 380px;
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
+}
+.help-title {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: var(--sp-4);
+}
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.help-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0;
+}
+.help-row dt {
+  text-align: right;
+}
+.help-row dd {
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+}
+.help-foot {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  text-align: center;
+}
+
 @media (max-width: 640px) {
   .app { padding: var(--sp-5) var(--sp-3) var(--sp-8); }
   .row { grid-template-columns: auto 1fr; }
