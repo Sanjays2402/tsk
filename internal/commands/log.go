@@ -33,11 +33,12 @@ import (
 // happening so you're not surprised by a "where's task #N?" question.
 func newLogCmd() *cobra.Command {
 	var (
-		limit  int
-		since  string
-		asJSON bool
-		tag    string
-		format string
+		limit    int
+		since    string
+		asJSON   bool
+		tag      string
+		priority string
+		format   string
 	)
 	cmd := &cobra.Command{
 		Use:     "log",
@@ -45,11 +46,13 @@ func newLogCmd() *cobra.Command {
 		Short:   "Show recently completed tasks (newest first)",
 		Long: `Show recently completed tasks, newest completion first.
 
-Bounds (compose: --since trims first, --limit caps the result):
-  --limit N      cap to N rows (default 10; 0 = unlimited)
-  --since DUR    only include tasks completed within this duration
-                 (7d, 2w, 1m, 72h, 1h30m, ...)
-  --tag T        only include tasks tagged T
+Bounds (compose: --since trims first, then filters, --limit caps last):
+  --limit N        cap to N rows (default 10; 0 = unlimited)
+  --since DUR      only include tasks completed within this duration
+                   (7d, 2w, 1m, 72h, 1h30m, ...)
+  --tag T          only include tasks tagged T
+  --priority P     only include tasks at exactly this priority
+                   (low/medium/high/urgent; short forms accepted)
 
 Tasks without a Completed timestamp are excluded (the log is strictly
 time-ordered). A footer line notes how many such tasks were skipped
@@ -61,10 +64,12 @@ Output:
   --format X     plain (default), table, or json
 
 Examples:
-  tsk log                       # last 10
-  tsk log --limit 50            # last 50
-  tsk log --since 7d            # past week
+  tsk log                              # last 10
+  tsk log --limit 50                   # last 50
+  tsk log --since 7d                   # past week
   tsk log --since 1d --tag work
+  tsk log --priority urgent            # recent urgent completions
+  tsk log --since 7d --priority high --tag release  # all three filters
   tsk log --json | jq '.[].Title'
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -82,6 +87,22 @@ Examples:
 				}
 				sinceDur = d
 			}
+			// --priority parsing matches the rest of the verb
+			// surfaces (wip / depend --pending / start --all /
+			// pause --all): empty value = no filter (defensive
+			// against unset shell vars), case-insensitive short/
+			// long-form acceptance via model.ParsePriority.
+			var prio model.Priority
+			prioActive := false
+			priorityTrim := strings.TrimSpace(priority)
+			if priorityTrim != "" {
+				p, err := model.ParsePriority(priorityTrim)
+				if err != nil {
+					return usageErrorf("invalid --priority %q: %v", priority, err)
+				}
+				prio = p
+				prioActive = true
+			}
 			outFormat, err := resolveLsFormat(format, asJSON)
 			if err != nil {
 				return err
@@ -90,13 +111,14 @@ Examples:
 			if err != nil {
 				return err
 			}
-			rows, skipped := collectLogRows(s.Tasks, time.Now(), sinceDur, tag, limit)
+			rows, skipped := collectLogRows(s.Tasks, time.Now(), sinceDur, tag, prio, prioActive, limit)
 			return emitLogRows(cmd.OutOrStdout(), rows, skipped, outFormat)
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 10, "cap to N rows (0 = unlimited)")
 	cmd.Flags().StringVar(&since, "since", "", "only include tasks completed within this duration (e.g. 7d, 2w, 1m)")
 	cmd.Flags().StringVar(&tag, "tag", "", "only include tasks with this tag")
+	cmd.Flags().StringVar(&priority, "priority", "", "only include tasks at exactly this priority (low/medium/high/urgent, short forms accepted). Sister of --tag on the filtering axis. Mirrors the --priority filter on `tsk wip` / `tsk depend --pending` / `tsk start --all` / `tsk pause --all`. Composes with --since and --tag as AND. Empty (default) = no filter.")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON (shortcut for --format=json)")
 	cmd.Flags().StringVar(&format, "format", "", "output format: plain, table, or json")
 	return cmd
@@ -105,7 +127,11 @@ Examples:
 // collectLogRows filters tasks to recently completed ones, sorts newest
 // first, and caps to limit. Returns (rows, skippedWithoutCompleted) so
 // the caller can surface a "N tasks done but missing timestamp" footer.
-func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag string, limit int) ([]model.Task, int) {
+//
+// When prioActive is true, only tasks at exactly the named priority
+// survive the filter. Composes with `since` (recency) and `tag` axes
+// as AND — every filter must pass for a row to be retained.
+func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag string, prio model.Priority, prioActive bool, limit int) ([]model.Task, int) {
 	var cutoff time.Time
 	if since > 0 {
 		cutoff = now.Add(-since)
@@ -125,6 +151,9 @@ func collectLogRows(tasks []model.Task, now time.Time, since time.Duration, tag 
 			continue
 		}
 		if tag != "" && !t.HasTag(tag) {
+			continue
+		}
+		if prioActive && t.Priority != prio {
 			continue
 		}
 		out = append(out, t)
