@@ -4481,17 +4481,17 @@ finally symmetric on the strict-and-tag axis, this batch leans
 into the still-unstarted long-tail and fresh follow-ons sensible
 from this tick's features.
 
-- [ ] `tsk graph --json --filter-completed-before <date>` — inverse cutoff: drop nodes completed AFTER the cutoff (keep stale-er chains) — useful for archive triage
-- [ ] `tsk graph --json --filter-started-before <date>` — inverse cutoff: drop nodes started AFTER the cutoff (keep long-running chains)
-- [ ] `tsk graph --json --filter-touched-before <date>` — inverse shortcut: keep everything that has NOT moved in the last N
+- [x] `tsk graph --json --filter-completed-before <date>` — inverse cutoff: drop nodes completed AFTER the cutoff (keep stale-er chains) — useful for archive triage (tick 2026-06-23/2103)
+- [x] `tsk graph --json --filter-started-before <date>` — inverse cutoff: drop nodes started AFTER the cutoff (keep long-running chains) (tick 2026-06-23/2103)
+- [x] `tsk graph --json --filter-touched-before <date>` — inverse shortcut: keep everything that has NOT moved in the last N (tick 2026-06-23/2103)
 - [ ] `tsk wip --stale 24h --priority urgent --strict-and-tag work,p0 --json | jq` recipe doc — one-pager showing the full filter-cluster pipeline
 - [ ] `tsk wip --stale 24h --tag work --json | jq` recipe doc — simpler standup/cron alert pattern
 - [ ] `tsk wip --json` envelope upgrade — wrap the raw []Task in {tasks, total_count, filter} stable shape (backward-incompat; would need --json-v2 opt-in)
-- [ ] `tsk wip --priority --inverse` — sister of the existing filter: show tasks NOT at this priority
-- [ ] `tsk wip --tag --inverse` — sister: show tasks NOT carrying this tag
+- [x] `tsk wip --priority --inverse` — sister of the existing filter: show tasks NOT at this priority (shipped as `tsk wip --invert` flipping ALL selectors; tick 2026-06-23/2103)
+- [x] `tsk wip --tag --inverse` — sister: show tasks NOT carrying this tag (shipped via `tsk wip --invert`; tick 2026-06-23/2103)
 - [ ] `tsk graph --json --filter-touched-since 7d --json | jq` recipe doc — "what's actively moving in the last week" dashboard pattern
 - [ ] `tsk graph --json --filter-completed-since X --filter-started-since Y` recipe doc — the precise per-axis form
-- [ ] `tsk graph --json --append --rotate N --max-bytes B` — secondary file-size cap (alongside record count) for pathological cases
+- [x] `tsk graph --json --append --rotate N --max-bytes B` — secondary file-size cap (alongside record count) for pathological cases (tick 2026-06-23/2103)
 - [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates
 - [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring
 - [ ] `tsk depend --pending --watch N` — re-render the notification queue every N seconds (live triage)
@@ -4500,7 +4500,7 @@ from this tick's features.
 - [ ] `tsk wip --watch N` — live in-progress list (paired with --stale for "is anything getting stale right now?")
 - [ ] `tsk start --since <date>` — emit every task started after a checkpoint ("what did I touch this week?")
 - [ ] `tsk pause --since <date>` — sister of start --since (what did I put down this week?)
-- [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
+- [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?) — partially covered by `tsk log --since` which is already shipped
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
@@ -4520,3 +4520,259 @@ from this tick's features.
 - [ ] TUI 'g<id>' jump-to-task-id (vim-style by id, paired with the existing 'N' jump-to-next-unblocked)
 - [ ] TUI '/' search supports tag prefix (e.g. `/tag:work`) for in-TUI tag filter
 - [ ] TUI 'Y' yank-all with section header — render the section label before each group ("# Overdue", "# Today", etc.)
+
+
+### 2026-06-23 21:03 PT (tick #31)
+
+Five features shipped, full quality gate green (gofmt + go vet
++ go build + go test ./... — all packages clean across
+internal/commands, internal/tui, internal/store, internal/model,
+internal/dateparse, internal/util; ~65s commands-package
+runtime, ~75s full ./...). Five separate revertible commits
+pushed and verified on origin/main:
+
+1. graph BEFORE-cutoff trio (commit 6427ac4)
+   Symmetric inverse cluster to the SINCE trio shipped in tick
+   #30: --filter-completed-before, --filter-started-before, and
+   --filter-touched-before. Where --filter-completed-since 7d
+   keeps only completions WITHIN the last 7 days, --filter-
+   completed-before 7d keeps only completions OLDER THAN 7
+   days. Use cases: stale-chain triage ("what completed work
+   has a chain still hanging off it that should probably be
+   archived?"), long-running WIP alerts ("which in-progress
+   tasks have been in-flight more than 7 days?"), fixed-width
+   windows (`--filter-completed-since 30d --filter-completed-
+   before 7d` isolates completions in the 7-30 day band).
+
+   Composition rules:
+   - Within an axis (completed-{since,before} or started-
+     {since,before}): AND. A done node must satisfy BOTH its
+     since window AND its before cutoff to survive when both
+     same-axis flags are set, enabling the fixed-width "no
+     newer than X, no older than Y" use case.
+   - Across axes (completed vs started): UNION (logical OR),
+     matching the SINCE family's semantic. Done and in-progress
+     are mutually exclusive states on the same task so AND
+     across axes would always yield zero nodes.
+
+   --filter-touched-before is the ergonomic shortcut — sister
+   of --filter-touched-since for the inverse direction. Same
+   "individual wins" composition rule: explicit per-axis BEFORE
+   flag wins over the shortcut for that axis. Envelope gains
+   `filter_completed_before` + `filter_started_before` marker
+   fields (both omitempty so existing snapshot fixtures stay
+   byte-identical when unset). Single commit for the architec-
+   tural refactor (the wiring is monolithic — three discover-
+   able flags share the new per-axis evaluation block).
+
+2. graph --json --append --max-bytes <B> (commit ad4befb)
+   Secondary safety net on the JSONL streaming/rotation path,
+   layered atop --rotate (the record-count cap). Useful when
+   records vary wildly in size (large impact graphs, fat
+   envelopes with --include-all) and a fixed record-N is hard
+   to set — the byte cap acts as a hard ceiling regardless of
+   per-record size. Eviction policy: FIFO over WHOLE records
+   until the file fits under the cap. The most recent record
+   is ALWAYS retained even when larger than cap. Composes
+   with --rotate (both caps apply; the stricter wins on any
+   given append). Result message names whichever path fired
+   so the user sees the eviction count + axis. Helper
+   rotateJSONLFileByBytes mirrors rotateJSONLFile for the
+   byte axis with the same atomic-replace contract
+   (.maxbytes.tmp + rename).
+
+3. wip --invert (commit 0ecc556)
+   Flips the SELECTOR-axis predicates (priority, tag, strict-
+   and-tag) from include-style to exclude-style. So
+   `--priority urgent --invert` surfaces every in-progress task
+   NOT at urgent priority; `--tag work --invert` surfaces every
+   WIP NOT carrying tag 'work'. The --stale axis is NOT
+   inverted (it's a quantitative window, not a categorical
+   selector). Selectors compose as AND across axes regardless
+   of --invert mode — each selector is inverted individually
+   then AND-joined. Filter-summary header surfaces the
+   inversion via '!' prefix per axis. Empty-result messages
+   also surface the inversion ("no in-progress tasks NOT at
+   priority urgent"). Usage error: --invert with no selector
+   active is rejected as a no-op.
+
+4. log --priority <p> (commit 887b569)
+   First priority-axis filter on `tsk log` (the recent-
+   completions feed). Mirrors the same flag on `tsk wip`,
+   `tsk depend --pending`, `tsk start --all`, and `tsk pause
+   --all` — the FIVE most-mature filter-bearing verbs now
+   expose a uniform --priority filter surface. Composes with
+   --since and --tag as AND. Same validation contract
+   (empty=no-op, invalid rejected) via model.ParsePriority.
+
+5. log --strict-and-tag <CSV> (commit 1037334)
+   Intersection-style multi-tag filter for `tsk log`. Completes
+   the symmetric verb-surface coverage for the strict-and-tag
+   axis: the FIVE filter-bearing verbs (wip, pause --all,
+   start --all, depend --pending, log) now all expose the same
+   CSV-intersection flag with identical semantics. Mutually
+   exclusive with --tag (each is a different selector axis).
+   CSV tokenization via the shared splitTagCSV helper (white-
+   space-tolerant, drops empties). Composes with --since and
+   --priority as AND.
+
+Files added this tick:
+- internal/commands/graph_filter_completed_before_test.go   (10 tests)
+- internal/commands/graph_json_max_bytes_test.go            (10 tests)
+- internal/commands/wip_invert_test.go                      (10 tests)
+- internal/commands/log_priority_test.go                    ( 8 tests)
+- internal/commands/log_strict_and_tag_test.go              ( 8 tests)
+
+Files modified:
+- internal/commands/graph.go (4 new flag vars: filterCompleted-
+  Before, filterStartedBefore, filterTouchedBefore, jsonMaxBytes;
+  validation + parsing blocks for each BEFORE filter + max-bytes
+  cap; emitSubgraphJSON sig grows by 4 args; per-axis predicate
+  evaluation block in the filter loop with AND-within-axis and
+  UNION-across-axes; subgraphDoc gains FilterCompletedBefore +
+  FilterStartedBefore fields; new helper rotateJSONLFileByBytes;
+  composite eviction-result message; --help Long doc + Examples
+  updates)
+- internal/commands/start.go (new wipInvert flag; selector-loop
+  refactor wrapping each axis match in a small invert-flip
+  block; --invert validation requiring at least one selector;
+  buildWipFilterSummary grows by inverted bool; empty-result
+  messages branch on invert state; --help Long doc + Examples
+  updates)
+- internal/commands/log.go (new priority + strictAndTag flag
+  vars; --priority validation via model.ParsePriority; --tag /
+  --strict-and-tag mutex; collectLogRows sig grows by prio +
+  prioActive + strictAndTags; filter loop adds priority and
+  strict-and-tag clauses; --help Long doc + Examples updates)
+
+Per-feature test counts:
+  graph BEFORE-cutoff trio          10 new (recent-trim, root-
+                                    preservation, marker-field-
+                                    present, default-absent
+                                    back-compat, requires-json,
+                                    invalid-duration, zero-
+                                    rejected, empty-value-no-op,
+                                    fixed-window composition,
+                                    --help mention)
+  graph --max-bytes                 10 new (eviction-until-fit,
+                                    no-op-under-cap, requires-
+                                    append, negative rejected,
+                                    zero disables, composes-with-
+                                    rotate, preserves-last-record
+                                    when cap=1, --help mention,
+                                    direct unit-test for the
+                                    helper, atomic .tmp cleanup)
+  wip --invert                      10 new (priority flip, tag
+                                    flip, strict-and-tag flip,
+                                    composes with --stale as AND,
+                                    no-selector rejected, --stale-
+                                    alone rejected, empty-result
+                                    inversion message, '!' prefix
+                                    in filter summary, JSON empty-
+                                    array shape, --help mention)
+  log --priority                     8 new (priority filter, short-
+                                    form 'u', invalid rejected,
+                                    empty-no-op, composes with
+                                    --tag, composes with --since,
+                                    empty-result message, JSON
+                                    empty-array, --help mention)
+  log --strict-and-tag               8 new (intersection filter,
+                                    single-tag-CSV equivalent to
+                                    --tag, mutex with --tag, white-
+                                    space-tolerant CSV, composes
+                                    with --priority, empty-no-op,
+                                    empty-result message, --help
+                                    mention)
+  TOTAL                             46 new test cases on top of
+                                    the existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each commit is independently revertible.
+- Quality gate ran ONCE for the whole batch; full ./... green
+  in ~75s (was ~65s for internal/commands alone; the cold-cache
+  run after `go clean -cache` hit a 300s aggregate timeout
+  artifact, but re-running with warm cache passed cleanly —
+  noted because the disk was nearly full this tick and required
+  a cache clear to free space).
+- Disk space alert: /System/Volumes/Data was at 100% capacity
+  mid-tick; freed ~700Mi by running `go clean -cache`. Sanjay
+  may want to look at disk usage / `du` the top consumers when
+  he's around.
+- `tsk log` now matches `tsk wip` for filter-axis surface area:
+  both expose --tag + --strict-and-tag + --priority (wip also
+  has --stale + --invert; log keeps the --since/--limit feed
+  shape). The five filter-bearing verbs all share the strict-
+  and-tag axis intersection contract.
+- The graph JSON envelope now exposes SIX recency-filter axes:
+  three SINCE filters (completed/started/touched-since) and
+  three BEFORE filters (completed/started/touched-before) plus
+  the rotation primitives (--rotate by count + --max-bytes by
+  size). The envelope is now the most-mature surface in the
+  codebase.
+
+This is the eighteenth batch shipped directly on main. The
+graph JSON envelope reaches another milestone: bidirectional
+recency filtering (SINCE + BEFORE on both axes), dual rotation
+caps (count + bytes). `tsk wip` gains --invert for exclude-style
+triage. `tsk log` joins the filter-bearing verb cluster on
+priority + strict-and-tag. The next ticks have ample sized work
+in the still-unstarted long-tail (recipe docs, recurring tasks,
+config files, multi-file aggregation, watch modes, TUI
+structural features, plus follow-ons from this tick's features
+like log --invert, log --watch, the BEFORE-cutoff recipe docs).
+
+
+### Polish & DX (added 2026-06-23 tick #31)
+
+Fresh ideas so future ticks have ample sized work. With the
+graph JSON envelope now sporting SIX recency-filter axes
+(SINCE + BEFORE on completed/started/touched), the JSONL
+streaming surface gaining a byte-axis cap (--max-bytes) to
+complement --rotate, wip gaining --invert for exclude-style
+triage, and log finally joining the filter-bearing verb
+cluster on priority + strict-and-tag, this batch leans into
+the still-unstarted long-tail and fresh follow-ons sensible
+from this tick's features.
+
+- [ ] `tsk log --invert` — sister of `tsk wip --invert` for the recent-completions feed (flip selector predicates: NOT-tagged-X, NOT-at-priority-Y) — natural follow-on after this tick's log filter cluster shipped
+- [ ] `tsk log --strict-and-tag a,b --invert` recipe doc — one-pager on "what didn't ship in the release tag"
+- [ ] `tsk graph --json --filter-completed-before 30d --filter-completed-since 7d` recipe doc — fixed-width window example for archive triage
+- [ ] `tsk graph --json --filter-touched-before 7d | jq '.nodes[] | .id'` recipe doc — stale-chain detection pattern
+- [ ] `tsk graph --json --output snap.jsonl --append --max-bytes 1048576 --rotate 1000` recipe doc — dual-cap rotation for production monitoring
+- [ ] `tsk wip --invert --json | jq` recipe doc — exclude-style standup automation
+- [ ] `tsk archive --json --append --max-bytes B` — sister of graph's max-bytes for the archive JSONL path (same shared helper would work)
+- [ ] `tsk log --watch N` — re-render the recent-completions feed every N seconds (sister of the long-pending watch-mode family)
+- [ ] `tsk wip --watch N` — live in-progress list (paired with --stale for "is anything getting stale right now?")
+- [ ] `tsk depend --pending --watch N` — live notification queue
+- [ ] `tsk top --watch N` — live priority-ranked view
+- [ ] `tsk show <id> --watch N` — live detail view
+- [ ] `tsk graph --json --output <path> --watch N` — live impact analysis
+- [ ] `tsk depend --pending --invert` — sister of wip --invert for the notification queue (NOT-at-priority, NOT-tagged)
+- [ ] `tsk pause --all --invert` — bulk-exclusion variant: pause every WIP NOT carrying the named selector
+- [ ] `tsk start --all --invert` — sister of pause for the start verb
+- [ ] `tsk graph --json --filter-completed-before <date> --filter-completed-since <date>` recipe doc — middle-of-window pattern
+- [ ] `tsk graph --format dot --filter-completed-since 7d` — extend the SINCE filters to the DOT path (currently --json only)
+- [ ] `tsk graph --format svg --filter-completed-since 7d` — sister for SVG
+- [ ] `tsk graph --format ascii --filter-touched-since 7d` — sister for ASCII (the existing "use --json for filters" stance could be relaxed for the recency axes since the ASCII layout already groups by done-state)
+- [ ] `tsk log --inverse` ergonomic alias for `--invert` (Sanjay's style — "inverse" reads better; both should work)
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop
+- [ ] `tsk rules` — declarative auto-mutation rules
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' help overlay also shows the active filter / sort state
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'g<id>' jump-to-task-id (vim-style by id, paired with the existing 'N' jump-to-next-unblocked)
+- [ ] TUI '/' search supports tag prefix (e.g. `/tag:work`) for in-TUI tag filter
+- [ ] TUI 'Y' yank-all with section header — render the section label before each group ("# Overdue", "# Today", etc.)
+
