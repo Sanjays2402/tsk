@@ -75,17 +75,19 @@ cmd/tsk/main.go
       u=undo, g/G=first/last. (tick T2 2026-06-24)
 
 ### T3 — search, filter, polish
-- [ ] **F11** Filter bar: tag chips multi-select, priority filter, search
-      box with fuzzy matching.
-- [ ] **F12** Due-date picker that accepts natural-language strings
+- [x] **F11** Filter bar: tag chips multi-select, priority filter, search
+      box with fuzzy matching. (tick T3 2026-06-24)
+- [x] **F12** Due-date picker that accepts natural-language strings
       (`tomorrow`, `fri`, `in 3d`, `eow`) — server validates via the
       existing `dateparse` package; UI shows the parsed date back.
-- [ ] **F13** Stats sidebar: total / done / overdue / completion %,
-      streak, top tags. Reuse `computeStatsDTO`.
-- [ ] **F14** Theme toggle (auto/light/dark) honoring system + storing
+      (tick T3 2026-06-24)
+- [x] **F13** Stats sidebar: total / done / overdue / completion %,
+      streak, top tags. Reuse `computeStatsDTO`. (tick T3 2026-06-24)
+- [x] **F14** Theme toggle (auto/light/dark) honoring system + storing
       pref in localStorage. Dark = amber-on-charcoal.
-      Light = ochre-on-cream.
-- [ ] **F15** Tag pages: click a tag → filtered view; URL hash `#tag/dev`.
+      Light = ochre-on-cream. (tick T3 2026-06-24)
+- [x] **F15** Tag pages: click a tag → filtered view; URL hash `#tag/dev`.
+      (tick T3 2026-06-24)
 
 ### T4 — power user
 - [ ] **F16** Bulk select (shift+click range, multi-toggle/multi-delete).
@@ -182,3 +184,44 @@ contract intact.
 
 Roadmap status: F1-F10 done. F11-F22 unstarted, queued for T3+ (filter bar,
 due picker, stats sidebar, theme toggle, tag pages, then power-user/prod).
+
+### T3 — 2026-06-24 07:06 PT — search, filter, polish (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted this tick (the SSD is physically absent; `/Volumes` only
+has Macintosh HD). Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main` (same origin, was exactly at
+origin/main 2689071, clean tree). Pushed as a clean fast-forward, zero
+divergence. This is now the documented fallback (see T2 note).
+
+- F11 feat(web): filter bar with fuzzy search, priority + tag facets (06610a2)
+- F12 feat(web): natural-language due-date picker with live preview (20061b3)
+- F13 feat(web): stats sidebar with completion donut, metrics + top tags (7cd31b0)
+- F14 feat(web): theme toggle (auto / light / dark) with persistence (2c839ec)
+- F15 feat(web): tag pages with hash routing (#tag/<name>) (fc26b3a)
+
+F12 is the only slice with a backend change: a new read-only GET
+/api/parse-date endpoint over internal/dateparse (soft-fails with 200+ok:false
+so the live picker doesn't spam 400s). Everything else is pure frontend over
+the existing JSON API. Each slice carries a pure, dependency-free logic module
+unit-tested under node --test: filter.ts (16), duepicker.ts (13), stats.ts (10),
+theme.ts (8), router.ts (11) = 58 new frontend tests (106 total), plus 4 new Go
+tests on internal/serve for parse-date.
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across all packages (incl. internal/serve with the
+embedded T3 bundle), web `npm run check` (tsc app + tsc test + node --test) 106
+pass, `npm run build` ok — JS 10.3KB gz, CSS 4.8KB gz, 18 modules.
+
+End-to-end proof: built the binary, ran tsk init + serve on a temp store with 3
+tagged tasks, then exercised the live surface: /api/parse-date resolved eom ->
+2026-06-30 "in 6d", "in 3d" -> 2026-06-27, garbage -> soft-fail with the helpful
+"try: tomorrow, fri, ..." message; /api/stats returned the top-tags feed the F13
+sidebar renders; the SPA index served the freshly-built hashed assets (200, both
+JS+CSS), and the bundle contained the new slice code (parse-date, tag/ routing,
+tsk.theme/tsk.stats keys). Toggle + NL-date PATCH round-tripped to .tsk.md in the
+exact existing hand-editable format — the CLI/TUI storage contract is intact.
+
+Roadmap status: F1-F15 done. F16-F22 unstarted, queued for T4 (bulk select,
+drag-reorder, Cmd-K palette, export buttons, token auth) + T5 (SSE live-reload,
+PWA).
