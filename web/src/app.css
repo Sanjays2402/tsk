@@ -1455,3 +1455,72 @@ kbd {
   font-family: var(--font-mono);
   color: var(--color-text-dim);
 }
+
+/* F19: export menu — topbar pill + dropdown */
+.export-wrap {
+  position: relative;
+}
+.export-toggle {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--color-text-dim);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  padding: 2px var(--sp-3);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.export-toggle:hover,
+.export-toggle.is-active {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.export-toggle.is-active {
+  background: var(--color-accent-soft);
+}
+.export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + var(--sp-2));
+  z-index: 30;
+  min-width: 160px;
+  padding: var(--sp-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  animation: cmdk-rise var(--duration-fast) var(--ease-out);
+}
+.export-menu[hidden] {
+  display: none;
+}
+.export-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+.export-item:hover {
+  background: var(--color-accent-soft);
+}
+.export-ext {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+}

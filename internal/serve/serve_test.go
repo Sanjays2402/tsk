@@ -421,3 +421,118 @@ func TestMoveMethodNotAllowed(t *testing.T) {
 		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }
+
+func TestExportJSON(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "alpha", "priority": "high", "tags": []string{"x"}})
+	req := httptest.NewRequest(http.MethodGet, "/api/export?format=json", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("content-type = %q, want application/json", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "tasks.json") {
+		t.Fatalf("content-disposition = %q, want tasks.json", cd)
+	}
+	var arr []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &arr); err != nil {
+		t.Fatalf("export json not an array: %v\n%s", err, rec.Body.String())
+	}
+	if len(arr) != 1 || arr[0]["Title"] != "alpha" {
+		t.Fatalf("export json wrong: %v", arr)
+	}
+}
+
+func TestExportDefaultsToJSON(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	req := httptest.NewRequest(http.MethodGet, "/api/export", nil) // no format param
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("default content-type = %q, want application/json", ct)
+	}
+}
+
+func TestExportCSVHeaderAndRow(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "buy milk", "priority": "low", "tags": []string{"home"}})
+	req := httptest.NewRequest(http.MethodGet, "/api/export?format=csv", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Fatalf("content-type = %q, want text/csv", ct)
+	}
+	body := rec.Body.String()
+	if !strings.HasPrefix(body, "id,done,priority,title,due,tags,created,completed,notes") {
+		t.Fatalf("csv header wrong: %q", body)
+	}
+	if !strings.Contains(body, "buy milk") || !strings.Contains(body, "home") {
+		t.Fatalf("csv row missing data: %q", body)
+	}
+}
+
+func TestExportMarkdownGroups(t *testing.T) {
+	s, _ := newTestServer(t)
+	h := s.Handler()
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "todo one", "priority": "urgent"})
+	do(t, h, http.MethodPost, "/api/tasks", map[string]any{"title": "done one"})
+	do(t, h, http.MethodPost, "/api/tasks/2/toggle", nil) // complete #2
+
+	req := httptest.NewRequest(http.MethodGet, "/api/export?format=markdown", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("content-type = %q, want text/markdown", ct)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "## Todo") || !strings.Contains(body, "## Done") {
+		t.Fatalf("markdown missing section headers: %q", body)
+	}
+	if !strings.Contains(body, "[!]") {
+		t.Fatalf("markdown missing urgent glyph: %q", body)
+	}
+	if !strings.Contains(body, "[x]") {
+		t.Fatalf("markdown missing done checkbox: %q", body)
+	}
+}
+
+func TestExportMdAlias(t *testing.T) {
+	s, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/export?format=md", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("md alias content-type = %q, want text/markdown", ct)
+	}
+}
+
+func TestExportUnknownFormat400(t *testing.T) {
+	s, _ := newTestServer(t)
+	rec, _ := do(t, s.Handler(), http.MethodGet, "/api/export?format=xml", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestExportMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServer(t)
+	rec, _ := do(t, s.Handler(), http.MethodPost, "/api/export?format=json", nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}

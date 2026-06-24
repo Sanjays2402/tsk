@@ -116,6 +116,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/tasks/", s.handleTaskByID)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/parse-date", s.handleParseDate)
+	s.mux.HandleFunc("/api/export", s.handleExport)
 
 	// Root: serve SPA when StaticFS is provided, otherwise a tiny landing page.
 	if s.opts.StaticFS != nil {

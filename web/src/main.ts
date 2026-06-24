@@ -68,6 +68,12 @@ import {
   renderPaletteList,
   type Command,
 } from "./palette";
+import {
+  exportUrl,
+  exportFilename,
+  renderExportMenu,
+  type ExportFormat,
+} from "./export";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -78,6 +84,10 @@ root.innerHTML = `
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
       <div class="topbar-right">
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Cycle theme" title="Theme"><span class="theme-glyph" data-theme-glyph></span><span class="theme-label" data-theme-label></span></button>
+        <div class="export-wrap" data-export-wrap>
+          <button class="export-toggle" data-export-toggle type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Export tasks" title="Export tasks">export</button>
+          <div class="export-menu" data-export-menu role="menu" hidden></div>
+        </div>
         <button class="stats-toggle" data-stats-toggle type="button" aria-pressed="false" aria-label="Toggle stats panel" title="Toggle stats (s)">stats</button>
         <div class="file" data-file>—</div>
       </div>
@@ -161,6 +171,9 @@ const els = {
   themeToggle: must<HTMLButtonElement>("[data-theme-toggle]"),
   themeGlyph: must<HTMLElement>("[data-theme-glyph]"),
   themeLabel: must<HTMLElement>("[data-theme-label]"),
+  exportWrap: must<HTMLElement>("[data-export-wrap]"),
+  exportToggle: must<HTMLButtonElement>("[data-export-toggle]"),
+  exportMenu: must<HTMLElement>("[data-export-menu]"),
   tagpage: must<HTMLElement>("[data-tagpage]"),
   tagpageName: must<HTMLElement>("[data-tagpage-name]"),
   tagpageCount: must<HTMLElement>("[data-tagpage-count]"),
@@ -1059,6 +1072,54 @@ els.bulkbar.addEventListener("click", (e) => {
   else if (btn.dataset.bulkClear !== undefined) bulkClear();
 });
 
+// --- F19: export menu wiring -----------------------------------------------
+
+let exportOpen = false;
+
+/** Show/hide the export dropdown, painting its items lazily on first open. */
+function toggleExportMenu(open: boolean): void {
+  exportOpen = open;
+  els.exportMenu.hidden = !open;
+  els.exportToggle.setAttribute("aria-expanded", String(open));
+  els.exportToggle.classList.toggle("is-active", open);
+  if (open && els.exportMenu.childElementCount === 0) {
+    els.exportMenu.innerHTML = renderExportMenu();
+  }
+}
+
+/**
+ * Trigger a download of the task list in the chosen format. Uses a temporary
+ * anchor with the download attribute so the browser saves the file (the server
+ * also sets Content-Disposition as a belt-and-suspenders). Closes the menu.
+ */
+function downloadExport(format: ExportFormat): void {
+  const a = document.createElement("a");
+  a.href = exportUrl(format);
+  a.download = exportFilename(format);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toggleExportMenu(false);
+  setStatus(`exported ${format}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+els.exportToggle.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleExportMenu(!exportOpen);
+});
+els.exportMenu.addEventListener("click", (e) => {
+  const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-export-format]");
+  if (!item) return;
+  downloadExport(item.dataset.exportFormat as ExportFormat);
+});
+// Click anywhere outside closes the menu.
+document.addEventListener("click", (e) => {
+  if (exportOpen && !els.exportWrap.contains(e.target as Node | null)) {
+    toggleExportMenu(false);
+  }
+});
+
 // --- F14: theme toggle wiring ----------------------------------------------
 
 els.themeToggle.addEventListener("click", cycleTheme);
@@ -1419,6 +1480,9 @@ function buildCommands(): Command[] {
     { id: "stats", title: statsOpen ? "Hide stats panel" : "Show stats panel", group: "View", keywords: ["metrics", "summary"], hint: "s" },
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
+    { id: "export-json", title: "Export tasks as JSON", group: "Export", keywords: ["download", "save"] },
+    { id: "export-csv", title: "Export tasks as CSV", group: "Export", keywords: ["download", "spreadsheet"] },
+    { id: "export-markdown", title: "Export tasks as Markdown", group: "Export", keywords: ["download", "md"] },
     { id: "help", title: "Show keyboard shortcuts", group: "View", keywords: ["keys", "?"], hint: "?" },
     { id: "alltasks", title: "Go to all tasks", group: "View", keywords: ["home", "clear tag"], disabled: route.kind !== "tag" },
   ];
@@ -1461,6 +1525,15 @@ function runCommand(id: string): void {
       break;
     case "refresh":
       refresh();
+      break;
+    case "export-json":
+      downloadExport("json");
+      break;
+    case "export-csv":
+      downloadExport("csv");
+      break;
+    case "export-markdown":
+      downloadExport("markdown");
       break;
     case "help":
       toggleHelp(true);
