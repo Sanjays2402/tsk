@@ -90,14 +90,17 @@ cmd/tsk/main.go
       (tick T3 2026-06-24)
 
 ### T4 — power user
-- [ ] **F16** Bulk select (shift+click range, multi-toggle/multi-delete).
-- [ ] **F17** Drag-to-reorder within a section, with persistence (writes
+- [x] **F16** Bulk select (shift+click range, multi-toggle/multi-delete).
+      (tick T4 2026-06-24)
+- [x] **F17** Drag-to-reorder within a section, with persistence (writes
       back to .tsk.md preserving order — `store.Tasks` slice IS the order).
-- [ ] **F18** Cmd-K command palette: every action, fuzzy-find, keyboard-only.
-- [ ] **F19** Export buttons (JSON / CSV / Markdown) — hit existing
-      exporters via `/api/export?format=...`.
-- [ ] **F20** Token auth for `--addr 0.0.0.0` use: `tsk serve --token=...`
-      enforces `Authorization: Bearer` on `/api/*`.
+      (tick T4 2026-06-24)
+- [x] **F18** Cmd-K command palette: every action, fuzzy-find, keyboard-only.
+      (tick T4 2026-06-24)
+- [x] **F19** Export buttons (JSON / CSV / Markdown) — hit existing
+      exporters via `/api/export?format=...`. (tick T4 2026-06-24)
+- [x] **F20** Token auth for `--addr 0.0.0.0` use: `tsk serve --token=...`
+      enforces `Authorization: Bearer` on `/api/*`. (tick T4 2026-06-24)
 
 ### T5 — production
 - [ ] **F21** SSE live-reload: server watches `.tsk.md` mtime; pushes
@@ -106,8 +109,28 @@ cmd/tsk/main.go
 - [ ] **F22** PWA manifest + offline cache shell. Add-to-home on
       iOS/Android.
 
-When fewer than 5 remain, append more (mobile-touch tweaks, settings
-drawer, recurring tasks UI, archive view, etc.).
+### T6 — depth (queued so the loop never starves)
+- [ ] **F23** Notes editor: expand a task to edit its multi-line notes
+      (the `.tsk.md` 6-space continuation lines) in a textarea, PATCH via
+      the existing `notes` field.
+- [ ] **F24** Settings drawer: persist per-client prefs (default sort,
+      density compact/comfortable, show/hide done) in localStorage.
+- [ ] **F25** Saved filters / views: name a filter+tag+priority combo and
+      recall it from a chip row or the Cmd-K palette.
+- [ ] **F26** Dependency awareness in the UI: show `depends:` blockers on a
+      row (the model already parses DependsOn), grey out blocked tasks, and
+      surface "blocked by #N" — read-only first, then edit.
+- [ ] **F27** Pinned tasks: respect the model's `Pinned` flag — a pin
+      toggle on the row and a Pinned section that floats to the top.
+- [ ] **F28** Mobile/touch polish: long-press to bulk-select, larger hit
+      targets, a bottom action sheet instead of the floating bar.
+- [ ] **F29** Inline priority cycling: click the priority chip to cycle
+      L->M->H->U with an optimistic PATCH (no full edit needed).
+- [ ] **F30** Search highlighting: in filter results, mark the matched
+      substring/subsequence in the title so it's obvious why a row matched.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view,
+quick-jump to a tag from the palette, undo stack beyond single delete, etc.).
 
 ## Conventions
 
@@ -225,3 +248,54 @@ exact existing hand-editable format — the CLI/TUI storage contract is intact.
 Roadmap status: F1-F15 done. F16-F22 unstarted, queued for T4 (bulk select,
 drag-reorder, Cmd-K palette, export buttons, token auth) + T5 (SSE live-reload,
 PWA).
+
+### T4 — 2026-06-24 08:07 PT — power user (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted this tick — `/Volumes` held only Macintosh HD and
+`diskutil mount Projects` failed with "Failed to find disk" (the SSD is
+physically absent). Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main` (same origin, was exactly at
+origin/main 69b49f8, clean tree, .cron-state tracked in git so no state
+divergence). Pushed as a clean fast-forward (69b49f8..2ee4265), zero
+divergence. This remains the documented fallback (see T2/T3 notes).
+
+- F16 feat(web): bulk select rows for multi-toggle / multi-delete (27d23eb)
+- F17 feat(web): drag-to-reorder tasks, persisted to .tsk.md (88308ff)
+- F18 feat(web): Cmd-K command palette, fuzzy find + run any action (277498c)
+- F19 feat(web): export tasks as JSON / CSV / Markdown (560db29)
+- F20 feat(serve): optional bearer-token auth for off-loopback serving (3e8d053)
+- (+ chore 2ee4265: rebuilt embedded SPA bundle for all five slices)
+
+Backend changes this tick: store.Move(moved, before) reorder primitive (7
+tests) + POST /api/tasks/:id/move (F17); GET /api/export?format=json|csv|md
+mirroring the CLI exporters with Content-Disposition (F19, 8 tests); a
+requireAuth/tokenBootstrap middleware layer gating /api/* behind a constant-
+time bearer token with an HttpOnly SameSite=Strict cookie bootstrap, the
+?token= query rejected on /api/* to avoid leaks (F20, 11 tests). Everything
+else is pure frontend over the existing JSON API. Each frontend slice ships a
+dependency-free logic module unit-tested under node --test: bulkselect.ts (16),
+reorder.ts (14), palette.ts (14), export.ts (6) = 50 new web tests (156 total).
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across ALL packages (incl. internal/serve with the
+freshly-embedded T4 bundle, and internal/commands 56.9s), web `npm run check`
+156 pass, `npm run build` ok — JS 14.0KB gz, CSS 5.5KB gz, 22 modules.
+
+End-to-end proof: built the binary, ran tsk init + 3 tasks, then `tsk serve
+--addr 127.0.0.1:7891 --token testtok123` and exercised the live surface:
+no-token /api/tasks -> 401 with WWW-Authenticate; Bearer -> 200 list;
+?token= on /api/* -> 401 (rejected as designed); POST /api/tasks/3/move
+{before:1} reordered charlie->alpha->bravo and the .tsk.md on disk rewrote to
+that exact file order; /api/export csv+markdown returned the right shapes with
+priority glyphs and Content-Disposition; GET /?token= -> 303 to clean / with an
+HttpOnly tsk_token cookie that then round-tripped /api/tasks -> 200; the SPA
+shell stayed public (200 with no token); and the served bundle contained the
+new slice code (data-bulk-toggle, reorder, data-cmd-id, data-export-format,
+/move). The hand-editable .tsk.md storage contract is intact — reorder only
+rewrites task-line order, nothing else.
+
+Roadmap status: F1-F20 done. F21-F22 queued for T5 (SSE live-reload, PWA);
+F23-F30 appended this tick for T6+ (notes editor, settings drawer, saved
+views, dependency UI, pinned tasks, mobile polish, inline priority cycle,
+search highlighting) so the loop never starves.
