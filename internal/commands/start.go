@@ -533,6 +533,7 @@ func newInProgressCmd() *cobra.Command {
 		wipPrio         string
 		wipTag          string
 		wipStrictAndTag string
+		wipInvert       bool
 	)
 	cmd := &cobra.Command{
 		Use:     "in-progress",
@@ -561,6 +562,13 @@ filters mirror the same flags on ` + "`tsk pause --all`" + `,
 the four verb surfaces read symmetrically. All filters compose as
 AND.
 
+Pass --invert to flip the SELECTOR predicates (priority/tag/
+strict-and-tag) from include-style to exclude-style. Useful for
+triage reports like "what WIP isn't tagged release?" or "what WIP
+isn't at the urgent priority bucket?". The --stale axis is NOT
+inverted by --invert (it's a quantitative window, not a categorical
+selector). Requires at least one selector to be active.
+
 Examples:
   tsk in-progress
   tsk wip                       # alias
@@ -570,6 +578,8 @@ Examples:
   tsk wip --priority urgent     # only urgent in-progress
   tsk wip --tag work            # only WIP tagged 'work'
   tsk wip --strict-and-tag work,p0  # WIP carrying BOTH tags
+  tsk wip --priority urgent --invert  # WIP NOT at urgent priority
+  tsk wip --tag work --invert         # WIP NOT tagged 'work'
   tsk wip --stale 24h --priority urgent --tag work  # composed AND
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -615,6 +625,28 @@ Examples:
 			if wipTagTrim != "" && len(strictAndTags) > 0 {
 				return usageErrorf("--tag and --strict-and-tag are mutually exclusive (each is a different tag-selector axis; --tag is single-tag, --strict-and-tag is intersection over a CSV)")
 			}
+			// --invert flips the SELECTOR-axis predicates (priority,
+			// tag, strict-and-tag) from include-style to exclude-
+			// style. So `--priority urgent --invert` surfaces every
+			// in-progress task NOT at priority urgent; `--tag work
+			// --invert` surfaces every in-progress task NOT carrying
+			// the 'work' tag. The --stale axis is intentionally NOT
+			// inverted by --invert — it's a quantitative window
+			// (elapsed > X), not a categorical selector, and the
+			// natural "inverse" of stale (fresh, elapsed < X) is a
+			// separate concept that would deserve its own --fresh
+			// flag if there were demand. Bundling --stale inversion
+			// here would confuse the contract; keeping it out leaves
+			// the flag's intent crisp ("exclude what these selectors
+			// pick"). When --invert is set but no selector is
+			// active, it's a usage error (inverting nothing is a
+			// no-op and almost certainly a typo).
+			if wipInvert {
+				selectorActive := prioActive || wipTagTrim != "" || len(strictAndTags) > 0
+				if !selectorActive {
+					return usageErrorf("--invert requires at least one selector to invert (--priority, --tag, or --strict-and-tag); flipping no selectors is a no-op")
+				}
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -631,14 +663,45 @@ Examples:
 					// elapsed is <= threshold → not stale enough.
 					continue
 				}
-				if prioActive && t.Priority != prio {
-					continue
+				// Selector predicates: --priority / --tag /
+				// --strict-and-tag. Under normal (non-invert)
+				// semantics, the task must MATCH the active
+				// selector to survive. Under --invert, the task
+				// must NOT match the active selector to survive.
+				// Selectors compose as AND across axes regardless
+				// of --invert mode, matching the existing
+				// pre-invert semantic: --priority urgent --tag work
+				// keeps tasks at urgent priority AND carrying tag
+				// work; --priority urgent --tag work --invert keeps
+				// tasks NOT-at-urgent AND NOT-tagged-work
+				// (selectors are AND-joined; --invert flips each
+				// individually).
+				if prioActive {
+					match := t.Priority == prio
+					if wipInvert {
+						match = !match
+					}
+					if !match {
+						continue
+					}
 				}
-				if wipTagTrim != "" && !t.HasTag(wipTagTrim) {
-					continue
+				if wipTagTrim != "" {
+					match := t.HasTag(wipTagTrim)
+					if wipInvert {
+						match = !match
+					}
+					if !match {
+						continue
+					}
 				}
-				if len(strictAndTags) > 0 && !taskHasAllTags(&t, strictAndTags) {
-					continue
+				if len(strictAndTags) > 0 {
+					match := taskHasAllTags(&t, strictAndTags)
+					if wipInvert {
+						match = !match
+					}
+					if !match {
+						continue
+					}
 				}
 				out = append(out, t)
 			}
@@ -660,17 +723,29 @@ Examples:
 				case staleActive:
 					pf(cmd.OutOrStdout(), "no in-progress tasks running longer than %s\n", humanizeDuration(staleDur))
 				case prioActive:
-					pf(cmd.OutOrStdout(), "no in-progress tasks at priority %s\n", prio.String())
+					if wipInvert {
+						pf(cmd.OutOrStdout(), "no in-progress tasks NOT at priority %s\n", prio.String())
+					} else {
+						pf(cmd.OutOrStdout(), "no in-progress tasks at priority %s\n", prio.String())
+					}
 				case wipTagTrim != "":
-					pf(cmd.OutOrStdout(), "no in-progress tasks with tag %s\n", wipTagTrim)
+					if wipInvert {
+						pf(cmd.OutOrStdout(), "no in-progress tasks WITHOUT tag %s\n", wipTagTrim)
+					} else {
+						pf(cmd.OutOrStdout(), "no in-progress tasks with tag %s\n", wipTagTrim)
+					}
 				case len(strictAndTags) > 0:
-					pf(cmd.OutOrStdout(), "no in-progress tasks with tags %s\n", strings.Join(strictAndTags, "&"))
+					if wipInvert {
+						pf(cmd.OutOrStdout(), "no in-progress tasks WITHOUT all tags %s\n", strings.Join(strictAndTags, "&"))
+					} else {
+						pf(cmd.OutOrStdout(), "no in-progress tasks with tags %s\n", strings.Join(strictAndTags, "&"))
+					}
 				default:
 					pln(cmd.OutOrStdout(), "no in-progress tasks")
 				}
 				return nil
 			}
-			filters := buildWipFilterSummary(staleActive, staleDur, prioActive, prio, wipTagTrim, strictAndTags)
+			filters := buildWipFilterSummary(staleActive, staleDur, prioActive, prio, wipTagTrim, strictAndTags, wipInvert)
 			if filters != "" {
 				pf(cmd.OutOrStdout(), "in-progress (filter: %s): %d task(s)\n", filters, len(out))
 			}
@@ -687,6 +762,7 @@ Examples:
 	cmd.Flags().StringVar(&wipPrio, "priority", "", "filter to in-progress tasks at exactly this priority (low/medium/high/urgent, short forms accepted). Sister of --stale on the filtering axis. Mirrors the --priority filter on `tsk depend --pending` / `tsk start --all` / `tsk pause --all`. Composes with --stale, --tag, and --strict-and-tag as AND. Empty (default) = no filter.")
 	cmd.Flags().StringVar(&wipTag, "tag", "", "filter to in-progress tasks carrying this tag (case-insensitive, single tag). Sister of --priority. Mirrors `tsk depend --pending --tag` / `tsk ls --tag`. Mutually exclusive with --strict-and-tag (each is a different tag-selector axis). Composes with --stale and --priority as AND. Empty (default) = no filter.")
 	cmd.Flags().StringVar(&wipStrictAndTag, "strict-and-tag", "", "filter to in-progress tasks carrying ALL listed tags (CSV; intersection). Sister of --tag's union-style single-tag filter: --tag work narrows to tasks carrying 'work'; --strict-and-tag work,p0 narrows to tasks carrying BOTH 'work' AND 'p0'. Mutually exclusive with --tag. Mirrors `tsk pause --all --strict-and-tag`, `tsk start --all --strict-and-tag`, and `tsk depend --pending --strict-and-tag` so the four tag-axis intersection filters read symmetrically. Composes with --stale and --priority as AND.")
+	cmd.Flags().BoolVar(&wipInvert, "invert", false, "flip the SELECTOR-axis predicates (--priority / --tag / --strict-and-tag) from include-style to exclude-style. So `--priority urgent --invert` surfaces every in-progress task NOT at priority urgent; `--tag work --invert` surfaces every in-progress task NOT carrying tag 'work'; `--strict-and-tag work,p0 --invert` surfaces every in-progress task NOT carrying both tags simultaneously. Selectors compose as AND across axes regardless of --invert mode — `--priority urgent --tag work --invert` keeps tasks at NOT-urgent AND NOT-tagged-work (each selector is inverted individually). The --stale axis is NOT inverted (it's a quantitative window, not a categorical selector). Requires at least one selector to be active; --invert with no selector is rejected as a no-op. The filter summary header surfaces the inversion with a '!' prefix per axis (e.g. 'in-progress (filter: !priority=urgent): N task(s)') so the active inversion stays visible. Useful for triage reports: 'what WIP isn't tagged release?', 'what WIP isn't at the urgent priority bucket?'.")
 	return cmd
 }
 
@@ -696,19 +772,28 @@ Examples:
 // three verb surfaces produce a recognizable summary shape. Order is
 // stable: stale, then tag/strict-and-tag (whichever is active), then
 // priority — same ordering depend --pending and pause --all use.
-func buildWipFilterSummary(staleActive bool, staleDur time.Duration, prioActive bool, prio model.Priority, tag string, strictAndTags []string) string {
+//
+// When inverted=true, selector-axis tokens carry a "!" prefix to
+// surface the inversion (e.g. "!priority=urgent" reads as "NOT at
+// priority urgent"). The stale axis is never prefixed since
+// --invert doesn't affect quantitative windows.
+func buildWipFilterSummary(staleActive bool, staleDur time.Duration, prioActive bool, prio model.Priority, tag string, strictAndTags []string, inverted bool) string {
 	parts := make([]string, 0, 4)
 	if staleActive {
 		parts = append(parts, "stale>"+humanizeDuration(staleDur))
 	}
+	prefix := ""
+	if inverted {
+		prefix = "!"
+	}
 	if tag != "" {
-		parts = append(parts, "tag="+tag)
+		parts = append(parts, prefix+"tag="+tag)
 	}
 	if len(strictAndTags) > 0 {
-		parts = append(parts, "tag="+strings.Join(strictAndTags, "&"))
+		parts = append(parts, prefix+"tag="+strings.Join(strictAndTags, "&"))
 	}
 	if prioActive {
-		parts = append(parts, "priority="+prio.String())
+		parts = append(parts, prefix+"priority="+prio.String())
 	}
 	return strings.Join(parts, " ")
 }
