@@ -74,6 +74,14 @@ import {
   renderExportMenu,
   type ExportFormat,
 } from "./export";
+import {
+  parseFingerprint,
+  shouldRefresh,
+  liveTitle,
+  renderLiveIndicator,
+  type FileFingerprint,
+  type LiveStatus,
+} from "./live";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -83,6 +91,7 @@ root.innerHTML = `
     <header class="topbar">
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
       <div class="topbar-right">
+        <span class="live-indicator" data-live title="Live updates"></span>
         <button class="theme-toggle" data-theme-toggle type="button" aria-label="Cycle theme" title="Theme"><span class="theme-glyph" data-theme-glyph></span><span class="theme-label" data-theme-label></span></button>
         <div class="export-wrap" data-export-wrap>
           <button class="export-toggle" data-export-toggle type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Export tasks" title="Export tasks">export</button>
@@ -179,6 +188,7 @@ const els = {
   tagpageCount: must<HTMLElement>("[data-tagpage-count]"),
   tagpageClear: must<HTMLAnchorElement>("[data-tagpage-clear]"),
   bulkbar: must<HTMLElement>("[data-bulkbar]"),
+  live: must<HTMLElement>("[data-live]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -795,6 +805,7 @@ function enterEditMode(id: number): void {
       // noop / cancel: just re-render to restore the original row.
       render();
     }
+    flushPendingLiveRefresh();
   };
 
   input.addEventListener("keydown", (e) => {
@@ -883,6 +894,7 @@ function openDuePicker(id: number): void {
     pop.remove();
     document.removeEventListener("click", onAway, true);
     render();
+    flushPendingLiveRefresh();
   };
   const commit = async (raw: string): Promise<void> => {
     const patch = resolveDueCommit(raw, task.due);
@@ -1659,6 +1671,97 @@ function closePalette(): void {
 }
 
 
+// --- F21: live-reload via Server-Sent Events --------------------------------
+
+/** Last file fingerprint we acted on; null until the first `ready`/`change`. */
+let liveFingerprint: FileFingerprint | null = null;
+/** The active EventSource, if any. */
+let liveSource: EventSource | null = null;
+/** Backoff handle for reconnect attempts after the stream drops. */
+let liveReconnectTimer: number | null = null;
+
+/** Paint the live indicator pill for the given connection status. */
+function setLiveStatus(status: LiveStatus): void {
+  els.live.innerHTML = renderLiveIndicator(status);
+  els.live.title = liveTitle(status);
+  els.live.dataset.status = status;
+}
+
+/**
+ * Handle a fingerprint frame (ready or change). The first frame only seeds the
+ * baseline; subsequent frames whose fingerprint moved trigger a silent refresh
+ * so external CLI/TUI/hand edits flow into the open tab without a manual reload.
+ */
+function onLiveFrame(data: string): void {
+  const fp = parseFingerprint(data);
+  if (!fp) return;
+  if (shouldRefresh(liveFingerprint, fp)) {
+    liveFingerprint = fp;
+    // Don't clobber an in-progress edit/due-pick: those own the keyboard and a
+    // re-render would tear down their input. Defer the refresh until they close.
+    if (editing || duePicking) {
+      liveRefreshPending = true;
+      return;
+    }
+    refresh();
+  } else {
+    liveFingerprint = fp;
+  }
+}
+
+/** Set when a live change arrives mid-edit; flushed when the edit settles. */
+let liveRefreshPending = false;
+
+/** Flush a deferred live refresh once an inline edit / due picker has closed. */
+function flushPendingLiveRefresh(): void {
+  if (liveRefreshPending && !editing && !duePicking) {
+    liveRefreshPending = false;
+    refresh();
+  }
+}
+
+/**
+ * Open (or reopen) the SSE connection. EventSource auto-reconnects on transient
+ * drops, but on a hard error we also schedule our own reconnect so a server
+ * restart is recovered from. Safe to call repeatedly; tears down any prior
+ * source first. No-ops when EventSource is unavailable (very old browsers) —
+ * the visibilitychange refresh remains as a fallback.
+ */
+function connectLive(): void {
+  if (typeof EventSource === "undefined") {
+    setLiveStatus("offline");
+    return;
+  }
+  if (liveReconnectTimer !== null) {
+    clearTimeout(liveReconnectTimer);
+    liveReconnectTimer = null;
+  }
+  if (liveSource) {
+    liveSource.close();
+    liveSource = null;
+  }
+  setLiveStatus("connecting");
+  const es = new EventSource("/api/events");
+  liveSource = es;
+  es.addEventListener("ready", (e) => {
+    setLiveStatus("live");
+    onLiveFrame((e as MessageEvent).data);
+  });
+  es.addEventListener("change", (e) => {
+    setLiveStatus("live");
+    onLiveFrame((e as MessageEvent).data);
+  });
+  es.addEventListener("open", () => setLiveStatus("live"));
+  es.addEventListener("error", () => {
+    setLiveStatus("offline");
+    // EventSource will retry on its own for network blips; on a closed stream
+    // (readyState CLOSED) we re-create it after a short backoff.
+    if (es.readyState === EventSource.CLOSED && liveReconnectTimer === null) {
+      liveReconnectTimer = window.setTimeout(connectLive, 3_000);
+    }
+  });
+}
+
 // Escape hatches for upcoming slices.
 declare global {
   interface Window {
@@ -1700,4 +1803,6 @@ window.tsk = {
 applyStatsVisibility();
 // Restore the persisted theme before the first paint to avoid a flash.
 applyTheme();
+// F21: open the live-reload stream so external edits flow into the open tab.
+connectLive();
 refresh();

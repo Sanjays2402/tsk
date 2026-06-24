@@ -946,6 +946,63 @@ kbd {
   align-items: center;
   gap: var(--sp-3);
 }
+
+/* F21: live-reload indicator — a small status pill with a pulsing dot. */
+.live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  user-select: none;
+  cursor: default;
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-text-faint);
+  flex: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.live-dot.live-live {
+  background: var(--color-accent);
+  box-shadow: 0 0 0 0 var(--color-accent-soft);
+  animation: live-pulse 2.4s var(--ease-out) infinite;
+}
+.live-dot.live-connecting {
+  background: var(--color-prio-medium);
+  animation: live-blink 1s steps(2, start) infinite;
+}
+.live-dot.live-offline {
+  background: var(--color-prio-low);
+}
+.live-label {
+  letter-spacing: 0.02em;
+}
+@keyframes live-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--color-accent-soft);
+  }
+  70% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@keyframes live-blink {
+  to {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-dot.live-live,
+  .live-dot.live-connecting {
+    animation: none;
+  }
+}
 .stats-toggle {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);

@@ -123,6 +123,7 @@ func (s *Server) routes() {
 	s.mux.Handle("/api/stats", s.requireAuth(http.HandlerFunc(s.handleStats)))
 	s.mux.Handle("/api/parse-date", s.requireAuth(http.HandlerFunc(s.handleParseDate)))
 	s.mux.Handle("/api/export", s.requireAuth(http.HandlerFunc(s.handleExport)))
+	s.mux.Handle("/api/events", s.requireAuth(http.HandlerFunc(s.handleEvents)))
 
 	// Root: serve SPA when StaticFS is provided, otherwise a tiny landing page.
 	// The root handler also performs the one-time ?token= cookie bootstrap so a
