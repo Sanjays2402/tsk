@@ -306,6 +306,29 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
+}
+.row:hover .title {
+  text-decoration: underline dotted var(--color-border-strong);
+  text-underline-offset: 3px;
+}
+.row.is-done:hover .title {
+  text-decoration: line-through;
+}
+/* F7: inline title edit input replaces the .title span in place */
+.title-edit {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--sp-2);
+  margin: -2px 0;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 .id {
   font-family: var(--font-mono);

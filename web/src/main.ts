@@ -17,6 +17,7 @@ import { renderComposerPreview } from "./composer";
 import { groupIntoSections, flattenSections } from "./sections";
 import { emptyNav, reconcile, move, select, type NavMove, type NavState } from "./keynav";
 import { renderToast, deletedMessage } from "./toast";
+import { resolveEdit } from "./edit";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -280,6 +281,86 @@ function undoDelete(): void {
   applySelection();
 }
 
+// --- F7: inline title edit -------------------------------------------------
+
+/** True while an inline edit input is mounted, so nav keys stand down. */
+let editing = false;
+
+/**
+ * Enter inline-edit mode for a task's title. Swaps the title span for an
+ * input seeded with the current title; Enter or blur commits, Escape reverts.
+ * Commit goes through PATCH with an optimistic update + rollback, matching the
+ * toggle/add patterns.
+ */
+function enterEditMode(id: number): void {
+  if (editing) return;
+  const row = els.content.querySelector<HTMLElement>(`[data-id="${id}"]`);
+  if (!row) return;
+  const titleEl = row.querySelector<HTMLElement>(".title");
+  if (!titleEl) return;
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+
+  editing = true;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const input = document.createElement("input");
+  input.className = "title-edit";
+  input.type = "text";
+  input.value = task.title;
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "Edit task title");
+  titleEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const finish = (cancelled: boolean): void => {
+    if (settled) return;
+    settled = true;
+    editing = false;
+    const outcome = resolveEdit(task.title, input.value, cancelled);
+    if (outcome.kind === "commit") {
+      commitEdit(id, outcome.title);
+    } else {
+      // noop / cancel: just re-render to restore the original row.
+      render();
+    }
+  };
+
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // keep list nav keys from firing while editing
+    if (e.key === "Enter") {
+      e.preventDefault();
+      finish(false);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finish(true);
+    }
+  });
+  input.addEventListener("blur", () => finish(false));
+}
+
+/** Persist an edited title via PATCH, optimistic with rollback. */
+async function commitEdit(id: number, title: string): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  currentTasks[idx] = { ...before, title };
+  render();
+  try {
+    const confirmed = await api.patchTask(id, { title });
+    currentTasks[idx] = confirmed;
+    render();
+  } catch (err) {
+    currentTasks[idx] = before;
+    render();
+    setStatus(`edit failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
 // --- F6: quick-add composer ------------------------------------------------
 
 /** Re-render the live token preview and toggle the submit-enabled state. */
@@ -367,6 +448,18 @@ els.content.addEventListener("click", (e) => {
   applySelection();
 });
 
+// Double-click a title to edit it in place (F7).
+els.content.addEventListener("dblclick", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (!target || !target.closest(".title")) return;
+  const row = target.closest("[data-id]") as HTMLElement | null;
+  if (!row) return;
+  const id = Number(row.dataset.id);
+  if (!Number.isFinite(id) || id <= 0) return;
+  e.preventDefault();
+  enterEditMode(id);
+});
+
 // Pick up external edits (CLI / TUI / hand-edit) when the tab regains focus.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
@@ -398,6 +491,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
+  if (editing) return; // inline edit input handles its own keys
 
   switch (e.key) {
     case "j":
@@ -435,6 +529,12 @@ document.addEventListener("keydown", (e) => {
         requestDelete(nav.selectedId);
       }
       break;
+    case "e":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        enterEditMode(nav.selectedId);
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -465,6 +565,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["k / \u2191", "Move selection up"],
   ["g / G", "Jump to first / last"],
   ["space / enter", "Toggle the selected task done"],
+  ["e", "Edit the selected task's title"],
   ["x / del", "Delete the selected task (undoable)"],
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
@@ -522,6 +623,7 @@ declare global {
       help: (open: boolean) => void;
       del: (id: number) => void;
       undo: () => void;
+      edit: (id: number) => void;
     };
   }
 }
@@ -537,6 +639,7 @@ window.tsk = {
   help: toggleHelp,
   del: requestDelete,
   undo: undoDelete,
+  edit: enterEditMode,
 };
 
 refresh();
