@@ -37,6 +37,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
+import { renderStatsPanel } from "./stats";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -45,7 +46,10 @@ root.innerHTML = `
   <div class="app" data-app>
     <header class="topbar">
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
-      <div class="file" data-file>—</div>
+      <div class="topbar-right">
+        <button class="stats-toggle" data-stats-toggle type="button" aria-pressed="false" aria-label="Toggle stats panel" title="Toggle stats (s)">stats</button>
+        <div class="file" data-file>—</div>
+      </div>
     </header>
     <form class="composer" data-composer autocomplete="off">
       <div class="composer-field" data-field>
@@ -82,12 +86,15 @@ root.innerHTML = `
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
     </div>
-    <div data-content>
-      <div class="skeleton" aria-busy="true" aria-label="loading tasks">
-        <div class="bar w-80"></div>
-        <div class="bar w-60"></div>
-        <div class="bar w-40"></div>
+    <div class="layout" data-layout>
+      <div data-content>
+        <div class="skeleton" aria-busy="true" aria-label="loading tasks">
+          <div class="bar w-80"></div>
+          <div class="bar w-60"></div>
+          <div class="bar w-40"></div>
+        </div>
       </div>
+      <aside class="stats-panel" data-stats-panel hidden aria-label="Task statistics"></aside>
     </div>
     <footer class="statusline">
       <span class="count" data-count></span>
@@ -111,6 +118,8 @@ const els = {
   filterPrios: must<HTMLElement>("[data-filter-prios]"),
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
+  statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
+  statsPanel: must<HTMLElement>("[data-stats-panel]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -129,6 +138,13 @@ let visibleIds: number[] = [];
 const pendingDeletes = new Set<number>();
 /** Active filter (F11): search query, priority + tag facets, hide-done. */
 let filter: FilterState = emptyFilter();
+/** Stats panel (F13): open state persisted in localStorage, last fetched data. */
+let statsOpen = false;
+try {
+  statsOpen = localStorage.getItem("tsk.stats") === "1";
+} catch {
+  // ignore (private mode / storage disabled)
+}
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -192,9 +208,43 @@ async function refresh(): Promise<void> {
     els.file.textContent = file;
     setStatus("ready", false);
     render();
+    refreshStats();
   } catch (err) {
     showError(err);
   }
+}
+
+// --- F13: stats sidebar ----------------------------------------------------
+
+/** Apply the open/closed state to the DOM (panel visibility + layout + toggle). */
+function applyStatsVisibility(): void {
+  els.statsPanel.hidden = !statsOpen;
+  els.statsToggle.classList.toggle("is-active", statsOpen);
+  els.statsToggle.setAttribute("aria-pressed", String(statsOpen));
+  must<HTMLElement>("[data-layout]").classList.toggle("has-stats", statsOpen);
+}
+
+/** Fetch /api/stats and paint the panel, but only when it's open. */
+async function refreshStats(): Promise<void> {
+  if (!statsOpen) return;
+  try {
+    const stats = await api.stats();
+    els.statsPanel.innerHTML = renderStatsPanel(stats);
+  } catch {
+    els.statsPanel.innerHTML = `<div class="stats-empty">Stats unavailable</div>`;
+  }
+}
+
+/** Toggle the stats panel, persist the choice, and refresh its data when opening. */
+function toggleStats(open: boolean): void {
+  statsOpen = open;
+  try {
+    localStorage.setItem("tsk.stats", open ? "1" : "0");
+  } catch {
+    // ignore
+  }
+  applyStatsVisibility();
+  if (open) refreshStats();
 }
 
 function setStatus(label: string, error: boolean): void {
@@ -246,6 +296,7 @@ async function toggleTask(id: number): Promise<void> {
     // Server is authoritative (it knows the completed timestamp etc.).
     currentTasks[idx] = confirmed;
     render();
+    refreshStats();
   } catch (err) {
     // Roll back the optimistic flip and flash a status.
     currentTasks[idx] = before;
@@ -328,6 +379,7 @@ async function commitDelete(): Promise<void> {
     currentTasks = currentTasks.filter((t) => t.id !== task.id);
     pendingDeletes.delete(task.id);
     render();
+    refreshStats();
   } catch (err) {
     // Server refused — restore the row so nothing is silently lost.
     pendingDeletes.delete(task.id);
@@ -544,6 +596,7 @@ async function commitDue(id: number, due: string): Promise<void> {
     const confirmed = await api.patchTask(id, { due });
     currentTasks[idx] = confirmed;
     render();
+    refreshStats();
   } catch (err) {
     currentTasks[idx] = before;
     render();
@@ -661,6 +714,19 @@ els.filterClear.addEventListener("click", () => {
   filter = emptyFilter();
   render();
   els.filterInput.focus();
+});
+
+// --- F13: stats sidebar wiring ---------------------------------------------
+
+els.statsToggle.addEventListener("click", () => toggleStats(!statsOpen));
+
+// Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
+els.statsPanel.addEventListener("click", (e) => {
+  const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-stat-tag]");
+  if (!row) return;
+  const tag = row.dataset.statTag ?? "";
+  if (!tag) return;
+  setFilter({ tags: filter.tags.includes(tag) ? filter.tags : [...filter.tags, tag] });
 });
 
 // Escape clears + blurs the composer.
@@ -822,6 +888,10 @@ document.addEventListener("keydown", (e) => {
         els.filterInput.select();
       }
       break;
+    case "s":
+      e.preventDefault();
+      toggleStats(!statsOpen);
+      break;
     case "?":
       e.preventDefault();
       toggleHelp(true);
@@ -844,6 +914,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
   ["/", "Focus the filter box"],
+  ["s", "Toggle the stats panel"],
   ["r", "Refresh from disk"],
   ["esc", "Clear the add field / close this help"],
   ["?", "Toggle this help"],
@@ -919,4 +990,6 @@ window.tsk = {
   due: openDuePicker,
 };
 
+// Restore the persisted stats-panel state before the first paint.
+applyStatsVisibility();
 refresh();
