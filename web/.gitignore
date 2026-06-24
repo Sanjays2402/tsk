@@ -1,0 +1,12 @@
+# Build artifacts go into ../internal/serve/web_dist/ (committed for go:embed).
+# Local dev artifacts and dependencies stay out of git.
+
+node_modules/
+dist/
+.vite/
+*.log
+.DS_Store
+
+# Editor scratch
+.idea/
+.vscode/

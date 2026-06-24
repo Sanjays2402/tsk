@@ -1,2 +1,0 @@
-# Placeholder so go:embed always has a directory to chew on, even before
-# the Vite build has run. Real assets land here as `index.html`, `assets/...`.
