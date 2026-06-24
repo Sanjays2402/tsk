@@ -103,20 +103,21 @@ cmd/tsk/main.go
       enforces `Authorization: Bearer` on `/api/*`. (tick T4 2026-06-24)
 
 ### T5 — production
-- [ ] **F21** SSE live-reload: server watches `.tsk.md` mtime; pushes
+- [x] **F21** SSE live-reload: server watches `.tsk.md` mtime; pushes
       change events to connected clients so multi-tab / external edits
-      show up.
-- [ ] **F22** PWA manifest + offline cache shell. Add-to-home on
-      iOS/Android.
+      show up. (tick T5 2026-06-24)
+- [x] **F22** PWA manifest + offline cache shell. Add-to-home on
+      iOS/Android. (tick T5 2026-06-24)
 
 ### T6 — depth (queued so the loop never starves)
-- [ ] **F23** Notes editor: expand a task to edit its multi-line notes
+- [x] **F23** Notes editor: expand a task to edit its multi-line notes
       (the `.tsk.md` 6-space continuation lines) in a textarea, PATCH via
-      the existing `notes` field.
-- [ ] **F24** Settings drawer: persist per-client prefs (default sort,
+      the existing `notes` field. (tick T5 2026-06-24)
+- [x] **F24** Settings drawer: persist per-client prefs (default sort,
       density compact/comfortable, show/hide done) in localStorage.
-- [ ] **F25** Saved filters / views: name a filter+tag+priority combo and
-      recall it from a chip row or the Cmd-K palette.
+      (tick T5 2026-06-24)
+- [x] **F25** Saved filters / views: name a filter+tag+priority combo and
+      recall it from a chip row or the Cmd-K palette. (tick T5 2026-06-24)
 - [ ] **F26** Dependency awareness in the UI: show `depends:` blockers on a
       row (the model already parses DependsOn), grey out blocked tasks, and
       surface "blocked by #N" — read-only first, then edit.
@@ -128,6 +129,38 @@ cmd/tsk/main.go
       L->M->H->U with an optimistic PATCH (no full edit needed).
 - [ ] **F30** Search highlighting: in filter results, mark the matched
       substring/subsequence in the title so it's obvious why a row matched.
+
+### T7 — depth (appended T5 2026-06-24 so the loop never starves)
+
+Fresh slices. F26-F30 are the standing T6 backlog; these extend it with
+follow-ons sensible after the T5 production cluster (live-reload, PWA,
+notes, settings, saved views) plus long-tail UI the surface still lacks.
+
+- [ ] **F31** Notes in the command palette + detail: a "view notes" preview
+      and quick-jump; surface a notes snippet on the row (one-line, faded)
+      when present so you don't have to open the editor to remember context.
+- [ ] **F32** Saved-view enhancements: reorder views (drag the chips), an
+      "update this view to the current filter" action, and persist the active
+      view in the URL hash (`#view/<id>`) so it's shareable/bookmarkable.
+- [ ] **F33** Live-reload polish: a subtle toast ("file changed on disk —
+      refreshed") when an external edit lands, and a per-tab "pause live"
+      toggle for when you're hand-editing the .tsk.md and don't want churn.
+- [ ] **F34** Settings: a "reset to defaults" button, an export/import of the
+      whole client config (settings + saved views) as a JSON blob, and a
+      compact-mode density that also hides the meta cluster until hover.
+- [ ] **F35** PWA depth: a real install button (beforeinstallprompt capture)
+      in the settings drawer, plus an offline banner when the SSE stream is
+      down AND the network is unreachable (distinguish "server restarting"
+      from "you're offline").
+- [ ] **F36** Bulk edit beyond toggle/delete: bulk set priority, bulk add/
+      remove a tag, bulk set due — extend the floating bar with a small
+      action menu over the existing bulk-selection model.
+- [ ] **F37** Row context menu (right-click / long-press): every per-row
+      action (edit, due, notes, pin, clone, delete) in one menu, sharing the
+      command dispatch the palette already uses.
+- [ ] **F38** Quick-add upgrades: a `depends:#N` token in the composer, an
+      autocomplete dropdown for `#tags` (from collectTags) and `@due`
+      presets, and a multi-line paste that splits into N tasks.
 
 When fewer than 5 remain, append more (recurring-task UI, archive view,
 quick-jump to a tag from the palette, undo stack beyond single delete, etc.).
@@ -299,3 +332,56 @@ Roadmap status: F1-F20 done. F21-F22 queued for T5 (SSE live-reload, PWA);
 F23-F30 appended this tick for T6+ (notes editor, settings drawer, saved
 views, dependency UI, pinned tasks, mobile polish, inline priority cycle,
 search highlighting) so the loop never starves.
+
+### T5 — 2026-06-24 09:06 PT — production (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted this tick — `/Volumes` held only Macintosh HD and the
+SSD is physically absent. Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main` (same origin, was exactly at
+origin/main a67d69d, clean tree, .cron-state tracked in git so no state
+divergence). Pushed as a clean fast-forward (a67d69d..25e2b3f), zero
+divergence. This remains the documented fallback (see T2/T3/T4 notes).
+
+- F21 feat(serve): SSE live-reload so external edits flow into open tabs (1a2d324)
+- F22 feat(web): PWA manifest + offline service worker shell (b346e8e)
+- F23 feat(web): multi-line notes editor with PATCH round-trip (2c78203)
+- F24 feat(web): settings drawer for per-client preferences (0612443)
+- F25 feat(web): saved views — name a filter combo, recall from chips/Cmd-K (8efa8a0)
+- (+ chore 25e2b3f: rebuilt embedded SPA bundle for all five slices)
+
+Backend changes this tick: GET /api/events, a Server-Sent Events stream that
+fingerprints .tsk.md (mtime+size+existence) on a 1s os.Stat poll and emits a
+"change" event when it moves — dependency-free (no fsnotify), behind requireAuth
+like every /api/* route, with a 15s keep-alive comment (F21); plus a
+.webmanifest MIME registration in embed.go so the PWA manifest serves as
+application/manifest+json (F22). F23 reuses the existing PATCH `notes` field
+(no backend change). F24/F25 are pure client-side localStorage prefs that never
+touch .tsk.md. Each frontend slice ships a dependency-free logic module
+unit-tested under node --test: live.ts (8), pwa.ts (7), notes.ts (12),
+settings.ts (8), views.ts (14) = 49 new web tests (205 total). Go side adds
+events_test.go (statSig/sigChanged + a race-clean ready-then-change stream test
+via a mutex-guarded flush recorder + context-cancel + goroutine join).
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test -race ./... ok across ALL packages (incl. internal/serve with
+the freshly-embedded T5 bundle and the new SSE handler, internal/commands ~60s),
+web `npm run check` 205 pass, `npm run build` ok — JS 18.1KB gz, CSS 6.58KB gz,
+27 modules.
+
+End-to-end proof: built the binary, ran tsk init + 2 tasks + `tsk serve`. F22:
+/manifest.webmanifest -> 200 application/manifest+json, /sw.js -> 200
+text/javascript, /icon.svg + /icon-maskable.svg -> 200 image/svg+xml, index
+carries the manifest link. F21: a curl -N on /api/events emitted `event: ready`
+then `event: change` with a bumped mtime+size the instant `tsk add` rewrote the
+file. F23: a multi-line notes PATCH (with an interior blank line) round-tripped
+to .tsk.md as 6-space continuation lines and `tsk show 1` read the same notes
+back — the hand-editable storage contract is intact. The served bundle contains
+the new slice code (data-live, serviceWorker, data-notes, data-settings,
+data-view-recall).
+
+Roadmap status: F1-F25 done. F26-F30 (T6) + F31-F38 (T7, appended this tick)
+unstarted — dependency UI, pinned tasks, mobile polish, inline priority cycle,
+search highlighting, then notes-on-row, saved-view URL hash, live-reload toast,
+config export/import, install button, bulk edit, context menu, quick-add
+upgrades — so future ticks have ample sized work.
