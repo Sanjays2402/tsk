@@ -63,14 +63,16 @@ cmd/tsk/main.go
       → optimistic update + server confirm. Round-trips to .tsk.md on disk.
 
 ### Next tick (T2) — make it usable
-- [ ] **F6** Add-task form (header bar, `n` shortcut, Linear-ish slim
-      input with priority/due/tag chips).
-- [ ] **F7** Inline edit title (double-click or `e` on selected row).
-- [ ] **F8** Delete with undo (toast + 5s timer).
-- [ ] **F9** Sections: Overdue / Today / Upcoming / No Due / Done —
-      matching the TUI's mental model.
-- [ ] **F10** Keyboard nav: j/k to move selection, space/enter to toggle,
-      `?` for help overlay (mirror the TUI hotkeys).
+- [x] **F6** Add-task form (header bar, `n` shortcut, Linear-ish slim
+      input with priority/due/tag chips). (tick T2 2026-06-24)
+- [x] **F7** Inline edit title (double-click or `e` on selected row).
+      (tick T2 2026-06-24)
+- [x] **F8** Delete with undo (toast + 5s timer). (tick T2 2026-06-24)
+- [x] **F9** Sections: Overdue / Today / Upcoming / No Due / Done —
+      matching the TUI's mental model. (tick T2 2026-06-24)
+- [x] **F10** Keyboard nav: j/k to move selection, space/enter to toggle,
+      `?` for help overlay (mirror the TUI hotkeys). Also e=edit, x=delete,
+      u=undo, g/G=first/last. (tick T2 2026-06-24)
 
 ### T3 — search, filter, polish
 - [ ] **F11** Filter bar: tag chips multi-select, priority filter, search
@@ -149,3 +151,34 @@ toggle round-trips through atomic `store.Save` preserving the existing
 .tsk.md storage format byte-for-byte.
 
 Roadmap status: F1-F5 done. F6-F22 unstarted, queued for T2+.
+
+### T2 — 2026-06-24 04:44 PT — make it usable (5/5)
+
+Workdir note: the canonical workdir `/Volumes/Projects/tsk` (an APFS
+sparseimage on an external SSD) was NOT mounted this tick — the SSD was
+physically absent (`diskutil list external physical` empty, mount script
+hung waiting for it). Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main`, which shares the same origin
+and was at origin/main (35c50c7) with a clean tree. Pushed from there; a
+clean fast-forward, no divergence. This is the right fallback whenever the
+SSD is unplugged.
+
+- F6 feat(web): quick-add composer with inline !prio @due #tag syntax (0f9291d)
+- F9 feat(web): group list into Overdue/Today/Upcoming/No Due/Done (9c4644d)
+- F10 feat(web): keyboard nav + selection model + help overlay (7861731)
+- F8 feat(web): delete a task with a 5s undo toast (d6ca24c)
+- F7 feat(web): inline title edit on double-click or `e` (9a5ef86)
+
+The backend CRUD API was already complete from T1, so all five slices are
+frontend. Each pure module (quickadd, composer, sections, keynav, toast,
+edit) is unit-tested under Node's native TS runner (`node --test`) — 48
+frontend tests total, added this tick along with a test tsconfig,
+@types/node (dev-only, not bundled), and npm scripts (test, typecheck:test,
+check). Gates: gofmt/vet/build clean, go test ./... ok (incl. internal/serve),
+web typecheck + 48 tests + build all green (5.98KB gz JS). Verified the full
+add -> toggle -> edit -> delete flow end-to-end against a live `tsk serve`,
+all writing .tsk.md in the existing hand-editable format with the CLI/TUI
+contract intact.
+
+Roadmap status: F1-F10 done. F11-F22 unstarted, queued for T3+ (filter bar,
+due picker, stats sidebar, theme toggle, tag pages, then power-user/prod).
