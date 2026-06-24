@@ -591,6 +591,18 @@ function setStatus(label: string, error: boolean): void {
 function showError(err: unknown): void {
   const message = formatErr(err);
   setStatus("offline", true);
+  // F20: a 401 means token auth is on and this session isn't authenticated.
+  // Guide the user to the ?token= bootstrap rather than showing a raw error.
+  if (err instanceof ApiError && err.status === 401) {
+    setStatus("locked", true);
+    els.content.innerHTML = `
+      <div class="banner" role="alert">
+        <span>This tsk server requires a token.</span>
+        <code>open http://&lt;host&gt;/?token=YOUR_TOKEN once to start a session,
+or send Authorization: Bearer YOUR_TOKEN</code>
+      </div>`;
+    return;
+  }
   els.content.innerHTML = `
     <div class="banner" role="alert">
       <span>Couldn't reach <code>tsk serve</code>:</span>

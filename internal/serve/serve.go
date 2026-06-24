@@ -47,6 +47,11 @@ type Options struct {
 	// TZ is the location natural-language dates are interpreted in. Defaults
 	// to time.Local when nil.
 	TZ *time.Location
+	// Token, when non-empty, gates every /api/* route behind bearer-token
+	// auth (Authorization: Bearer <token>, a tsk_token cookie, or a one-time
+	// ?token= bootstrap that sets the cookie). Empty = no auth (loopback
+	// default). Only set this when binding off 127.0.0.1.
+	Token string
 	// StaticFS optionally serves a pre-built SPA at "/". When nil, the server
 	// serves a minimal placeholder page at "/" so the API still works.
 	StaticFS fs.FS
@@ -111,18 +116,21 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 // routes wires the HTTP surface. Keep it small and readable.
 func (s *Server) routes() {
-	s.mux.HandleFunc("/api/health", s.handleHealth)
-	s.mux.HandleFunc("/api/tasks", s.handleTasks)
-	s.mux.HandleFunc("/api/tasks/", s.handleTaskByID)
-	s.mux.HandleFunc("/api/stats", s.handleStats)
-	s.mux.HandleFunc("/api/parse-date", s.handleParseDate)
-	s.mux.HandleFunc("/api/export", s.handleExport)
+	// API routes are gated by requireAuth (a no-op when no token is set).
+	s.mux.Handle("/api/health", s.requireAuth(http.HandlerFunc(s.handleHealth)))
+	s.mux.Handle("/api/tasks", s.requireAuth(http.HandlerFunc(s.handleTasks)))
+	s.mux.Handle("/api/tasks/", s.requireAuth(http.HandlerFunc(s.handleTaskByID)))
+	s.mux.Handle("/api/stats", s.requireAuth(http.HandlerFunc(s.handleStats)))
+	s.mux.Handle("/api/parse-date", s.requireAuth(http.HandlerFunc(s.handleParseDate)))
+	s.mux.Handle("/api/export", s.requireAuth(http.HandlerFunc(s.handleExport)))
 
 	// Root: serve SPA when StaticFS is provided, otherwise a tiny landing page.
+	// The root handler also performs the one-time ?token= cookie bootstrap so a
+	// browser can authenticate by visiting the link `tsk serve` prints.
 	if s.opts.StaticFS != nil {
-		s.mux.Handle("/", http.FileServer(http.FS(s.opts.StaticFS)))
+		s.mux.Handle("/", s.tokenBootstrap(http.FileServer(http.FS(s.opts.StaticFS))))
 	} else {
-		s.mux.HandleFunc("/", s.handlePlaceholder)
+		s.mux.Handle("/", s.tokenBootstrap(http.HandlerFunc(s.handlePlaceholder)))
 	}
 }
 
