@@ -105,6 +105,7 @@ func NewRoot() *cobra.Command {
 		newPreviewCmd(),
 		newVersionCmd(),
 		newTUICmd(),
+		newServeCmd(),
 	)
 	attachOptional(root)
 
