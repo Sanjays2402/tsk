@@ -501,10 +501,38 @@ func runStartStop(starting bool, reset *bool) func(*cobra.Command, []string) err
 // scripted alerts can flag stale WIP without parsing humanized
 // strings. Zero/negative duration is a usage error — the threshold
 // MUST be positive to define a "stale-er than this" filter.
+//
+// --priority <p> narrows the list to in-progress tasks at exactly
+// the named priority (low/medium/high/urgent, short forms accepted
+// via model.ParsePriority). Sister of --stale on the filtering
+// axis — both narrow what surfaces in the WIP list without
+// changing the underlying state. Mirrors `tsk depend --pending
+// --priority` and `tsk start --all --priority` for symmetry across
+// the verbs that already accept a priority filter.
+//
+// --tag <t> narrows the list to in-progress tasks carrying the
+// named tag (case-insensitive, single tag — same semantics
+// `tsk ls --tag` and `tsk depend --pending --tag` use).
+// Sister of --priority on the filtering axis.
+//
+// --strict-and-tag <CSV> narrows the list to in-progress tasks
+// carrying ALL listed tags (intersection-style; sister of --tag's
+// union-style single-tag filter — --tag work narrows to one tag,
+// --strict-and-tag work,p0 narrows to tasks carrying BOTH). Mirrors
+// the same flag on `tsk start --all`, `tsk pause --all`, and
+// `tsk depend --pending` so the four bulk-verb-adjacent tag-axis
+// intersection filters read symmetrically across the verbs.
+// Mutually exclusive with --tag (each is a different selector axis).
+// All filters compose as AND: --stale 24h --priority urgent --tag
+// work narrows the list to in-progress tasks running over a day,
+// at exactly urgent priority, and carrying the 'work' tag.
 func newInProgressCmd() *cobra.Command {
 	var (
-		asJSON   bool
-		staleRaw string
+		asJSON          bool
+		staleRaw        string
+		wipPrio         string
+		wipTag          string
+		wipStrictAndTag string
 	)
 	cmd := &cobra.Command{
 		Use:     "in-progress",
@@ -524,12 +552,25 @@ work without manually scanning the full WIP list:
   tsk wip --stale 24h          # only WIP running over a day
   tsk wip --stale 4h --json    # scripted alert for half-day stale
 
+Pass --priority <p> to narrow to in-progress tasks at exactly the
+named priority (low/medium/high/urgent). Sister of --stale on the
+filtering axis. Pass --tag <t> for a single-tag filter, or
+--strict-and-tag <a,b> for a multi-tag intersection (all-of). Tag
+filters mirror the same flags on ` + "`tsk pause --all`" + `,
+` + "`tsk start --all`" + `, and ` + "`tsk depend --pending`" + ` so
+the four verb surfaces read symmetrically. All filters compose as
+AND.
+
 Examples:
   tsk in-progress
   tsk wip                       # alias
   tsk in-progress --json
   tsk wip --stale 1d            # only tasks running > 1 day
   tsk wip --stale 4h --json     # scripted half-day stale alert
+  tsk wip --priority urgent     # only urgent in-progress
+  tsk wip --tag work            # only WIP tagged 'work'
+  tsk wip --strict-and-tag work,p0  # WIP carrying BOTH tags
+  tsk wip --stale 24h --priority urgent --tag work  # composed AND
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// --stale validation up-front so a typo doesn't waste
@@ -548,6 +589,32 @@ Examples:
 				staleDur = d
 				staleActive = true
 			}
+			// --priority parsing: empty = no filter (defensive
+			// against unset shell vars; matches depend --pending's
+			// stance). Reuses model.ParsePriority for case-
+			// insensitive short/long-form acceptance ("u" / "urgent"
+			// both resolve to Urgent).
+			wipPrioTrim := strings.TrimSpace(wipPrio)
+			var prio model.Priority
+			prioActive := false
+			if wipPrioTrim != "" {
+				p, err := model.ParsePriority(wipPrioTrim)
+				if err != nil {
+					return usageErrorf("invalid --priority %q: %v", wipPrio, err)
+				}
+				prio = p
+				prioActive = true
+			}
+			// --tag + --strict-and-tag tag-axis selectors. They are
+			// mutually exclusive (each is a different filter shape:
+			// single-tag union vs multi-tag intersection), matching
+			// the rejection contract `tsk start --all` /
+			// `tsk pause --all` / `tsk depend --pending` use.
+			wipTagTrim := strings.TrimSpace(wipTag)
+			strictAndTags := splitTagCSV(wipStrictAndTag)
+			if wipTagTrim != "" && len(strictAndTags) > 0 {
+				return usageErrorf("--tag and --strict-and-tag are mutually exclusive (each is a different tag-selector axis; --tag is single-tag, --strict-and-tag is intersection over a CSV)")
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -564,6 +631,15 @@ Examples:
 					// elapsed is <= threshold → not stale enough.
 					continue
 				}
+				if prioActive && t.Priority != prio {
+					continue
+				}
+				if wipTagTrim != "" && !t.HasTag(wipTagTrim) {
+					continue
+				}
+				if len(strictAndTags) > 0 && !taskHasAllTags(&t, strictAndTags) {
+					continue
+				}
 				out = append(out, t)
 			}
 			sort.SliceStable(out, func(i, j int) bool {
@@ -578,15 +654,25 @@ Examples:
 				return enc.Encode(out)
 			}
 			if len(out) == 0 {
-				if staleActive {
+				switch {
+				case staleActive && prioActive:
+					pf(cmd.OutOrStdout(), "no in-progress tasks running longer than %s at priority %s\n", humanizeDuration(staleDur), prio.String())
+				case staleActive:
 					pf(cmd.OutOrStdout(), "no in-progress tasks running longer than %s\n", humanizeDuration(staleDur))
-				} else {
+				case prioActive:
+					pf(cmd.OutOrStdout(), "no in-progress tasks at priority %s\n", prio.String())
+				case wipTagTrim != "":
+					pf(cmd.OutOrStdout(), "no in-progress tasks with tag %s\n", wipTagTrim)
+				case len(strictAndTags) > 0:
+					pf(cmd.OutOrStdout(), "no in-progress tasks with tags %s\n", strings.Join(strictAndTags, "&"))
+				default:
 					pln(cmd.OutOrStdout(), "no in-progress tasks")
 				}
 				return nil
 			}
-			if staleActive {
-				pf(cmd.OutOrStdout(), "in-progress and stale (over %s): %d task(s)\n", humanizeDuration(staleDur), len(out))
+			filters := buildWipFilterSummary(staleActive, staleDur, prioActive, prio, wipTagTrim, strictAndTags)
+			if filters != "" {
+				pf(cmd.OutOrStdout(), "in-progress (filter: %s): %d task(s)\n", filters, len(out))
 			}
 			for _, t := range out {
 				elapsed := humanizeElapsed(now.Sub(*t.Started))
@@ -598,7 +684,33 @@ Examples:
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit JSON array of in-progress tasks")
 	cmd.Flags().StringVar(&staleRaw, "stale", "", "filter to tasks running LONGER than this duration (e.g. 24h, 2d, 1w, 1h30m). Same duration parser as `tsk log --since` and `tsk depend --pending --since`. The 'I've been working on this too long' alert mode: pair with `--json` for scripted standup/cron-driven stale-WIP notifications without parsing humanized strings. Composes with `--json` for machine-readable output. Empty (default) = no filter (every in-progress task is listed).")
+	cmd.Flags().StringVar(&wipPrio, "priority", "", "filter to in-progress tasks at exactly this priority (low/medium/high/urgent, short forms accepted). Sister of --stale on the filtering axis. Mirrors the --priority filter on `tsk depend --pending` / `tsk start --all` / `tsk pause --all`. Composes with --stale, --tag, and --strict-and-tag as AND. Empty (default) = no filter.")
+	cmd.Flags().StringVar(&wipTag, "tag", "", "filter to in-progress tasks carrying this tag (case-insensitive, single tag). Sister of --priority. Mirrors `tsk depend --pending --tag` / `tsk ls --tag`. Mutually exclusive with --strict-and-tag (each is a different tag-selector axis). Composes with --stale and --priority as AND. Empty (default) = no filter.")
+	cmd.Flags().StringVar(&wipStrictAndTag, "strict-and-tag", "", "filter to in-progress tasks carrying ALL listed tags (CSV; intersection). Sister of --tag's union-style single-tag filter: --tag work narrows to tasks carrying 'work'; --strict-and-tag work,p0 narrows to tasks carrying BOTH 'work' AND 'p0'. Mutually exclusive with --tag. Mirrors `tsk pause --all --strict-and-tag`, `tsk start --all --strict-and-tag`, and `tsk depend --pending --strict-and-tag` so the four tag-axis intersection filters read symmetrically. Composes with --stale and --priority as AND.")
 	return cmd
+}
+
+// buildWipFilterSummary renders a single-line filter summary for the
+// wip header line ("in-progress (filter: ...): N task(s)"). Sister
+// of buildPendingFilterSummary / buildPauseAllFilterSummary so the
+// three verb surfaces produce a recognizable summary shape. Order is
+// stable: stale, then tag/strict-and-tag (whichever is active), then
+// priority — same ordering depend --pending and pause --all use.
+func buildWipFilterSummary(staleActive bool, staleDur time.Duration, prioActive bool, prio model.Priority, tag string, strictAndTags []string) string {
+	parts := make([]string, 0, 4)
+	if staleActive {
+		parts = append(parts, "stale>"+humanizeDuration(staleDur))
+	}
+	if tag != "" {
+		parts = append(parts, "tag="+tag)
+	}
+	if len(strictAndTags) > 0 {
+		parts = append(parts, "tag="+strings.Join(strictAndTags, "&"))
+	}
+	if prioActive {
+		parts = append(parts, "priority="+prio.String())
+	}
+	return strings.Join(parts, " ")
 }
 
 // humanizeElapsed renders a duration as the largest non-zero unit

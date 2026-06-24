@@ -77,7 +77,7 @@ func TestWipStaleSurfacesOldTasks(t *testing.T) {
 	if strings.Contains(stdout, "new work") {
 		t.Errorf("'new work' (fresh) should NOT appear, got:\n%s", stdout)
 	}
-	if !strings.Contains(stdout, "in-progress and stale") {
+	if !strings.Contains(stdout, "in-progress (filter: stale>") {
 		t.Errorf("expected stale-header line, got:\n%s", stdout)
 	}
 }
@@ -199,8 +199,8 @@ func TestWipStaleEmptyValueNoFilter(t *testing.T) {
 	if !strings.Contains(stdout, "any") {
 		t.Fatalf("expected task in output with empty stale value, got:\n%s", stdout)
 	}
-	if strings.Contains(stdout, "in-progress and stale") {
-		t.Errorf("did not expect stale header when filter is inactive, got:\n%s", stdout)
+	if strings.Contains(stdout, "in-progress (filter:") {
+		t.Errorf("did not expect filter header when filter is inactive, got:\n%s", stdout)
 	}
 }
 
