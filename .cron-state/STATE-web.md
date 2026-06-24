@@ -118,17 +118,21 @@ cmd/tsk/main.go
       (tick T5 2026-06-24)
 - [x] **F25** Saved filters / views: name a filter+tag+priority combo and
       recall it from a chip row or the Cmd-K palette. (tick T5 2026-06-24)
-- [ ] **F26** Dependency awareness in the UI: show `depends:` blockers on a
+- [x] **F26** Dependency awareness in the UI: show `depends:` blockers on a
       row (the model already parses DependsOn), grey out blocked tasks, and
-      surface "blocked by #N" — read-only first, then edit.
-- [ ] **F27** Pinned tasks: respect the model's `Pinned` flag — a pin
+      surface "blocked by #N" — read-only first, then edit. (tick T6 2026-06-24)
+- [x] **F27** Pinned tasks: respect the model's `Pinned` flag — a pin
       toggle on the row and a Pinned section that floats to the top.
-- [ ] **F28** Mobile/touch polish: long-press to bulk-select, larger hit
+      (tick T6 2026-06-24)
+- [x] **F28** Mobile/touch polish: long-press to bulk-select, larger hit
       targets, a bottom action sheet instead of the floating bar.
-- [ ] **F29** Inline priority cycling: click the priority chip to cycle
+      (tick T6 2026-06-24)
+- [x] **F29** Inline priority cycling: click the priority chip to cycle
       L->M->H->U with an optimistic PATCH (no full edit needed).
-- [ ] **F30** Search highlighting: in filter results, mark the matched
+      (tick T6 2026-06-24)
+- [x] **F30** Search highlighting: in filter results, mark the matched
       substring/subsequence in the title so it's obvious why a row matched.
+      (tick T6 2026-06-24)
 
 ### T7 — depth (appended T5 2026-06-24 so the loop never starves)
 
@@ -385,3 +389,91 @@ unstarted — dependency UI, pinned tasks, mobile polish, inline priority cycle,
 search highlighting, then notes-on-row, saved-view URL hash, live-reload toast,
 config export/import, install button, bulk edit, context menu, quick-add
 upgrades — so future ticks have ample sized work.
+
+### T6 — 2026-06-24 10:06 PT — depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted — `/Volumes` held only Macintosh HD; `diskutil list
+external` was empty (SSD physically absent). The prompt's hard-coded path is
+stale; the live, fully-synced worktree is `/Users/sanjay/Projects/tsk-features/
+main` (same origin, was exactly at origin/main 378c75e, clean tree,
+.cron-state tracked in git so no state divergence). Pushed a clean
+fast-forward 378c75e..1565651. This remains the documented fallback (see
+T2-T5 notes); future ticks should resolve the repo here when the SSD is out.
+
+- F26 feat(web): dependency awareness in the UI (1eaee70)
+- F27 feat(web): pinned tasks with a floating Pinned section (ae72c31)
+- F29 feat(web): inline priority cycling on the row chip (f67a180)
+- F30 feat(web): search-match highlighting in filtered titles (1250ba4)
+- F28 feat(web): mobile + touch polish (dc868f0)
+- (+ chore 5627624: rebuilt embedded SPA bundle for all five slices;
+   + style 1565651: gofmt struct-tag alignment after the F26/F27 DTO additions)
+
+Backend changes this tick: taskDTO gains `pinned` + `depends_on` (both
+omitempty so old fixtures stay byte-identical); taskPatchDTO accepts both as
+setters; new POST /api/tasks/:id/pin toggle; PATCH wires Pinned (set) and
+DependsOn (replace, via the new sanitizeDeps validator — drops dupes, refuses
+self-ref, rejects unknown ids with 400, preserves order). Both round-trip to
+the existing `pin:true` / `depends:` meta keys in .tsk.md, so the CLI/TUI
+contract is intact (verified live: `tsk top` floats the pin, `tsk show` reads
+the deps back). F28/F29/F30 are pure frontend over the existing API.
+
+Each frontend slice ships a dependency-free logic module unit-tested under
+node --test: deps.ts (12), priority.ts (9), highlight.ts (13), touch.ts (9),
+plus 5 new section tests for the Pinned bucket = 48 new web tests (253 total).
+Go side adds deps_test.go (6) + pin_test.go (5) = 11 new backend tests.
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across ALL packages (incl. internal/serve with the
+freshly-embedded T6 bundle, internal/commands ~58s), web `npm run check` 253
+pass, `npm run build` ok — JS 19.62KB gz, CSS 7.05KB gz, 31 modules.
+
+End-to-end proof: built the binary, ran tsk init + 2 tasks + `tsk serve`.
+F27: POST /pin -> pinned:true, persisted as `pin:true`, `tsk top` floats it.
+F26: PATCH depends_on:[1] -> persisted as `depends:1`, `tsk show` reads it
+back; self-dep -> 400, unknown-dep -> 400. F29: PATCH priority urgent ->
+chip + .tsk.md updated. SPA index -> 200; bundle carries data-pin,
+data-prio-cycle, data-dep-jump, section-pinned, .title mark, is-blocked,
+touchstart + navigator.vibrate. The hand-editable .tsk.md storage contract
+is intact.
+
+Roadmap status: F1-F30 done. F31-F38 (T7) unstarted — notes-on-row preview,
+saved-view URL hash + reorder, live-reload toast + pause, settings reset +
+config export/import, PWA install button + offline banner, bulk edit
+(priority/tag/due), row context menu, quick-add depends:/tag-autocomplete.
+T8 backlog appended below so the loop never starves.
+
+### T8 — depth (appended T6 2026-06-24 so the loop never starves)
+
+Fresh slices for after the T7 cluster. F31-F38 are the standing T7 backlog;
+these extend it with follow-ons sensible after the T6 dependency/pin/priority/
+mobile/highlight work plus long-tail UI the surface still lacks.
+
+- [ ] **F39** Dependency EDITING in the UI: a small "blocked by" editor on the
+      row / in a popover to add+remove prereqs (the backend PATCH depends_on
+      already supports it; T6 only shipped the read + jump). Autocomplete over
+      open task ids, refuse self/cycle client-side before the PATCH.
+- [ ] **F40** Pinned-section drag-reorder + a "pin to a fixed slot" so the
+      Pinned group has a stable hand-curated order (currently priority-sorted);
+      persist the order through the existing /move endpoint.
+- [ ] **F41** Priority cycle on touch: long-press the chip to open a 4-way
+      priority picker (tap-to-set) since alt/shift-click isn't reachable on a
+      phone; reuse the F28 long-press machine.
+- [ ] **F42** "Unblocked just now" toast: when a toggle-done completes the last
+      blocker of some task, surface a toast ("#N is now unblocked — start it?")
+      with a jump action. Pairs with the F26 done-index.
+- [ ] **F43** Highlight in tags + notes preview too (F30 only marks titles):
+      mark the matched subsequence in the tag pills and any notes snippet so a
+      fuzzy match that landed on a tag is visible.
+- [ ] **F44** Keyboard: `[` / `]` to cycle priority down/up on the selected
+      row (sister of the F29 chip click), and `shift+P` to pin-to-top; show
+      them in the `?` help overlay.
+- [ ] **F45** Blocked-task guard on toggle: when you try to complete a blocked
+      task, confirm ("#N is blocked by #M — complete anyway?") instead of
+      silently allowing it, mirroring the CLI's `done` dependency gate.
+- [ ] **F46** Stats: a "blocked" + "pinned" count in the stats sidebar (reuse
+      the done-index + Pinned flag), and a tiny dependency-depth metric
+      ("longest blocker chain: 3").
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an
+in-UI dependency graph mini-map, undo stack beyond single delete, etc.).
