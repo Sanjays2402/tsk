@@ -47,6 +47,7 @@ import {
   modeTitle,
   type ThemeMode,
 } from "./theme";
+import { parseHash, tagHash, type Route } from "./router";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -96,6 +97,12 @@ root.innerHTML = `
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
     </div>
+    <div class="tagpage-banner" data-tagpage hidden>
+      <span class="tagpage-label">Tag</span>
+      <span class="tagpage-name" data-tagpage-name></span>
+      <span class="tagpage-count" data-tagpage-count></span>
+      <a class="tagpage-clear" href="#" data-tagpage-clear>&larr; all tasks</a>
+    </div>
     <div class="layout" data-layout>
       <div data-content>
         <div class="skeleton" aria-busy="true" aria-label="loading tasks">
@@ -133,6 +140,10 @@ const els = {
   themeToggle: must<HTMLButtonElement>("[data-theme-toggle]"),
   themeGlyph: must<HTMLElement>("[data-theme-glyph]"),
   themeLabel: must<HTMLElement>("[data-theme-label]"),
+  tagpage: must<HTMLElement>("[data-tagpage]"),
+  tagpageName: must<HTMLElement>("[data-tagpage-name]"),
+  tagpageCount: must<HTMLElement>("[data-tagpage-count]"),
+  tagpageClear: must<HTMLAnchorElement>("[data-tagpage-clear]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -165,20 +176,41 @@ try {
 } catch {
   // ignore
 }
+/** Current hash route (F15): all-tasks or a single-tag page. */
+let route: Route = parseHash(typeof location !== "undefined" ? location.hash : "");
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
   const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
-  const shown = applyFilter(notDeleted, filter);
+  // F15: a tag route pre-narrows the pool to tasks carrying that tag.
+  const r = route;
+  const routed = r.kind === "tag"
+    ? notDeleted.filter((t) => t.tags.includes(r.tag))
+    : notDeleted;
+  const shown = applyFilter(routed, filter);
   const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
   visibleIds = flattenSections(sections).map((t) => t.id);
   nav = reconcile(nav, visibleIds, prevIds);
   els.content.innerHTML = renderSections(sections, now);
   els.count.innerHTML = summarize(shown);
-  renderFilterBar(notDeleted, shown.length);
+  renderFilterBar(routed, shown.length);
+  renderTagPage(routed.length);
   applySelection();
+}
+
+/** Reflect the F15 tag-page banner: name, matching count, and visibility. */
+function renderTagPage(routedCount: number): void {
+  if (route.kind !== "tag") {
+    els.tagpage.hidden = true;
+    must<HTMLElement>("[data-app]").classList.remove("on-tagpage");
+    return;
+  }
+  els.tagpage.hidden = false;
+  must<HTMLElement>("[data-app]").classList.add("on-tagpage");
+  els.tagpageName.textContent = `#${route.tag}`;
+  els.tagpageCount.textContent = `${routedCount} task${routedCount === 1 ? "" : "s"}`;
 }
 
 /**
@@ -301,6 +333,33 @@ function cycleTheme(): void {
     // ignore
   }
   applyTheme();
+}
+
+// --- F15: tag pages (hash routing) -----------------------------------------
+
+/** Navigate to a tag's page by setting the URL hash (drives a hashchange). */
+function navigateToTag(tag: string): void {
+  const t = tag.trim().toLowerCase();
+  if (!t) return;
+  location.hash = tagHash(t);
+}
+
+/** Navigate back to the all-tasks view. */
+function navigateToAll(): void {
+  // Setting an empty hash leaves a stray "#"; clear it cleanly when we can.
+  if (history.pushState) {
+    history.pushState("", document.title, location.pathname + location.search);
+    onRouteChange();
+  } else {
+    location.hash = "";
+  }
+}
+
+/** React to a route change (hashchange or programmatic): re-read + repaint. */
+function onRouteChange(): void {
+  route = parseHash(location.hash);
+  // Leaving a tag page after filtering shouldn't strand a stale selection.
+  render();
 }
 
 function setStatus(label: string, error: boolean): void {
@@ -794,6 +853,16 @@ window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change",
   if (themeMode === "auto") applyTheme();
 });
 
+// --- F15: tag-page wiring ---------------------------------------------------
+
+window.addEventListener("hashchange", onRouteChange);
+
+// "all tasks" link in the tag-page banner clears the route.
+els.tagpageClear.addEventListener("click", (e) => {
+  e.preventDefault();
+  navigateToAll();
+});
+
 // Escape clears + blurs the composer.
 els.input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -829,6 +898,12 @@ els.content.addEventListener("click", (e) => {
   if (!Number.isFinite(id) || id <= 0) return;
   if (target.closest("[data-del]")) {
     requestDelete(id);
+    return;
+  }
+  // F15: a row tag pill navigates to that tag's page.
+  const tagnav = target.closest<HTMLElement>("[data-tagnav]");
+  if (tagnav) {
+    navigateToTag(tagnav.dataset.tagnav ?? "");
     return;
   }
   if (target.closest("[data-due]")) {
@@ -961,6 +1036,13 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       cycleTheme();
       break;
+    case "Escape":
+      // On a tag page (and not otherwise busy), Escape returns to all tasks.
+      if (route.kind === "tag") {
+        e.preventDefault();
+        navigateToAll();
+      }
+      break;
     case "?":
       e.preventDefault();
       toggleHelp(true);
@@ -1041,6 +1123,7 @@ declare global {
       undo: () => void;
       edit: (id: number) => void;
       due: (id: number) => void;
+      tag: (tag: string) => void;
     };
   }
 }
@@ -1058,6 +1141,7 @@ window.tsk = {
   undo: undoDelete,
   edit: enterEditMode,
   due: openDuePicker,
+  tag: navigateToTag,
 };
 
 // Restore the persisted stats-panel state before the first paint.

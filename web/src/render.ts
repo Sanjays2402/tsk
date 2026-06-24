@@ -52,7 +52,7 @@ export function renderRow(t: Task, now: Date): string {
   const classes = ["row", t.done ? "is-done" : "", dueState].filter(Boolean).join(" ");
   const dueLabel = t.due ? formatDue(t.due, now) : null;
   const tagsHTML = t.tags
-    .map((tag) => `<span class="tag">${escapeHTML(tag)}</span>`)
+    .map((tag) => `<button class="tag" type="button" data-tagnav="${escapeHTML(tag)}" title="Open #${escapeHTML(tag)} page">${escapeHTML(tag)}</button>`)
     .join("");
   const dueCell = dueLabel
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`

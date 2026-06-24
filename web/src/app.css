@@ -363,6 +363,14 @@ body {
   padding: 2px var(--sp-2);
   border-radius: 999px;
   line-height: 1.4;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.tag:hover {
+  border-color: var(--color-accent);
 }
 
 /* Priority chip */
@@ -1167,4 +1175,58 @@ kbd {
 .theme-glyph {
   font-size: var(--fs-sm);
   line-height: 1;
+}
+
+/* F15: tag-page banner */
+.tagpage-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  margin-top: calc(var(--sp-2) * -1);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.tagpage-banner[hidden] {
+  display: none;
+}
+.tagpage-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-faint);
+}
+.tagpage-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--color-accent);
+}
+.tagpage-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+}
+.tagpage-clear {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  text-decoration: none;
+  padding: 2px var(--sp-2);
+  border-radius: var(--radius-sm);
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.tagpage-clear:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+/* On a tag page, dim the now-redundant filter-bar tag chips to reduce noise. */
+.app.on-tagpage .filter-tags {
+  opacity: 0.55;
 }
