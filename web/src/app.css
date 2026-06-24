@@ -2205,6 +2205,53 @@ kbd {
   background: #0b0a09;
 }
 
+/* F34: configuration section (export / import / reset). */
+.set-config {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--color-border);
+}
+.set-config-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+  margin-bottom: var(--sp-2);
+}
+.set-config-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.set-cfg-btn {
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.set-cfg-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-dim);
+}
+.set-cfg-danger:hover {
+  color: var(--color-overdue);
+  border-color: var(--color-overdue);
+}
+.set-config-note {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  line-height: var(--lh-base);
+}
+
 /* Preference effects: compact density tightens row padding + gaps. */
 :root[data-density="compact"] .row {
   padding: var(--sp-1) var(--sp-4);
@@ -2216,6 +2263,17 @@ kbd {
 /* show-ids=off hides the #N chip on each row. */
 :root[data-show-ids="off"] .id {
   display: none;
+}
+/* F34: hide-meta reveals the row meta cluster only on hover / selection /
+   focus-within, for a cleaner board. The cluster fades in rather than jumping. */
+:root[data-hide-meta="on"] .row .meta {
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+:root[data-hide-meta="on"] .row:hover .meta,
+:root[data-hide-meta="on"] .row.is-selected .meta,
+:root[data-hide-meta="on"] .row:focus-within .meta {
+  opacity: 1;
 }
 /* motion=reduced opts out of every animation/transition app-wide. */
 :root[data-motion="reduced"] * {

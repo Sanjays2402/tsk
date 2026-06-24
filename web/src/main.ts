@@ -102,6 +102,13 @@ import {
   type Settings,
 } from "./settings";
 import {
+  buildConfig,
+  serializeConfig,
+  parseConfig,
+  configFilename,
+  resetBundle,
+} from "./config";
+import {
   parseViews,
   serializeViews,
   addView,
@@ -691,6 +698,19 @@ function ensureSettingsEl(): HTMLElement {
       toggleSettings(false);
       return;
     }
+    // F34: config management buttons.
+    if (t.closest("[data-config-export]")) {
+      exportConfig();
+      return;
+    }
+    if (t.closest("[data-config-import]")) {
+      importConfig();
+      return;
+    }
+    if (t.closest("[data-config-reset]")) {
+      resetConfig();
+      return;
+    }
     const seg = t.closest<HTMLElement>("[data-set]");
     if (seg) {
       const key = seg.dataset.set as "density" | "motion";
@@ -700,7 +720,7 @@ function ensureSettingsEl(): HTMLElement {
     }
     const sw = t.closest<HTMLElement>("[data-toggle-setting]");
     if (sw) {
-      const key = sw.dataset.toggleSetting as "hideDone" | "showIds";
+      const key = sw.dataset.toggleSetting as "hideDone" | "showIds" | "hideMeta";
       setSetting(key, !settings[key]);
       return;
     }
@@ -737,6 +757,9 @@ function setSetting(key: keyof Settings, value: string | boolean): void {
     case "showIds":
       settings.showIds = value === true;
       break;
+    case "hideMeta":
+      settings.hideMeta = value === true;
+      break;
   }
   saveSettings();
   applySettings();
@@ -756,6 +779,87 @@ function toggleSettings(open: boolean): void {
   if (open) paintSettings();
   el.classList.toggle("is-open", open);
   els.settingsToggle.classList.toggle("is-active", open);
+}
+
+// --- F34: config export / import / reset -----------------------------------
+
+/** Download the whole client config (settings + saved views + theme) as JSON. */
+function exportConfig(): void {
+  const bundle = buildConfig(settings, views, themeMode);
+  const blob = new Blob([serializeConfig(bundle)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = configFilename();
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setStatus("exported config", false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/** Prompt for a JSON file and apply it as the client config. */
+function importConfig(): void {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "application/json,.json";
+  input.addEventListener("change", () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = parseConfig(String(reader.result ?? ""));
+      if (!result.ok) {
+        setStatus(`import failed: ${result.error}`, true);
+        setTimeout(() => setStatus("ready", false), 4_000);
+        return;
+      }
+      applyConfigBundle(result.bundle.settings, result.bundle.views, result.bundle.theme);
+      setStatus("imported config", false);
+      setTimeout(() => setStatus("ready", false), 2_000);
+    };
+    reader.readAsText(file);
+  });
+  input.click();
+}
+
+/** Reset all client preferences (settings + views + theme) to defaults. */
+function resetConfig(): void {
+  const ok =
+    typeof confirm === "function"
+      ? confirm("Reset all preferences and delete every saved view? This can't be undone.")
+      : true;
+  if (!ok) return;
+  const b = resetBundle();
+  applyConfigBundle(b.settings, b.views, b.theme);
+  setStatus("reset to defaults", false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/** Apply an imported/reset config bundle to live state + storage + DOM. */
+function applyConfigBundle(nextSettings: Settings, nextViews: SavedView[], nextTheme?: string): void {
+  settings = nextSettings;
+  views = nextViews;
+  recalledViewId = null;
+  saveSettings();
+  saveViews();
+  applySettings();
+  // Seed the live filter's hide-done from the (possibly new) preference.
+  filter = { ...filter, hideDone: settings.hideDone };
+  // Apply the theme if the bundle carried one.
+  if (nextTheme === "light" || nextTheme === "dark" || nextTheme === "auto") {
+    themeMode = nextTheme;
+    try {
+      localStorage.setItem("tsk.theme", themeMode);
+    } catch {
+      // ignore
+    }
+    applyTheme();
+  }
+  paintSettings();
+  els.filterInput.value = filter.query;
+  render();
 }
 
 // --- F15: tag pages (hash routing) -----------------------------------------
