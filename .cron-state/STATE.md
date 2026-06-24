@@ -4260,11 +4260,11 @@ primitive via a shared helper, and `tsk wip` gaining its first
 filter flag, this batch leans into the still-unstarted long-
 tail and fresh follow-ons sensible from this tick's features.
 
-- [ ] `tsk graph --json --filter-started-since <date>` — sister of --filter-completed-since for in-progress recency (recently-touched chain)
+- [x] `tsk graph --json --filter-started-since <date>` — sister of --filter-completed-since for in-progress recency (recently-touched chain) (tick 2026-06-23/1738)
 - [ ] `tsk graph --json --filter-completed-since <d> --filter-started-since <d>` recipe doc — combined recency window for "what's actively moving?" reports
-- [ ] `tsk wip --priority <p>` — filter the WIP list by priority (sister of --stale's filtering axis)
-- [ ] `tsk wip --tag <t>` — filter the WIP list by single tag (sister of --priority)
-- [ ] `tsk wip --strict-and-tag a,b` — intersection-style multi-tag (parity with the bulk-verb cluster)
+- [x] `tsk wip --priority <p>` — filter the WIP list by priority (sister of --stale's filtering axis) (tick 2026-06-23/1738)
+- [x] `tsk wip --tag <t>` — filter the WIP list by single tag (sister of --priority) (tick 2026-06-23/1738)
+- [x] `tsk wip --strict-and-tag a,b` — intersection-style multi-tag (parity with the bulk-verb cluster) (tick 2026-06-23/1738)
 - [ ] `tsk wip --stale 24h --json | jq` recipe doc — one-pager showing stale-WIP alert pipelines for cron / telegram
 - [ ] `tsk graph --json --append --rotate N --max-bytes B` — secondary cap on file size (in addition to record count) for safety in pathological cases
 - [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates
@@ -4277,6 +4277,230 @@ tail and fresh follow-ons sensible from this tick's features.
 - [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
 - [ ] `tsk graph --json --filter-completed-since 7d --include-completed | jq` recipe doc — completion-velocity dashboard pattern
 - [ ] `tsk graph --json --include-pinned --filter-completed-since 7d | jq '.nodes[] | select(.pinned)'` recipe doc — pinned-only impact pattern
+- [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
+- [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
+- [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
+- [ ] Multi-file aggregation (`ls --include ~/work/.tsk.md --include ~/home/.tsk.md`)
+- [ ] `tsk split <id>` — open editor with one-task-per-line list to split a parent task into N subtasks
+- [ ] `tsk dedupe --merge <id>` — pick a survivor, merge notes from others, rm the rest (interactive)
+- [ ] `tsk timer <id> [<duration>]` — pomodoro overlay paired with start/stop
+- [ ] `tsk rules` — declarative auto-mutation rules
+- [ ] TUI detail pane (right side): expanded view of selected task with notes/timestamps
+- [ ] TUI Pomodoro / focus timer overlay (`f` to start, status bar countdown)
+- [ ] TUI Task creation form with priority/due/tag fields exposed (currently title-only)
+- [ ] TUI `u` / Ctrl-Z in-session undo (separate from CLI `undo-last`)
+- [ ] TUI status-bar elapsed-time render for in-progress tasks
+- [ ] TUI sticky header with `tsk wip` count
+- [ ] TUI '?' help overlay also shows the active filter / sort state
+- [ ] TUI status footer auto-clears after N seconds
+- [ ] TUI 'g<id>' jump-to-task-id (vim-style by id, paired with the existing 'N' jump-to-next-unblocked)
+- [ ] TUI '/' search supports tag prefix (e.g. `/tag:work`) for in-TUI tag filter
+- [ ] TUI 'Y' yank-all with section header — render the section label before each group ("# Overdue", "# Today", etc.)
+
+
+### 2026-06-23 17:38 PT (tick #30)
+
+Five features shipped, full quality gate green (gofmt + go vet
++ go build + go test ./... — all packages clean across
+internal/commands, internal/tui, internal/store, internal/model,
+internal/dateparse, internal/util; 65.6s test runtime).
+Five separate revertible commits pushed and verified on
+origin/main:
+
+1. `tsk wip --priority <p>` (commit b3e4cc8)
+   First priority-axis filter on the wip command. Narrows the
+   in-progress list to tasks at exactly the named priority,
+   reusing model.ParsePriority for case-insensitive short/long-
+   form ("u" / "urgent" both resolve to Urgent). Sister of --stale
+   on the filtering axis; mirrors the --priority filter on
+   `tsk depend --pending`, `tsk start --all`, and `tsk pause --all`.
+   Empty value (defensive against unset shell vars) means no
+   filter; invalid input produces a clean usage error naming the
+   offending value. The empty-match path names the priority so
+   the user knows what was filtered. Header line reports the
+   active filter via a new buildWipFilterSummary helper (sister
+   of buildPendingFilterSummary / buildPauseAllFilterSummary),
+   giving the three filter-bearing verbs a recognizable summary
+   shape. Two pre-existing TestWipStale* assertions updated for
+   the generalized "in-progress (filter: stale>N)" header wording
+   that scales to multi-filter composition.
+
+2. `tsk wip --tag <t>` (commit 579ebd2)
+   Sister of --priority on the filtering axis. Narrows the
+   in-progress list to tasks carrying the named tag (case-
+   insensitive via Task.HasTag). Mirrors `tsk ls --tag` and
+   `tsk depend --pending --tag`. Mutually exclusive with
+   --strict-and-tag (each is a different selector axis: single-
+   tag union vs CSV intersection), matching the rejection
+   contract on the bulk verbs. Empty value is no-op. Empty-match
+   names the tag ("no in-progress tasks with tag X"). Composes
+   with --stale and --priority as AND.
+
+3. `tsk wip --strict-and-tag a,b` (commit a7fa477)
+   Intersection-style multi-tag filter; sister of --tag's union-
+   style single-tag filter. Mirrors the same flag on
+   `tsk pause --all`, `tsk start --all`, and `tsk depend --pending`,
+   so the FOUR tag-axis intersection filters now read
+   symmetrically across the verbs. Reuses the splitTagCSV +
+   taskHasAllTags helpers already shared by the other three
+   verbs — no new core logic, just an extra filter clause in
+   the wip enumeration loop. CSV tokenization is whitespace-
+   tolerant. Header reports the intersection via "tag=work&p0"
+   canonical &-separated form, matching the pause/depend filter
+   summaries. Empty-match names the intersection explicitly.
+
+4. `tsk graph --json --filter-started-since <duration>` (commit 165c28c)
+   OPEN-side recency filter sister of --filter-completed-since:
+   trims the subgraph envelope to nodes whose task is currently
+   in-progress AND was started within the duration window. Used
+   for "what's actively in flight in this dep chain?" reports,
+   currently-working impact analysis, and pomodoro/elapsed-time
+   dashboards. Composition semantic when BOTH --filter-completed-
+   since AND --filter-started-since are active: UNION (logical
+   OR) — a node survives if EITHER recently-completed OR
+   recently-started. This is the only useful composition since
+   done and in-progress are mutually exclusive states on the same
+   task. The envelope gains a top-level `filter_started_since`
+   marker carrying the canonical humanized window when active.
+   Same validation contract as completed-since (requires --json,
+   positive duration only, empty value is no-op). Same shared
+   filter loop body and edge-pruning logic — minimal extra
+   surface area.
+
+5. `tsk graph --json --filter-touched-since <duration>` (commit e2a07e4)
+   Ergonomic UNION shortcut equivalent to setting BOTH
+   --filter-completed-since AND --filter-started-since to the
+   same value. Sister of --include-all's "turn on all opt-ins"
+   pattern — one flag flips both recency axes at the same window
+   so jq pipelines for the common "what's actively moving?" use
+   case don't need to re-state the duration twice. Composition
+   rule: if --filter-completed-since OR --filter-started-since is
+   ALSO set explicitly, the individual flag WINS for that axis,
+   letting users write `--filter-completed-since 24h --filter-
+   touched-since 7d` to mean "completions in 24h OR starts in
+   7d" — precise per-axis tuning while keeping the shortcut's
+   "fill in the unset axis" semantic. No new envelope field
+   added: both filter_completed_since and filter_started_since
+   markers are set when --filter-touched-since is active, keeping
+   the on-disk JSON shape backward-compatible with scripts that
+   look for the individual markers.
+
+Files added this tick:
+- internal/commands/wip_priority_test.go              (8 tests + 1 helper)
+- internal/commands/wip_tag_test.go                   (7 tests)
+- internal/commands/wip_strict_and_tag_test.go        (8 tests)
+- internal/commands/graph_filter_started_since_test.go (11 tests)
+- internal/commands/graph_filter_touched_since_test.go (9 tests)
+
+Files modified:
+- internal/commands/start.go (newInProgressCmd grows three
+  filter flag declarations + a wipPrioTrim/wipTagTrim/
+  strictAndTags parsing block + filter loop additions; new
+  buildWipFilterSummary helper for the shared header rendering;
+  --help Long doc + Examples list updated; two pre-existing
+  test wording assertions updated for the generalized header form)
+- internal/commands/graph.go (jsonRotate var → adds
+  filterStartedSince + filterTouchedSince vars; two validation
+  + parsing blocks for started-since + touched-since with the
+  "individual wins" composition rule; emitSubgraphJSON sig
+  grows by 2 args [filterStartedActive + filterStartedDur];
+  shared filter loop body refactored to UNION across both
+  active filters; FilterStartedSince doc-struct field added;
+  Long doc + Examples updated; flag declarations for both
+  new filters)
+- internal/commands/wip_stale_test.go (two assertions updated:
+  "in-progress and stale" → "in-progress (filter: stale>")
+
+Per-feature test counts:
+  wip --priority           8 new (filter+JSON+short-form+
+                           invalid+empty-value+empty-match+
+                           composition-with-stale+help)
+  wip --tag                7 new (filter+case-insensitive+JSON+
+                           empty-match+composition-with-stale+
+                           empty-value+help)
+  wip --strict-and-tag     8 new (intersection+single-tag-
+                           equivalence+mutex-with-tag+JSON+
+                           whitespace-tolerant+composition-
+                           with-priority+empty-match+help)
+  graph --filter-started-  11 new (trim-old+preserve-root+
+  since                    fresh-survives+marker-set+default-
+                           absent+requires-json+invalid+zero-
+                           rejected+empty-value+UNION-with-
+                           completed-since+composition-with-
+                           include-started+help)
+  graph --filter-touched-  9 new (shortcut-for-both+sets-both-
+  since                    markers+individual-wins+requires-
+                           json+invalid+zero-rejected+empty-
+                           value+composition-with-append+help)
+  TOTAL                    43 new test cases on top of the
+                           existing suite, all green.
+
+Process notes:
+- All five features committed and pushed in a single batch.
+  Each commit is independently revertible.
+- One amend fix: the third commit (strict-and-tag) was
+  initially authored with a typo'd noreply email
+  (`Sanjays2402+@` instead of `Sanjays2402@`); caught
+  immediately, amended with --reset-author to the correct
+  identity before push. Future ticks should `cat $msg` once
+  before commit to catch heredoc typos like this earlier.
+- `tsk wip` now has the COMPLETE filter cluster (stale +
+  priority + tag + strict-and-tag), matching the surface area
+  of `tsk depend --pending` and `tsk pause --all`. All four
+  filter flags compose as AND.
+- The graph JSON envelope now exposes THREE recency-filter
+  axes (completed-since, started-since, touched-since), plus
+  the six opt-in node fields + --include-all shortcut. The
+  recency-filter cluster is well-mined; future ticks could
+  add per-axis BEFORE-cutoff filters (inverse direction) or
+  the live-watch loops.
+- Quality gate ran ONCE for the whole batch; all 65.6s of
+  internal/commands tests + the other 5 packages all green.
+
+This is the seventeenth batch shipped directly on main. tsk wip
+gains a full filter cluster (stale + priority + tag + strict-
+and-tag); the graph JSON envelope gains a second recency axis
+(started-since) plus an ergonomic UNION shortcut (touched-since).
+The four bulk-verb-adjacent verbs (depend --pending, pause --all,
+start --all, wip) now all expose the same tag-axis intersection
+filter, completing the symmetric surface. The next ticks have
+ample sized work in the still-unstarted long-tail (recipe docs,
+recurring tasks, config files, multi-file aggregation, watch
+modes, TUI structural features, plus follow-ons from this
+tick's filter cluster).
+
+
+### Polish & DX (added 2026-06-23 tick #30)
+
+Fresh ideas so future ticks have ample sized work. With the
+wip filter cluster now complete (stale + priority + tag +
+strict-and-tag), the graph JSON envelope sporting THREE recency
+axes (completed-since, started-since, touched-since) plus the
+ergonomic UNION shortcut, and the four bulk-verb-adjacent verbs
+finally symmetric on the strict-and-tag axis, this batch leans
+into the still-unstarted long-tail and fresh follow-ons sensible
+from this tick's features.
+
+- [ ] `tsk graph --json --filter-completed-before <date>` — inverse cutoff: drop nodes completed AFTER the cutoff (keep stale-er chains) — useful for archive triage
+- [ ] `tsk graph --json --filter-started-before <date>` — inverse cutoff: drop nodes started AFTER the cutoff (keep long-running chains)
+- [ ] `tsk graph --json --filter-touched-before <date>` — inverse shortcut: keep everything that has NOT moved in the last N
+- [ ] `tsk wip --stale 24h --priority urgent --strict-and-tag work,p0 --json | jq` recipe doc — one-pager showing the full filter-cluster pipeline
+- [ ] `tsk wip --stale 24h --tag work --json | jq` recipe doc — simpler standup/cron alert pattern
+- [ ] `tsk wip --json` envelope upgrade — wrap the raw []Task in {tasks, total_count, filter} stable shape (backward-incompat; would need --json-v2 opt-in)
+- [ ] `tsk wip --priority --inverse` — sister of the existing filter: show tasks NOT at this priority
+- [ ] `tsk wip --tag --inverse` — sister: show tasks NOT carrying this tag
+- [ ] `tsk graph --json --filter-touched-since 7d --json | jq` recipe doc — "what's actively moving in the last week" dashboard pattern
+- [ ] `tsk graph --json --filter-completed-since X --filter-started-since Y` recipe doc — the precise per-axis form
+- [ ] `tsk graph --json --append --rotate N --max-bytes B` — secondary file-size cap (alongside record count) for pathological cases
+- [ ] `tsk graph --json --output <path> --watch N` — re-render every N seconds while another process mutates
+- [ ] `tsk archive --json --append --watch N` — re-render-and-append every N seconds for continuous monitoring
+- [ ] `tsk depend --pending --watch N` — re-render the notification queue every N seconds (live triage)
+- [ ] `tsk top --watch N` — live priority-ranked view
+- [ ] `tsk show <id> --watch N` — live detail view
+- [ ] `tsk wip --watch N` — live in-progress list (paired with --stale for "is anything getting stale right now?")
+- [ ] `tsk start --since <date>` — emit every task started after a checkpoint ("what did I touch this week?")
+- [ ] `tsk pause --since <date>` — sister of start --since (what did I put down this week?)
+- [ ] `tsk done --since <date>` — sister of the start/pause --since pair (what did I finish?)
 - [ ] `tsk import <path>` — accept todo.txt / TaskWarrior JSON / Notion CSV
 - [ ] `tsk recur <id> <interval>` — recurring tasks (recur-on-done from stale feat-recur)
 - [ ] Config file at `~/.tsk/config.toml` for default file, default priority, palette overrides
