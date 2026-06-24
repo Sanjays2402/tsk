@@ -1673,6 +1673,61 @@ kbd {
   padding-bottom: var(--sp-12);
 }
 
+/* F28: mobile/touch polish — bottom action SHEET + bigger hit targets.
+   On narrow screens the floating pill becomes a full-width sheet docked to the
+   bottom edge (thumb-reachable), and on no-hover (touch) devices the per-row
+   action buttons are always visible and enlarged so they're tappable. */
+@media (max-width: 560px) {
+  .bulkbar {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100%;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: none;
+    animation: sheet-rise var(--duration-base) var(--ease-out);
+  }
+  @keyframes sheet-rise {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .bulkbar-inner {
+    justify-content: space-between;
+    padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
+  }
+  .bulkbar-actions {
+    gap: var(--sp-2);
+  }
+  .bulkbar-btn {
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-md);
+  }
+}
+@media (hover: none) {
+  /* Reveal + enlarge the hover-only affordances so touch can reach them. */
+  .pin-btn,
+  .row-del {
+    opacity: 1;
+    width: 30px;
+    height: 30px;
+    font-size: 17px;
+  }
+  .pin-btn { font-size: 15px; }
+  .priority {
+    min-width: 26px;
+    height: 26px;
+  }
+  .check {
+    width: 22px;
+    height: 22px;
+  }
+  .row {
+    gap: var(--sp-4);
+    padding: var(--sp-4);
+  }
+}
+
 /* F17: drag-to-reorder — handle, dragging row, and drop indicator */
 .drag-handle {
   border: none;

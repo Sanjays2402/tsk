@@ -115,9 +115,9 @@ export function priorityShort(p: string): string {
 }
 
 /**
- * Render the full list view, grouped into Overdue / Today / Upcoming / No Due
- * / Done sections (F9). Empty sections are omitted. Each section carries a
- * count so you can see the shape of your day at a glance.
+ * Render the full list view, grouped into Pinned / Overdue / Today / Upcoming
+ * / No Due / Done sections (F9 + F27). Empty sections are omitted. Each section
+ * carries a count so you can see the shape of your day at a glance.
  */
 export function renderTasks(tasks: Task[], now: Date, ctx: RowContext = {}): string {
   return renderSections(groupIntoSections(tasks, now), now, ctx);

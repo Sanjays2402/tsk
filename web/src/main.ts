@@ -14,6 +14,11 @@ import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
 import { doneIndex } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
+import {
+  LONG_PRESS_MS,
+  trackMove,
+  type PressState,
+} from "./touch";
 import { parseQuickAdd, isSubmittable } from "./quickadd";
 import { renderComposerPreview } from "./composer";
 import { groupIntoSections, flattenSections } from "./sections";
@@ -1721,6 +1726,67 @@ els.content.addEventListener("dragleave", (e) => {
   // Only clear when actually leaving the content area, not crossing rows.
   if (!els.content.contains(e.relatedTarget as Node | null)) clearDropIndicator();
 });
+
+// --- F28: long-press to bulk-select on touch devices ------------------------
+// Touch has no hover/right-click, so a still long-press (~500ms) on a row is
+// the mobile gesture for "select this for bulk actions". A press that moves
+// (a scroll) or lifts early (a tap) is NOT a long-press.
+let press: PressState | null = null;
+
+function cancelPress(): void {
+  if (press) {
+    window.clearTimeout(press.timer);
+    press = null;
+  }
+}
+
+els.content.addEventListener(
+  "touchstart",
+  (e) => {
+    if (e.touches.length !== 1) {
+      cancelPress();
+      return;
+    }
+    const target = e.target as HTMLElement | null;
+    // Don't hijack a press that starts on an interactive control or the drag
+    // handle — those have their own behaviour.
+    if (
+      !target ||
+      target.closest(
+        "input, button, a, textarea, [data-drag-handle], [data-due], [data-notes]",
+      )
+    ) {
+      return;
+    }
+    const row = target.closest("[data-id]") as HTMLElement | null;
+    if (!row) return;
+    const id = Number(row.dataset.id);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const t = e.touches[0];
+    const timer = window.setTimeout(() => {
+      // Fire the long-press: enter bulk mode by toggling this row in.
+      bulkToggleOne(id);
+      if (navigator.vibrate) navigator.vibrate(15);
+      press = null;
+    }, LONG_PRESS_MS);
+    press = { id, start: { x: t.clientX, y: t.clientY }, moved: false, timer };
+  },
+  { passive: true },
+);
+
+els.content.addEventListener(
+  "touchmove",
+  (e) => {
+    if (!press || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    press.moved = trackMove(press, { x: t.clientX, y: t.clientY });
+    if (press.moved) cancelPress(); // it's a scroll, not a press
+  },
+  { passive: true },
+);
+
+els.content.addEventListener("touchend", cancelPress, { passive: true });
+els.content.addEventListener("touchcancel", cancelPress, { passive: true });
 
 // Pick up external edits (CLI / TUI / hand-edit) when the tab regains focus.
 document.addEventListener("visibilitychange", () => {
