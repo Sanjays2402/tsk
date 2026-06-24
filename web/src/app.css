@@ -398,6 +398,20 @@ body {
 .priority.high   { background: var(--color-prio-high);   color: #fff; }
 .priority.medium { background: var(--color-prio-medium); color: #1c1408; }
 .priority.low    { background: var(--color-prio-low);    color: #fff; }
+/* F29: the priority chip is a button — click to cycle the level. */
+button.priority {
+  border: none;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out), filter var(--duration-fast) var(--ease-out);
+}
+button.priority:hover {
+  transform: scale(1.12);
+  filter: brightness(1.1);
+}
+button.priority:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
 
 /* Row delete affordance (F8) — hidden until row hover / selection / focus */
 .row-del {

@@ -88,7 +88,7 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
         ${dueCell}
         ${renderNotesButton(t.notes)}
-        <span class="priority ${escapeHTML(t.priority)}" title="${escapeHTML(t.priority)} priority">${priorityShort(t.priority)}</span>
+        <button class="priority ${escapeHTML(t.priority)}" data-prio-cycle type="button" title="${escapeHTML(t.priority)} priority — click to raise, alt-click to lower" aria-label="Cycle priority (currently ${escapeHTML(t.priority)})">${priorityShort(t.priority)}</button>
         <button class="row-del" data-del type="button" aria-label="Delete task" title="Delete (x)">&times;</button>
       </div>
     </li>`;

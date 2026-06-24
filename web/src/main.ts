@@ -13,6 +13,7 @@
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
 import { doneIndex } from "./deps";
+import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
 import { parseQuickAdd, isSubmittable } from "./quickadd";
 import { renderComposerPreview } from "./composer";
 import { groupIntoSections, flattenSections } from "./sections";
@@ -865,6 +866,36 @@ async function togglePin(id: number): Promise<void> {
   }
 }
 
+/**
+ * F29: cycle a task's priority with an optimistic PATCH. Up by default
+ * (low->medium->high->urgent->low); `down` reverses. No full edit dialog
+ * needed — just click the chip (raise) or alt/shift-click (lower).
+ */
+async function cyclePriority(id: number, down = false): Promise<void> {
+  const key = id + 1_000_000; // separate in-flight namespace
+  if (inFlight.has(key)) return;
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  const next = (down ? prevPriority(before.priority) : nextPriority(before.priority)) as CyclePriority;
+  currentTasks[idx] = { ...before, priority: next };
+  inFlight.add(key);
+  render();
+  try {
+    const confirmed = await api.patchTask(id, { priority: next });
+    currentTasks[idx] = confirmed;
+    render();
+    refreshStats();
+  } catch (err) {
+    currentTasks[idx] = before;
+    render();
+    setStatus(`priority change failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
 // --- F8: delete with undo --------------------------------------------------
 
 interface PendingDelete {
@@ -1636,6 +1667,11 @@ els.content.addEventListener("click", (e) => {
     togglePin(id);
     return;
   }
+  // F29: clicking the priority chip cycles it up; shift/alt-click cycles down.
+  if (target.closest("[data-prio-cycle]")) {
+    cyclePriority(id, e.shiftKey || e.altKey);
+    return;
+  }
   // F26: the "blocked by #N" badge jumps to (selects + scrolls to) the blocker.
   const depJump = target.closest<HTMLElement>("[data-dep-jump]");
   if (depJump) {
@@ -1999,6 +2035,20 @@ function buildCommands(): Command[] {
       disabled: !hasSel,
     },
     {
+      id: "prio-up",
+      title: "Raise priority of selected",
+      group: "Task",
+      keywords: ["priority", "urgent", "important", "bump", "cycle"],
+      disabled: !hasSel,
+    },
+    {
+      id: "prio-down",
+      title: "Lower priority of selected",
+      group: "Task",
+      keywords: ["priority", "low", "demote", "cycle"],
+      disabled: !hasSel,
+    },
+    {
       id: "delete",
       title: "Delete selected task",
       group: "Task",
@@ -2050,6 +2100,12 @@ function runCommand(id: string): void {
       break;
     case "pin":
       if (sel !== null) togglePin(sel);
+      break;
+    case "prio-up":
+      if (sel !== null) cyclePriority(sel, false);
+      break;
+    case "prio-down":
+      if (sel !== null) cyclePriority(sel, true);
       break;
     case "delete":
       if (sel !== null) requestDelete(sel);
