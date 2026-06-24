@@ -661,3 +661,163 @@ kbd {
   .row { grid-template-columns: auto 1fr; }
   .row .meta { grid-column: 1 / -1; padding-left: 28px; }
 }
+
+/* F11: filter bar — search box + priority pills + tag chips + hide-done */
+.filterbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin-top: calc(var(--sp-4) * -1 + var(--sp-2));
+}
+.filterbar[hidden] {
+  display: none;
+}
+.filter-search {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.filter-search:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.filter-ico {
+  color: var(--color-text-faint);
+  font-size: var(--fs-md);
+  line-height: 1;
+  user-select: none;
+}
+.filter-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.filter-input::placeholder {
+  color: var(--color-text-faint);
+}
+.filter-clear {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.filter-clear[hidden] {
+  display: none;
+}
+.filter-clear:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.filter-facets {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.filter-prios {
+  display: flex;
+  gap: var(--sp-1);
+}
+.filter-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.filter-tags:empty {
+  display: none;
+}
+
+/* Shared filter pill/chip look — quiet until active */
+.fpill,
+.fchip {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-dim);
+  border-radius: 999px;
+  cursor: pointer;
+  line-height: 1.5;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.fpill {
+  width: 24px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  font-weight: 600;
+}
+.fpill.toggle-done {
+  width: auto;
+  padding: 0 var(--sp-3);
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+}
+.fchip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2) 2px var(--sp-3);
+}
+.fpill:hover,
+.fchip:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.fchip-n {
+  font-size: 10px;
+  color: var(--color-text-faint);
+  background: var(--color-surface-hi);
+  border-radius: 999px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  display: inline-grid;
+  place-items: center;
+  line-height: 1;
+}
+/* Active states pick up the accent / priority swatch */
+.fchip.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.fchip.is-active .fchip-n {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+.fpill.toggle-done.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.fpill.prio-urgent.is-active { border-color: var(--color-prio-urgent); background: var(--color-prio-urgent); color: #fff; }
+.fpill.prio-high.is-active   { border-color: var(--color-prio-high);   background: var(--color-prio-high);   color: #fff; }
+.fpill.prio-medium.is-active { border-color: var(--color-prio-medium); background: var(--color-prio-medium); color: #1c1408; }
+.fpill.prio-low.is-active    { border-color: var(--color-prio-low);    background: var(--color-prio-low);    color: #fff; }
+
+.filter-note {
+  color: var(--color-accent);
+  font-style: normal;
+}

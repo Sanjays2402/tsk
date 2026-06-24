@@ -18,6 +18,18 @@ import { groupIntoSections, flattenSections } from "./sections";
 import { emptyNav, reconcile, move, select, type NavMove, type NavState } from "./keynav";
 import { renderToast, deletedMessage } from "./toast";
 import { resolveEdit } from "./edit";
+import {
+  emptyFilter,
+  isFilterActive,
+  applyFilter,
+  collectTags,
+  toggleMember,
+  renderPriorityPills,
+  renderTagChips,
+  filterSummary,
+  type FilterState,
+  type Priority,
+} from "./filter";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -44,6 +56,25 @@ root.innerHTML = `
       </div>
       <div class="composer-preview" data-preview></div>
     </form>
+    <div class="filterbar" data-filterbar hidden>
+      <div class="filter-search">
+        <span class="filter-ico" aria-hidden="true">&#9906;</span>
+        <input
+          class="filter-input"
+          data-filter-input
+          type="text"
+          placeholder="Filter tasks&hellip;  fuzzy match on title + tags"
+          aria-label="Filter tasks by fuzzy text match on title and tags"
+          spellcheck="false"
+        >
+        <button class="filter-clear" data-filter-clear type="button" aria-label="Clear all filters" hidden>clear</button>
+      </div>
+      <div class="filter-facets">
+        <div class="filter-prios" data-filter-prios role="group" aria-label="Filter by priority"></div>
+        <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
+      </div>
+      <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
+    </div>
     <div data-content>
       <div class="skeleton" aria-busy="true" aria-label="loading tasks">
         <div class="bar w-80"></div>
@@ -67,6 +98,12 @@ const els = {
   field: must<HTMLElement>("[data-field]"),
   input: must<HTMLInputElement>("[data-input]"),
   preview: must<HTMLElement>("[data-preview]"),
+  filterbar: must<HTMLElement>("[data-filterbar]"),
+  filterInput: must<HTMLInputElement>("[data-filter-input]"),
+  filterClear: must<HTMLButtonElement>("[data-filter-clear]"),
+  filterPrios: must<HTMLElement>("[data-filter-prios]"),
+  filterTags: must<HTMLElement>("[data-filter-tags]"),
+  filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -83,18 +120,44 @@ let nav: NavState = emptyNav();
 let visibleIds: number[] = [];
 /** Ids hidden pending an undoable delete (F8); excluded from the rendered list. */
 const pendingDeletes = new Set<number>();
+/** Active filter (F11): search query, priority + tag facets, hide-done. */
+let filter: FilterState = emptyFilter();
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
-  const shown = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+  const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+  const shown = applyFilter(notDeleted, filter);
   const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
   visibleIds = flattenSections(sections).map((t) => t.id);
   nav = reconcile(nav, visibleIds, prevIds);
   els.content.innerHTML = renderSections(sections, now);
   els.count.innerHTML = summarize(shown);
+  renderFilterBar(notDeleted, shown.length);
   applySelection();
+}
+
+/**
+ * Repaint the filter bar (F11): show/hide it once there are tasks, render the
+ * priority pills + tag chips from the live facet selection, reflect the
+ * hide-done toggle, and surface a "clear" affordance + visible/total summary
+ * whenever a filter is active.
+ */
+function renderFilterBar(allTasks: Task[], visibleCount: number): void {
+  const hasTasks = allTasks.length > 0;
+  els.filterbar.hidden = !hasTasks;
+  if (!hasTasks) return;
+  els.filterPrios.innerHTML = renderPriorityPills(filter);
+  els.filterTags.innerHTML = renderTagChips(collectTags(allTasks), filter);
+  const active = isFilterActive(filter);
+  els.filterClear.hidden = !active;
+  els.filterHideDone.classList.toggle("is-active", filter.hideDone);
+  els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
+  els.filterbar.classList.toggle("is-active", active);
+  if (active) {
+    els.count.innerHTML = `${summarize(applyFilter(allTasks, filter))} &middot; <span class="filter-note">${filterSummary(visibleCount, allTasks.length)}</span>`;
+  }
 }
 
 /** Reflect nav.selectedId onto the DOM and scroll it into view. */
@@ -407,6 +470,60 @@ els.composer.addEventListener("submit", (e) => {
   e.preventDefault();
   submitComposer();
 });
+
+// --- F11: filter bar wiring ------------------------------------------------
+
+/** Update filter state and repaint. Selection is reconciled inside render(). */
+function setFilter(next: Partial<FilterState>): void {
+  filter = { ...filter, ...next };
+  render();
+}
+
+// Free-text search box: debounced not needed at this scale, filter on input.
+els.filterInput.addEventListener("input", () => {
+  setFilter({ query: els.filterInput.value });
+});
+els.filterInput.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    if (els.filterInput.value !== "") {
+      els.filterInput.value = "";
+      setFilter({ query: "" });
+    } else {
+      els.filterInput.blur();
+    }
+  }
+});
+
+// Priority pills: toggle membership on click (delegated).
+els.filterPrios.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-prio]");
+  if (!btn) return;
+  const prio = btn.dataset.prio as Priority;
+  setFilter({ priorities: toggleMember(filter.priorities, prio) });
+});
+
+// Tag chips: toggle membership on click (delegated).
+els.filterTags.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-tag]");
+  if (!btn) return;
+  const tag = btn.dataset.tag ?? "";
+  setFilter({ tags: toggleMember(filter.tags, tag) });
+});
+
+// Hide-done toggle.
+els.filterHideDone.addEventListener("click", () => {
+  setFilter({ hideDone: !filter.hideDone });
+});
+
+// Clear-all affordance resets every facet.
+els.filterClear.addEventListener("click", () => {
+  els.filterInput.value = "";
+  filter = emptyFilter();
+  render();
+  els.filterInput.focus();
+});
+
 // Escape clears + blurs the composer.
 els.input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -549,6 +666,13 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       els.input.focus();
       break;
+    case "/":
+      if (!els.filterbar.hidden) {
+        e.preventDefault();
+        els.filterInput.focus();
+        els.filterInput.select();
+      }
+      break;
     case "?":
       e.preventDefault();
       toggleHelp(true);
@@ -569,6 +693,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["x / del", "Delete the selected task (undoable)"],
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
+  ["/", "Focus the filter box"],
   ["r", "Refresh from disk"],
   ["esc", "Clear the add field / close this help"],
   ["?", "Toggle this help"],
