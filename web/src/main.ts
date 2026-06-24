@@ -93,6 +93,18 @@ import {
   STORAGE_KEY as SETTINGS_KEY,
   type Settings,
 } from "./settings";
+import {
+  parseViews,
+  serializeViews,
+  addView,
+  removeView,
+  activeView,
+  renderViewChips,
+  filterIsEmpty,
+  STORAGE_KEY as VIEWS_KEY,
+  type SavedView,
+  type ViewFilter,
+} from "./views";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -147,6 +159,11 @@ root.innerHTML = `
         <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
+      <div class="filter-views" data-views-row hidden>
+        <span class="views-label">Views</span>
+        <div class="views-chips" data-views-chips role="group" aria-label="Saved views"></div>
+        <button class="views-save" data-views-save type="button" title="Save the current filter as a named view">+ save view</button>
+      </div>
     </div>
     <div class="tagpage-banner" data-tagpage hidden>
       <span class="tagpage-label">Tag</span>
@@ -187,6 +204,9 @@ const els = {
   filterPrios: must<HTMLElement>("[data-filter-prios]"),
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
+  viewsRow: must<HTMLElement>("[data-views-row]"),
+  viewsChips: must<HTMLElement>("[data-views-chips]"),
+  viewsSave: must<HTMLButtonElement>("[data-views-save]"),
   statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
   statsPanel: must<HTMLElement>("[data-stats-panel]"),
   settingsToggle: must<HTMLButtonElement>("[data-settings-toggle]"),
@@ -248,6 +268,13 @@ try {
 let route: Route = parseHash(typeof location !== "undefined" ? location.hash : "");
 /** Bulk selection (F16): a set of ids for multi-toggle / multi-delete. */
 let bulk: BulkState = emptyBulk();
+/** Saved views (F25): named filter combinations, persisted in localStorage. */
+let views: SavedView[] = [];
+try {
+  views = parseViews(localStorage.getItem(VIEWS_KEY));
+} catch {
+  // ignore (private mode / storage disabled)
+}
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -302,6 +329,7 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
   els.filterHideDone.classList.toggle("is-active", filter.hideDone);
   els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
   els.filterbar.classList.toggle("is-active", active);
+  renderViewsRow();
   if (active) {
     els.count.innerHTML = `${summarize(applyFilter(allTasks, filter))} &middot; <span class="filter-note">${filterSummary(visibleCount, allTasks.length)}</span>`;
   }
@@ -1284,6 +1312,87 @@ function setFilter(next: Partial<FilterState>): void {
   render();
 }
 
+// --- F25: saved views ------------------------------------------------------
+
+/** Extract the saveable filter slice (query + facets + hide-done) from state. */
+function currentViewFilter(): ViewFilter {
+  return {
+    query: filter.query,
+    priorities: filter.priorities,
+    tags: filter.tags,
+    hideDone: filter.hideDone,
+  };
+}
+
+/** Persist the views list to localStorage (best-effort). */
+function saveViews(): void {
+  try {
+    localStorage.setItem(VIEWS_KEY, serializeViews(views));
+  } catch {
+    // ignore (private mode / storage disabled)
+  }
+}
+
+/** Repaint the saved-views chip row + the enabled state of "save view". */
+function renderViewsRow(): void {
+  const f = currentViewFilter();
+  const hasViews = views.length > 0;
+  // The row shows whenever there are saved views OR the current filter is
+  // worth saving — otherwise it stays out of the way.
+  const savable = !filterIsEmpty(f);
+  els.viewsRow.hidden = !hasViews && !savable;
+  els.viewsChips.innerHTML = renderViewChips(views, f);
+  // Disable "save view" when there's nothing to save, or the exact filter is
+  // already saved (activeView non-null means an identical view exists).
+  const dup = activeView(views, f) !== null;
+  els.viewsSave.disabled = !savable || dup;
+  els.viewsSave.textContent = dup ? "saved" : "+ save view";
+}
+
+/** Prompt for a name and save the current filter as a view. */
+function saveCurrentView(): void {
+  const f = currentViewFilter();
+  if (filterIsEmpty(f)) {
+    setStatus("nothing to save — set a filter first", true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+    return;
+  }
+  const name = typeof prompt === "function" ? prompt("Name this view:") : null;
+  if (name === null) return; // cancelled
+  const trimmed = name.trim();
+  if (trimmed === "") return;
+  views = addView(views, trimmed, f);
+  saveViews();
+  render();
+  setStatus(`saved view "${trimmed}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/** Recall a saved view by id: apply its filter and repaint. */
+function recallView(id: string): void {
+  const v = views.find((x) => x.id === id);
+  if (!v) return;
+  // Make sure the filter bar is reachable + the search box reflects the query.
+  filter = {
+    ...emptyFilter(),
+    query: v.filter.query,
+    priorities: [...v.filter.priorities],
+    tags: [...v.filter.tags],
+    hideDone: v.filter.hideDone,
+  };
+  els.filterInput.value = v.filter.query;
+  render();
+  setStatus(`view: ${v.name}`, false);
+  setTimeout(() => setStatus("ready", false), 1_500);
+}
+
+/** Forget a saved view by id. */
+function deleteView(id: string): void {
+  views = removeView(views, id);
+  saveViews();
+  render();
+}
+
 // Free-text search box: debounced not needed at this scale, filter on input.
 els.filterInput.addEventListener("input", () => {
   setFilter({ query: els.filterInput.value });
@@ -1327,6 +1436,23 @@ els.filterClear.addEventListener("click", () => {
   filter = emptyFilter();
   render();
   els.filterInput.focus();
+});
+
+// --- F25: saved-views wiring -----------------------------------------------
+
+els.viewsSave.addEventListener("click", saveCurrentView);
+els.viewsChips.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  const del = target?.closest<HTMLElement>("[data-view-del]");
+  if (del) {
+    e.stopPropagation();
+    deleteView(del.dataset.viewDel ?? "");
+    return;
+  }
+  const recall = target?.closest<HTMLElement>("[data-view-recall]");
+  if (recall) {
+    recallView(recall.dataset.viewRecall ?? "");
+  }
 });
 
 // --- F13: stats sidebar wiring ---------------------------------------------
@@ -1746,6 +1872,12 @@ let paletteResults: Command[] = [];
 function buildCommands(): Command[] {
   const sel = nav.selectedId;
   const hasSel = sel !== null;
+  const viewCommands: Command[] = views.map((v) => ({
+    id: `view:${v.id}`,
+    title: `View: ${v.name}`,
+    group: "Views",
+    keywords: ["saved", "filter", "recall", ...v.filter.tags, ...v.filter.priorities],
+  }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -1799,6 +1931,14 @@ function buildCommands(): Command[] {
     { id: "export-markdown", title: "Export tasks as Markdown", group: "Export", keywords: ["download", "md"] },
     { id: "help", title: "Show keyboard shortcuts", group: "View", keywords: ["keys", "?"], hint: "?" },
     { id: "alltasks", title: "Go to all tasks", group: "View", keywords: ["home", "clear tag"], disabled: route.kind !== "tag" },
+    {
+      id: "save-view",
+      title: "Save current filter as a view",
+      group: "Views",
+      keywords: ["bookmark", "store", "remember"],
+      disabled: filterIsEmpty(currentViewFilter()) || activeView(views, currentViewFilter()) !== null,
+    },
+    ...viewCommands,
   ];
 }
 
@@ -1861,6 +2001,13 @@ function runCommand(id: string): void {
     case "alltasks":
       if (route.kind === "tag") navigateToAll();
       break;
+    case "save-view":
+      saveCurrentView();
+      break;
+  }
+  // F25: dynamic per-view recall commands (id shaped "view:<id>").
+  if (id.startsWith("view:")) {
+    recallView(id.slice("view:".length));
   }
 }
 

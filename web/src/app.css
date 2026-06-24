@@ -753,6 +753,92 @@ kbd {
   display: none;
 }
 
+/* F25: saved-views row — a label, recall chips, and a save affordance */
+.filter-views {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
+  border-top: 1px dashed var(--color-border);
+}
+.views-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.views-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.view-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--color-bg);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.view-chip.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.view-chip-name {
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  background: transparent;
+  border: none;
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.view-chip.is-active .view-chip-name {
+  color: var(--color-accent-strong);
+  font-weight: 600;
+}
+.view-chip-name:hover {
+  color: var(--color-text);
+}
+.view-chip-del {
+  font-size: var(--fs-sm);
+  line-height: 1;
+  color: var(--color-text-faint);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--color-border-strong);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.view-chip-del:hover {
+  color: var(--color-overdue);
+}
+.views-save {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 999px;
+  padding: 2px var(--sp-3);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.views-save:hover:not(:disabled) {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.views-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Shared filter pill/chip look — quiet until active */
 .fpill,
 .fchip {
