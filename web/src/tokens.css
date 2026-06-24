@@ -2,23 +2,19 @@
  * tsk design tokens — amber/gold palette, dark-default, light-aware.
  * Lifted from internal/tui/styles.go so the web UI feels like the TUI.
  *
- * Theming rules:
- *   - dark is the default; `prefers-color-scheme: light` flips a small set
+ * Theming rules (F14):
+ *   - dark is the baseline (:root)
+ *   - "auto" (no data-theme attr): @media (prefers-color-scheme: light) flips
+ *     to the light palette, following the OS
+ *   - data-theme="light" forces light regardless of OS
+ *   - data-theme="dark" forces dark regardless of OS (so it must re-assert the
+ *     dark values to beat the prefers-light media query)
  *   - text contrast ratios hit WCAG AA on both modes
  *   - NO_COLOR-spirit: a single `.no-color` class on <body> strips chroma
- *     (used by an upcoming "high-contrast" toggle in F14)
  */
 
+/* Dark baseline + amber ramp + scales (mode-independent tokens). */
 :root {
-  --color-bg: #0b0a09;             /* near-black, warm */
-  --color-surface: #15140f;        /* card background */
-  --color-surface-hi: #1f1c14;     /* hover / focus tint */
-  --color-border: #2a2620;
-  --color-border-strong: #3a342a;
-  --color-text: #f5f1e8;
-  --color-text-dim: #a39a89;
-  --color-text-faint: #6b6354;
-
   /* Amber/gold accent ramp */
   --color-amber-50: #fffbeb;
   --color-amber-200: #fde68a;
@@ -33,13 +29,6 @@
   --color-prio-high: #f97316;
   --color-prio-medium: #eab308;
   --color-prio-low: #64748b;
-
-  /* Functional aliases */
-  --color-accent: var(--color-amber-500);
-  --color-accent-soft: rgba(245, 158, 11, 0.12);
-  --color-accent-strong: var(--color-amber-400);
-  --color-overdue: #f87171;
-  --color-today: var(--color-amber-400);
 
   /* Typography */
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Inter, "Helvetica Neue", sans-serif;
@@ -75,8 +64,30 @@
   --duration-base: 200ms;
 }
 
+/* Palette mixins reused by the baseline + the explicit data-theme selectors. */
+:root,
+:root[data-theme="dark"] {
+  --color-bg: #0b0a09;             /* near-black, warm */
+  --color-surface: #15140f;        /* card background */
+  --color-surface-hi: #1f1c14;     /* hover / focus tint */
+  --color-border: #2a2620;
+  --color-border-strong: #3a342a;
+  --color-text: #f5f1e8;
+  --color-text-dim: #a39a89;
+  --color-text-faint: #6b6354;
+
+  --color-accent: var(--color-amber-500);
+  --color-accent-soft: rgba(245, 158, 11, 0.12);
+  --color-accent-strong: var(--color-amber-400);
+  --color-overdue: #f87171;
+  --color-today: var(--color-amber-400);
+  --color-prio-medium: #eab308;
+  color-scheme: dark;
+}
+
+/* Light palette — shared by the OS-driven "auto" path and the forced light. */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --color-bg: #fbf7ef;
     --color-surface: #fffaf0;
     --color-surface-hi: #fdf3dc;
@@ -91,7 +102,27 @@
     --color-accent-strong: var(--color-amber-800);
     --color-today: var(--color-amber-700);
     --color-prio-medium: #a16207;
+    color-scheme: light;
   }
+}
+
+/* Forced light, regardless of OS preference. */
+:root[data-theme="light"] {
+  --color-bg: #fbf7ef;
+  --color-surface: #fffaf0;
+  --color-surface-hi: #fdf3dc;
+  --color-border: #ecdcb8;
+  --color-border-strong: #d9c592;
+  --color-text: #1c1408;
+  --color-text-dim: #5b4f37;
+  --color-text-faint: #8a7c5e;
+
+  --color-accent: var(--color-amber-700);
+  --color-accent-soft: rgba(180, 83, 9, 0.10);
+  --color-accent-strong: var(--color-amber-800);
+  --color-today: var(--color-amber-700);
+  --color-prio-medium: #a16207;
+  color-scheme: light;
 }
 
 /* Honor the NO_COLOR spirit at the surface level. */

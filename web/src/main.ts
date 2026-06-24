@@ -38,6 +38,15 @@ import {
   type DuePreviewVM,
 } from "./duepicker";
 import { renderStatsPanel } from "./stats";
+import {
+  normalizeMode,
+  nextMode,
+  themeAttr,
+  modeLabel,
+  modeGlyph,
+  modeTitle,
+  type ThemeMode,
+} from "./theme";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -47,6 +56,7 @@ root.innerHTML = `
     <header class="topbar">
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
       <div class="topbar-right">
+        <button class="theme-toggle" data-theme-toggle type="button" aria-label="Cycle theme" title="Theme"><span class="theme-glyph" data-theme-glyph></span><span class="theme-label" data-theme-label></span></button>
         <button class="stats-toggle" data-stats-toggle type="button" aria-pressed="false" aria-label="Toggle stats panel" title="Toggle stats (s)">stats</button>
         <div class="file" data-file>—</div>
       </div>
@@ -120,6 +130,9 @@ const els = {
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
   statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
   statsPanel: must<HTMLElement>("[data-stats-panel]"),
+  themeToggle: must<HTMLButtonElement>("[data-theme-toggle]"),
+  themeGlyph: must<HTMLElement>("[data-theme-glyph]"),
+  themeLabel: must<HTMLElement>("[data-theme-label]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -144,6 +157,13 @@ try {
   statsOpen = localStorage.getItem("tsk.stats") === "1";
 } catch {
   // ignore (private mode / storage disabled)
+}
+/** Theme mode (F14): auto/light/dark, persisted in localStorage. */
+let themeMode: ThemeMode = "auto";
+try {
+  themeMode = normalizeMode(localStorage.getItem("tsk.theme"));
+} catch {
+  // ignore
 }
 
 /** Render the current state to the DOM, preserving keyboard selection. */
@@ -245,6 +265,42 @@ function toggleStats(open: boolean): void {
   }
   applyStatsVisibility();
   if (open) refreshStats();
+}
+
+// --- F14: theme toggle -----------------------------------------------------
+
+/** Apply the current theme mode to <html data-theme> + the toggle button. */
+function applyTheme(): void {
+  const attr = themeAttr(themeMode);
+  const html = document.documentElement;
+  if (attr === null) html.removeAttribute("data-theme");
+  else html.setAttribute("data-theme", attr);
+  els.themeGlyph.textContent = modeGlyph(themeMode);
+  els.themeLabel.textContent = modeLabel(themeMode);
+  els.themeToggle.title = modeTitle(themeMode);
+  els.themeToggle.setAttribute("aria-label", modeTitle(themeMode));
+  // Keep the document theme-color meta in sync for mobile chrome.
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (meta) {
+    const dark = themeMode === "dark" || (themeMode === "auto" && systemPrefersDark());
+    meta.content = dark ? "#0b0a09" : "#fbf7ef";
+  }
+}
+
+/** True when the OS currently prefers a dark color scheme. */
+function systemPrefersDark(): boolean {
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
+}
+
+/** Advance to the next theme mode, persist it, and repaint. */
+function cycleTheme(): void {
+  themeMode = nextMode(themeMode);
+  try {
+    localStorage.setItem("tsk.theme", themeMode);
+  } catch {
+    // ignore
+  }
+  applyTheme();
 }
 
 function setStatus(label: string, error: boolean): void {
@@ -729,6 +785,15 @@ els.statsPanel.addEventListener("click", (e) => {
   setFilter({ tags: filter.tags.includes(tag) ? filter.tags : [...filter.tags, tag] });
 });
 
+// --- F14: theme toggle wiring ----------------------------------------------
+
+els.themeToggle.addEventListener("click", cycleTheme);
+
+// When in auto mode, repaint the theme-color meta if the OS preference flips.
+window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+  if (themeMode === "auto") applyTheme();
+});
+
 // Escape clears + blurs the composer.
 els.input.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
@@ -892,6 +957,10 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       toggleStats(!statsOpen);
       break;
+    case "t":
+      e.preventDefault();
+      cycleTheme();
+      break;
     case "?":
       e.preventDefault();
       toggleHelp(true);
@@ -915,6 +984,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["n", "Focus the add-task field"],
   ["/", "Focus the filter box"],
   ["s", "Toggle the stats panel"],
+  ["t", "Cycle theme (auto / light / dark)"],
   ["r", "Refresh from disk"],
   ["esc", "Clear the add field / close this help"],
   ["?", "Toggle this help"],
@@ -992,4 +1062,6 @@ window.tsk = {
 
 // Restore the persisted stats-panel state before the first paint.
 applyStatsVisibility();
+// Restore the persisted theme before the first paint to avoid a flash.
+applyTheme();
 refresh();
