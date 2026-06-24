@@ -84,6 +84,15 @@ import {
 } from "./live";
 import { registerServiceWorker } from "./pwa";
 import { resolveNotes } from "./notes";
+import {
+  parseSettings,
+  serializeSettings,
+  settingsAttributes,
+  renderSettings,
+  defaultSettings,
+  STORAGE_KEY as SETTINGS_KEY,
+  type Settings,
+} from "./settings";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -100,6 +109,7 @@ root.innerHTML = `
           <div class="export-menu" data-export-menu role="menu" hidden></div>
         </div>
         <button class="stats-toggle" data-stats-toggle type="button" aria-pressed="false" aria-label="Toggle stats panel" title="Toggle stats (s)">stats</button>
+        <button class="settings-toggle" data-settings-toggle type="button" aria-label="Open settings" title="Settings (,)">&#9881;</button>
         <div class="file" data-file>—</div>
       </div>
     </header>
@@ -179,6 +189,7 @@ const els = {
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
   statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
   statsPanel: must<HTMLElement>("[data-stats-panel]"),
+  settingsToggle: must<HTMLButtonElement>("[data-settings-toggle]"),
   themeToggle: must<HTMLButtonElement>("[data-theme-toggle]"),
   themeGlyph: must<HTMLElement>("[data-theme-glyph]"),
   themeLabel: must<HTMLElement>("[data-theme-label]"),
@@ -209,6 +220,16 @@ let visibleIds: number[] = [];
 const pendingDeletes = new Set<number>();
 /** Active filter (F11): search query, priority + tag facets, hide-done. */
 let filter: FilterState = emptyFilter();
+/** Per-client settings (F24): density, motion, hide-done default, show-ids. */
+let settings: Settings = defaultSettings();
+try {
+  settings = parseSettings(localStorage.getItem(SETTINGS_KEY));
+} catch {
+  // ignore (private mode / storage disabled)
+}
+// Seed the filter's hide-done from the persisted preference so a user who
+// prefers a clean board starts that way on every load.
+filter.hideDone = settings.hideDone;
 /** Stats panel (F13): open state persisted in localStorage, last fetched data. */
 let statsOpen = false;
 try {
@@ -564,6 +585,120 @@ function cycleTheme(): void {
     // ignore
   }
   applyTheme();
+}
+
+// --- F24: settings drawer --------------------------------------------------
+
+let settingsOpen = false;
+
+/** Mirror the current settings onto <html data-*> so CSS reacts (density etc.). */
+function applySettings(): void {
+  const attrs = settingsAttributes(settings);
+  const html = document.documentElement;
+  for (const [name, value] of Object.entries(attrs)) {
+    if (value === null) html.removeAttribute(name);
+    else html.setAttribute(name, value);
+  }
+}
+
+/** Persist settings to localStorage (best-effort). */
+function saveSettings(): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, serializeSettings(settings));
+  } catch {
+    // ignore (private mode / storage disabled)
+  }
+}
+
+/** Lazily build the drawer shell (backdrop + sliding panel) once. */
+function ensureSettingsEl(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-settings]");
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "drawer-overlay";
+  el.setAttribute("data-settings", "");
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-modal", "true");
+  el.setAttribute("aria-label", "Settings");
+  el.innerHTML = `<aside class="drawer" data-settings-panel></aside>`;
+  // Backdrop click (outside the panel) closes.
+  el.addEventListener("click", (e) => {
+    if (e.target === el) toggleSettings(false);
+  });
+  // Delegated controls inside the panel.
+  const panel = el.querySelector<HTMLElement>("[data-settings-panel]")!;
+  panel.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (!t) return;
+    if (t.closest("[data-settings-close]")) {
+      toggleSettings(false);
+      return;
+    }
+    const seg = t.closest<HTMLElement>("[data-set]");
+    if (seg) {
+      const key = seg.dataset.set as "density" | "motion";
+      const value = seg.dataset.value ?? "";
+      setSetting(key, value);
+      return;
+    }
+    const sw = t.closest<HTMLElement>("[data-toggle-setting]");
+    if (sw) {
+      const key = sw.dataset.toggleSetting as "hideDone" | "showIds";
+      setSetting(key, !settings[key]);
+      return;
+    }
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+/** Repaint the drawer body from the current settings. */
+function paintSettings(): void {
+  const el = ensureSettingsEl();
+  const panel = el.querySelector<HTMLElement>("[data-settings-panel]")!;
+  panel.innerHTML = renderSettings(settings);
+}
+
+/**
+ * Apply a single setting change: update state, persist, mirror to <html>, and
+ * propagate side effects (hideDone drives the live filter; the rest are pure
+ * CSS via data-* attributes). Then repaint the drawer + the list.
+ */
+function setSetting(key: keyof Settings, value: string | boolean): void {
+  switch (key) {
+    case "density":
+      settings.density = value === "compact" ? "compact" : "comfortable";
+      break;
+    case "motion":
+      settings.motion = value === "reduced" ? "reduced" : "full";
+      break;
+    case "hideDone":
+      settings.hideDone = value === true;
+      // Reflect into the live filter immediately so the board updates.
+      filter = { ...filter, hideDone: settings.hideDone };
+      break;
+    case "showIds":
+      settings.showIds = value === true;
+      break;
+  }
+  saveSettings();
+  applySettings();
+  paintSettings();
+  render();
+  // Keep the filter bar's own hide-done pill in sync when it's visible.
+  if (!els.filterbar.hidden) {
+    els.filterHideDone.classList.toggle("is-active", filter.hideDone);
+    els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
+  }
+}
+
+/** Open or close the settings drawer. */
+function toggleSettings(open: boolean): void {
+  settingsOpen = open;
+  const el = ensureSettingsEl();
+  if (open) paintSettings();
+  el.classList.toggle("is-open", open);
+  els.settingsToggle.classList.toggle("is-active", open);
 }
 
 // --- F15: tag pages (hash routing) -----------------------------------------
@@ -1197,6 +1332,8 @@ els.filterClear.addEventListener("click", () => {
 // --- F13: stats sidebar wiring ---------------------------------------------
 
 els.statsToggle.addEventListener("click", () => toggleStats(!statsOpen));
+// F24: the gear opens the settings drawer.
+els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen));
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-stat-tag]");
@@ -1411,6 +1548,14 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
+  // F24: the settings drawer is modal — Escape closes it and it owns the kb.
+  if (settingsOpen) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      toggleSettings(false);
+    }
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
   if (editing || duePicking || notesEditing) return; // inline edit / due picker / notes handle their own keys
@@ -1498,6 +1643,10 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       cycleTheme();
       break;
+    case ",":
+      e.preventDefault();
+      toggleSettings(!settingsOpen);
+      break;
     case "Escape":
       // F16: a bulk selection is the first thing Escape clears.
       if (isBulkActive(bulk)) {
@@ -1539,6 +1688,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["/", "Focus the filter box"],
   ["s", "Toggle the stats panel"],
   ["t", "Cycle theme (auto / light / dark)"],
+  [",", "Open settings"],
   ["r", "Refresh from disk"],
   ["esc", "Clear the add field / close this help"],
   ["?", "Toggle this help"],
@@ -1642,6 +1792,7 @@ function buildCommands(): Command[] {
     { id: "filter", title: "Focus filter / search", group: "View", keywords: ["search", "find"], hint: "/", disabled: Boolean(els.filterbar.hidden) },
     { id: "stats", title: statsOpen ? "Hide stats panel" : "Show stats panel", group: "View", keywords: ["metrics", "summary"], hint: "s" },
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
+    { id: "settings", title: "Open settings", group: "View", keywords: ["preferences", "density", "compact", "options", "config"], hint: "," },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
     { id: "export-json", title: "Export tasks as JSON", group: "Export", keywords: ["download", "save"] },
     { id: "export-csv", title: "Export tasks as CSV", group: "Export", keywords: ["download", "spreadsheet"] },
@@ -1688,6 +1839,9 @@ function runCommand(id: string): void {
       break;
     case "theme":
       cycleTheme();
+      break;
+    case "settings":
+      toggleSettings(true);
       break;
     case "refresh":
       refresh();
@@ -1947,6 +2101,8 @@ window.tsk = {
 applyStatsVisibility();
 // Restore the persisted theme before the first paint to avoid a flash.
 applyTheme();
+// F24: mirror persisted settings (density/motion/show-ids) before first paint.
+applySettings();
 // F21: open the live-reload stream so external edits flow into the open tab.
 connectLive();
 // F22: register the offline-shell service worker (no-op where unsupported).
