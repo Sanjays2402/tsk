@@ -85,6 +85,7 @@ import {
   parseFingerprint,
   shouldRefresh,
   liveTitle,
+  liveChangeMessage,
   renderLiveIndicator,
   type FileFingerprint,
   type LiveStatus,
@@ -1029,6 +1030,40 @@ function undoDelete(): void {
   // Re-select the restored task so keyboard flow continues naturally.
   nav = select(nav, visibleIds, restoredId);
   applySelection();
+}
+
+// --- F33: transient info toast (e.g. "file changed on disk — refreshed") -----
+
+/** Handle for the auto-dismiss timer of the info toast. */
+let infoToastTimer: number | null = null;
+
+/** Lazily build the info-toast element (separate from the undo toast). */
+function infoToastEl(): HTMLElement {
+  let el = document.querySelector<HTMLElement>("[data-info-toast]");
+  if (el) return el;
+  el = document.createElement("div");
+  el.className = "toast toast-info";
+  el.setAttribute("data-info-toast", "");
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  document.body.appendChild(el);
+  return el;
+}
+
+/**
+ * Show a brief, message-only toast that auto-dismisses. Used by the F33
+ * live-reload notice. Distinct from the undo toast so a live refresh never
+ * stomps a pending-delete's Undo affordance.
+ */
+function showInfoToast(message: string, seconds = 3): void {
+  const el = infoToastEl();
+  el.innerHTML = renderToast({ message, seconds });
+  el.classList.add("is-open");
+  if (infoToastTimer !== null) window.clearTimeout(infoToastTimer);
+  infoToastTimer = window.setTimeout(() => {
+    el.classList.remove("is-open");
+    infoToastTimer = null;
+  }, seconds * 1_000);
 }
 
 // --- F7: inline title edit -------------------------------------------------
@@ -2457,13 +2492,31 @@ let liveFingerprint: FileFingerprint | null = null;
 let liveSource: EventSource | null = null;
 /** Backoff handle for reconnect attempts after the stream drops. */
 let liveReconnectTimer: number | null = null;
+/**
+ * F33: per-tab "pause live" flag. When paused, the SSE stream stays connected
+ * (so resuming is instant) but a change frame only updates the baseline — it
+ * never auto-refreshes. Persisted per-tab in sessionStorage so a reload in the
+ * same tab keeps your choice, but a fresh tab starts live.
+ */
+let livePaused = false;
+try {
+  livePaused = sessionStorage.getItem("tsk.live.paused") === "1";
+} catch {
+  // ignore (private mode / storage disabled)
+}
 
 /** Paint the live indicator pill for the given connection status. */
 function setLiveStatus(status: LiveStatus): void {
-  els.live.innerHTML = renderLiveIndicator(status);
-  els.live.title = liveTitle(status);
-  els.live.dataset.status = status;
+  // F33: a paused tab shows the paused state regardless of the socket state
+  // (unless we're actively offline, which the user should still see).
+  const shown: LiveStatus = livePaused && status !== "offline" ? "paused" : status;
+  els.live.innerHTML = renderLiveIndicator(shown);
+  els.live.title = liveTitle(shown);
+  els.live.dataset.status = shown;
 }
+
+/** The last real connection status (so un-pausing restores the right pill). */
+let liveConnStatus: LiveStatus = "connecting";
 
 /**
  * Handle a fingerprint frame (ready or change). The first frame only seeds the
@@ -2475,6 +2528,9 @@ function onLiveFrame(data: string): void {
   if (!fp) return;
   if (shouldRefresh(liveFingerprint, fp)) {
     liveFingerprint = fp;
+    // F33: when paused, swallow the auto-refresh — just keep the baseline so
+    // resuming doesn't immediately fire on an already-seen change.
+    if (livePaused) return;
     // Don't clobber an in-progress edit/due-pick: those own the keyboard and a
     // re-render would tear down their input. Defer the refresh until they close.
     if (editing || duePicking) {
@@ -2482,8 +2538,26 @@ function onLiveFrame(data: string): void {
       return;
     }
     refresh();
+    // F33: surface a subtle toast so an external edit landing is visible, not
+    // a silent jump.
+    showInfoToast(liveChangeMessage(false));
   } else {
     liveFingerprint = fp;
+  }
+}
+
+/** F33: toggle the per-tab pause-live flag, persist it, and repaint the pill. */
+function toggleLivePaused(): void {
+  livePaused = !livePaused;
+  try {
+    sessionStorage.setItem("tsk.live.paused", livePaused ? "1" : "0");
+  } catch {
+    // ignore
+  }
+  setLiveStatus(liveConnStatus);
+  if (!livePaused) {
+    // Resuming: pull once so we're not stale on whatever we skipped.
+    refresh();
   }
 }
 
@@ -2494,7 +2568,9 @@ let liveRefreshPending = false;
 function flushPendingLiveRefresh(): void {
   if (liveRefreshPending && !editing && !duePicking) {
     liveRefreshPending = false;
+    if (livePaused) return; // F33: don't auto-pull while paused
     refresh();
+    showInfoToast(liveChangeMessage(true));
   }
 }
 
@@ -2507,6 +2583,7 @@ function flushPendingLiveRefresh(): void {
  */
 function connectLive(): void {
   if (typeof EventSource === "undefined") {
+    liveConnStatus = "offline";
     setLiveStatus("offline");
     return;
   }
@@ -2518,19 +2595,26 @@ function connectLive(): void {
     liveSource.close();
     liveSource = null;
   }
+  liveConnStatus = "connecting";
   setLiveStatus("connecting");
   const es = new EventSource("/api/events");
   liveSource = es;
   es.addEventListener("ready", (e) => {
+    liveConnStatus = "live";
     setLiveStatus("live");
     onLiveFrame((e as MessageEvent).data);
   });
   es.addEventListener("change", (e) => {
+    liveConnStatus = "live";
     setLiveStatus("live");
     onLiveFrame((e as MessageEvent).data);
   });
-  es.addEventListener("open", () => setLiveStatus("live"));
+  es.addEventListener("open", () => {
+    liveConnStatus = "live";
+    setLiveStatus("live");
+  });
   es.addEventListener("error", () => {
+    liveConnStatus = "offline";
     setLiveStatus("offline");
     // EventSource will retry on its own for network blips; on a closed stream
     // (readyState CLOSED) we re-create it after a short backoff.
@@ -2539,6 +2623,18 @@ function connectLive(): void {
     }
   });
 }
+
+// F33: click the live pill to pause / resume auto-refresh for this tab.
+els.live.style.cursor = "pointer";
+els.live.setAttribute("role", "button");
+els.live.setAttribute("tabindex", "0");
+els.live.addEventListener("click", toggleLivePaused);
+els.live.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    toggleLivePaused();
+  }
+});
 
 // Escape hatches for upcoming slices.
 declare global {

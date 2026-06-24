@@ -705,6 +705,20 @@ kbd {
   to { transform: scaleX(0); }
 }
 
+/* F33: info toast (live-reload notice) — sits above the undo toast so the two
+   never overlap, and is quieter (no action button, accent-tinted left edge). */
+.toast-info {
+  bottom: calc(var(--sp-6) + 64px);
+  border-left: 3px solid var(--color-accent);
+}
+.toast-info .toast-body {
+  padding: var(--sp-2) var(--sp-4);
+}
+.toast-info .toast-msg {
+  color: var(--color-text-dim);
+  font-size: var(--fs-xs);
+}
+
 /* F10: help overlay */
 .help-overlay {
   position: fixed;
@@ -1343,6 +1357,14 @@ kbd {
 }
 .live-dot.live-offline {
   background: var(--color-prio-low);
+}
+/* F33: paused — auto-refresh is muted for this tab. */
+.live-dot.live-paused {
+  background: var(--color-prio-medium);
+  box-shadow: none;
+}
+.live-indicator[data-status="paused"] {
+  color: var(--color-prio-medium);
 }
 .live-label {
   letter-spacing: 0.02em;

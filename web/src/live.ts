@@ -13,7 +13,7 @@
  * several times in a second) by comparing fingerprints, not raw event counts.
  */
 
-export type LiveStatus = "connecting" | "live" | "offline";
+export type LiveStatus = "connecting" | "live" | "offline" | "paused";
 
 export interface FileFingerprint {
   mtime: number;
@@ -54,6 +54,8 @@ export function liveLabel(status: LiveStatus): string {
       return "connecting";
     case "offline":
       return "offline";
+    case "paused":
+      return "paused";
   }
 }
 
@@ -61,12 +63,26 @@ export function liveLabel(status: LiveStatus): string {
 export function liveTitle(status: LiveStatus): string {
   switch (status) {
     case "live":
-      return "Live: auto-refreshing when .tsk.md changes on disk";
+      return "Live: auto-refreshing when .tsk.md changes on disk. Click to pause.";
     case "connecting":
       return "Connecting to the live-update stream…";
     case "offline":
       return "Live updates offline — reconnecting. Press r to refresh manually.";
+    case "paused":
+      return "Live updates paused — external edits won't auto-refresh. Click to resume.";
   }
+}
+
+/**
+ * Build the message for the F33 "external edit landed" toast. Kept here (pure)
+ * so the copy is unit-tested and consistent. When the change arrived while the
+ * tab was hidden or mid-edit and we deferred it, the caller passes deferred to
+ * tweak the wording.
+ */
+export function liveChangeMessage(deferred = false): string {
+  return deferred
+    ? "File changed on disk — refreshed (deferred while you were editing)"
+    : "File changed on disk — refreshed";
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   shouldRefresh,
   liveLabel,
   liveTitle,
+  liveChangeMessage,
   renderLiveIndicator,
   type FileFingerprint,
 } from "../src/live.ts";
@@ -46,14 +47,23 @@ test("liveLabel gives a distinct label per status", () => {
     liveLabel("live"),
     liveLabel("connecting"),
     liveLabel("offline"),
+    liveLabel("paused"),
   ]);
-  assert.equal(labels.size, 3);
+  assert.equal(labels.size, 4);
 });
 
 test("liveTitle mentions the key idea per status", () => {
   assert.match(liveTitle("live"), /\.tsk\.md|auto-refresh/i);
   assert.match(liveTitle("connecting"), /connect/i);
   assert.match(liveTitle("offline"), /offline|reconnect/i);
+  // F33: paused tells you it's muted + how to resume
+  assert.match(liveTitle("paused"), /paus|resume/i);
+});
+
+test("liveChangeMessage describes the external edit, deferred variant differs", () => {
+  assert.match(liveChangeMessage(false), /changed on disk/i);
+  assert.match(liveChangeMessage(true), /deferred/i);
+  assert.notEqual(liveChangeMessage(false), liveChangeMessage(true));
 });
 
 test("renderLiveIndicator carries the status class + label", () => {
@@ -61,4 +71,8 @@ test("renderLiveIndicator carries the status class + label", () => {
   assert.match(html, /live-live/);
   assert.match(html, /live-dot/);
   assert.match(html, />live</);
+  // F33: paused renders its own class + label
+  const paused = renderLiveIndicator("paused");
+  assert.match(paused, /live-paused/);
+  assert.match(paused, />paused</);
 });
