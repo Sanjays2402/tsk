@@ -77,29 +77,33 @@ import (
 // the explicit message saves a "why is this empty?" diagnostic loop.
 func newGraphCmd() *cobra.Command {
 	var (
-		format               string
-		open                 bool
-		reachable            int
-		upstreamOf           int
-		highlight            string
-		highlightTag         string
-		dim                  string
-		dimTag               string
-		asJSON               bool
-		outputPath           string
-		jsonCompact          bool
-		jsonAppend           bool
-		jsonRotate           int
-		includePriority      bool
-		includeTags          bool
-		includeDue           bool
-		includeCompleted     bool
-		includeStarted       bool
-		includePinned        bool
-		includeAll           bool
-		filterCompletedSince string
-		filterStartedSince   string
-		filterTouchedSince   string
+		format                string
+		open                  bool
+		reachable             int
+		upstreamOf            int
+		highlight             string
+		highlightTag          string
+		dim                   string
+		dimTag                string
+		asJSON                bool
+		outputPath            string
+		jsonCompact           bool
+		jsonAppend            bool
+		jsonRotate            int
+		includePriority       bool
+		includeTags           bool
+		includeDue            bool
+		includeCompleted      bool
+		includeStarted        bool
+		includePinned         bool
+		includeAll            bool
+		filterCompletedSince  string
+		filterStartedSince    string
+		filterTouchedSince    string
+		filterCompletedBefore string
+		filterStartedBefore   string
+		filterTouchedBefore   string
+		jsonMaxBytes          int64
 	)
 	cmd := &cobra.Command{
 		Use:   "graph",
@@ -211,6 +215,11 @@ Examples:
   tsk graph --reachable 7 --json --filter-started-since 24h         # only nodes started in the last day (in-progress recency)
   tsk graph --reachable 7 --json --filter-completed-since 7d --filter-started-since 7d  # UNION: anything actively moving
   tsk graph --reachable 7 --json --filter-touched-since 7d          # shortcut for the above: any recent activity
+  tsk graph --reachable 7 --json --filter-completed-before 7d       # INVERSE: only OLDER-than-7d completions (stale-chain triage)
+  tsk graph --reachable 7 --json --filter-started-before 7d         # INVERSE: only OLDER-than-7d in-progress starts (long-running WIP)
+  tsk graph --reachable 7 --json --filter-completed-since 30d --filter-completed-before 7d  # fixed window: done 7-30d ago
+  tsk graph --reachable 7 --json --filter-touched-before 7d         # shortcut: any activity older than 7d
+  tsk graph --reachable 7 --json --output snap.jsonl --append --rotate 100 --max-bytes 1048576  # rotate by N or 1 MiB cap (stricter wins)
 `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			fmtChoice, err := resolveGraphFormat(format)
@@ -405,6 +414,105 @@ Examples:
 					filterStartedActive = true
 				}
 			}
+			// --filter-completed-before / --filter-started-before /
+			// --filter-touched-before are the inverse-cutoff sisters
+			// of the SINCE family: where --filter-completed-since 7d
+			// keeps only nodes completed within the last 7 days,
+			// --filter-completed-before 7d keeps only nodes completed
+			// OLDER THAN 7 days ago. The triage / archive-review use
+			// case: "what's been sitting in this chain done for too
+			// long?" / "what stale work still has a chain hanging off
+			// it?". The two families compose as AND within a single
+			// axis (a node must satisfy BOTH the since window and
+			// the before cutoff to survive when both are set on the
+			// same axis) — this lets users write `--filter-completed-
+			// since 30d --filter-completed-before 7d` to mean "done
+			// at least 7 days ago but no older than 30 days" (a
+			// fixed-width window of stale-but-not-ancient
+			// completions).
+			//
+			// Each BEFORE filter has the same validation contract as
+			// its SINCE counterpart (requires --json, positive
+			// duration only, empty value is no-op).
+			var filterCompletedBeforeDur time.Duration
+			filterCompletedBeforeActive := false
+			if strings.TrimSpace(filterCompletedBefore) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-completed-before only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterCompletedBefore))
+				if err != nil {
+					return usageErrorf("invalid --filter-completed-before %q: %v", filterCompletedBefore, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-completed-before must be a positive duration, got %q", filterCompletedBefore)
+				}
+				filterCompletedBeforeDur = d
+				filterCompletedBeforeActive = true
+			}
+			var filterStartedBeforeDur time.Duration
+			filterStartedBeforeActive := false
+			if strings.TrimSpace(filterStartedBefore) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-started-before only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterStartedBefore))
+				if err != nil {
+					return usageErrorf("invalid --filter-started-before %q: %v", filterStartedBefore, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-started-before must be a positive duration, got %q", filterStartedBefore)
+				}
+				filterStartedBeforeDur = d
+				filterStartedBeforeActive = true
+			}
+			// --filter-touched-before is the ergonomic shortcut
+			// sister of --filter-touched-since for the inverse
+			// cutoff direction: one flag flips BOTH before-axes at
+			// the same window. Same "individual wins" composition
+			// rule as --filter-touched-since: an explicit per-axis
+			// BEFORE flag wins over the shortcut for that axis,
+			// letting users write `--filter-completed-before 30d
+			// --filter-touched-before 7d` to mean "completions
+			// older than 30 days OR starts older than 7 days".
+			if strings.TrimSpace(filterTouchedBefore) != "" {
+				if !asJSON {
+					return usageErrorf("--filter-touched-before only applies to --json (the JSON envelope path)")
+				}
+				d, err := parseDurationLocal(strings.TrimSpace(filterTouchedBefore))
+				if err != nil {
+					return usageErrorf("invalid --filter-touched-before %q: %v", filterTouchedBefore, err)
+				}
+				if d <= 0 {
+					return usageErrorf("--filter-touched-before must be a positive duration, got %q", filterTouchedBefore)
+				}
+				if !filterCompletedBeforeActive {
+					filterCompletedBeforeDur = d
+					filterCompletedBeforeActive = true
+				}
+				if !filterStartedBeforeActive {
+					filterStartedBeforeDur = d
+					filterStartedBeforeActive = true
+				}
+			}
+			// --max-bytes is the secondary file-size cap on the
+			// JSONL streaming/rotation path, layered atop the
+			// record-count cap from --rotate. Useful when records
+			// vary wildly in size (large impact graphs) and a
+			// fixed N is hard to set: the byte cap acts as a
+			// hard safety ceiling. Like --rotate, only meaningful
+			// on the --append path (a single-record overwrite
+			// can't exceed any reasonable cap by definition).
+			// Eviction policy: FIFO over WHOLE records (never
+			// truncate mid-record) until the file fits under the
+			// cap. Composes with --rotate (both caps apply; the
+			// stricter wins on any given append).
+			if jsonMaxBytes < 0 {
+				return usageErrorf("--max-bytes must be >= 0 (got %d); 0 disables the byte cap, any positive value caps the file at that many bytes", jsonMaxBytes)
+			}
+			if jsonMaxBytes > 0 && !jsonAppend {
+				return usageErrorf("--max-bytes requires --append (the byte cap only applies to the JSONL streaming path; overwriting --output is a single record by definition)")
+			}
 			s, err := resolveStore(cmd, true)
 			if err != nil {
 				return err
@@ -474,7 +582,7 @@ Examples:
 						return err
 					}
 					var buf bytes.Buffer
-					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur); err != nil {
+					if err := emitSubgraphJSON(&buf, s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur, filterCompletedBeforeActive, filterCompletedBeforeDur, filterStartedBeforeActive, filterStartedBeforeDur); err != nil {
 						return err
 					}
 					if jsonAppend {
@@ -518,6 +626,7 @@ Examples:
 						// (logs measured in MBs, not GBs) and avoids
 						// the complexity of seek-and-truncate.
 						droppedCount := 0
+						droppedByBytes := 0
 						if jsonRotate > 0 {
 							n, err := rotateJSONLFile(outputPath, jsonRotate)
 							if err != nil {
@@ -525,9 +634,21 @@ Examples:
 							}
 							droppedCount = n
 						}
-						if droppedCount > 0 {
+						if jsonMaxBytes > 0 {
+							n, err := rotateJSONLFileByBytes(outputPath, jsonMaxBytes)
+							if err != nil {
+								return fmt.Errorf("--max-bytes: %w", err)
+							}
+							droppedByBytes = n
+						}
+						switch {
+						case droppedCount > 0 && droppedByBytes > 0:
+							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl; rotated: dropped %d oldest line(s) by count, %d more by byte cap)\n", buf.Len(), outputPath, droppedCount, droppedByBytes)
+						case droppedCount > 0:
 							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl; rotated: dropped %d oldest line(s), kept newest %d)\n", buf.Len(), outputPath, droppedCount, jsonRotate)
-						} else {
+						case droppedByBytes > 0:
+							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl; byte-cap evicted %d oldest line(s) to fit under %d bytes)\n", buf.Len(), outputPath, droppedByBytes, jsonMaxBytes)
+						default:
 							pf(cmd.OutOrStdout(), "appended %d bytes to %s (format=jsonl)\n", buf.Len(), outputPath)
 						}
 						return nil
@@ -552,7 +673,7 @@ Examples:
 				return nil
 			}
 			if asJSON {
-				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur)
+				return emitSubgraphJSON(cmd.OutOrStdout(), s, edges, rootDisplay, rootKind, open, jsonCompact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned, filterCompletedActive, filterCompletedDur, filterStartedActive, filterStartedDur, filterCompletedBeforeActive, filterCompletedBeforeDur, filterStartedBeforeActive, filterStartedBeforeDur)
 			}
 			return emitGraph(cmd.OutOrStdout(), s, edges, fmtChoice, rootDisplay, rootKind, highlightSet, dimSet)
 		},
@@ -580,6 +701,10 @@ Examples:
 	cmd.Flags().StringVar(&filterCompletedSince, "filter-completed-since", "", "for --json: trim the subgraph envelope to nodes whose task was completed within this duration window (e.g. 7d, 24h, 2w, 1h30m). The ROOT id is always kept (the consumer asked about THIS root); every other node must be done AND completed-within-window to survive. Edges touching a filtered-out node are dropped (no point linking to a node we removed). Useful for completion-velocity dashboards (\"what shipped this week in this dep chain?\"), recent-impact reports (\"which prereqs just closed?\"), and change-summary CI gates. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append (each appended record reflects the filter at call time). Empty (default) = no filter. The envelope gains a top-level `filter_completed_since` field naming the window in canonical humanized form when active, so scripts can distinguish a filtered from un-filtered envelope.")
 	cmd.Flags().StringVar(&filterStartedSince, "filter-started-since", "", "for --json: trim the subgraph envelope to nodes whose task is currently in-progress AND was started within this duration window (e.g. 7d, 24h, 2w, 1h30m). The OPEN sister of --filter-completed-since: completed-since surfaces RECENTLY-FINISHED work, started-since surfaces RECENTLY-BEGUN work. Useful for \"what's actively in flight in this dep chain?\" reports, currently-working impact analysis, and pomodoro/elapsed-time dashboards. The ROOT id is always kept (same semantic as completed-since). Edges touching a filtered-out node are dropped. When BOTH --filter-completed-since and --filter-started-since are set, the composition semantic is UNION (logical OR) — a node survives if EITHER recently-completed OR recently-started. This is the only useful composition since done and in-progress are mutually exclusive states on the same task. Composes with all --include-* opt-ins, --reachable / --upstream-of (both directions), --compact-json, --append. Empty (default) = no filter. The envelope gains a top-level `filter_started_since` field naming the window in canonical humanized form when active, so scripts can distinguish either filter (or both) by which marker fields are present.")
 	cmd.Flags().StringVar(&filterTouchedSince, "filter-touched-since", "", "for --json: ergonomic shortcut equivalent to setting BOTH --filter-completed-since AND --filter-started-since to the same value. The one-flag form of the \"what's actively moving in the last N?\" query (UNION of recent completions and recent starts). Sister of --include-all's \"turn on all opt-ins\" pattern — one flag flips on both recency axes at the same window so jq pipelines don't need to re-state the duration twice. Composition: if --filter-completed-since OR --filter-started-since is ALSO set explicitly, the individual flag WINS for that axis (this lets `--filter-completed-since 24h --filter-touched-since 7d` mean \"completions in 24h OR starts in 7d\" — the precise per-axis form). Both `filter_completed_since` and `filter_started_since` marker fields are set on the envelope when --filter-touched-since is in use, so the on-disk shape stays compatible with scripts that look for the individual markers. Requires --json. Empty (default) = no filter.")
+	cmd.Flags().StringVar(&filterCompletedBefore, "filter-completed-before", "", "for --json: INVERSE-cutoff sister of --filter-completed-since. Trim the subgraph envelope to nodes whose task was completed OLDER THAN this duration ago (e.g. --filter-completed-before 7d keeps only completions from MORE than 7 days ago, dropping the recent ones). Useful for archive-review / triage pipelines (\"what stale completed work still has a chain hanging off it?\") and \"these old completions should probably be archived\" gates. The two families compose as AND within the same axis: `--filter-completed-since 30d --filter-completed-before 7d` means \"done at least 7 days ago but no older than 30 days\" — a fixed-width window of stale-but-not-ancient completions. Across axes (completed vs started) the composition stays UNION (logical OR), matching the SINCE family's semantic. Same validation contract: requires --json, positive duration only, empty value is no-op. The envelope gains a top-level `filter_completed_before` field carrying the canonical humanized window when active.")
+	cmd.Flags().StringVar(&filterStartedBefore, "filter-started-before", "", "for --json: INVERSE-cutoff sister of --filter-started-since. Trim the subgraph envelope to nodes whose task is in-progress AND was started OLDER THAN this duration ago (e.g. --filter-started-before 7d keeps only in-progress tasks started MORE than 7 days ago — the stale-WIP-in-this-chain view). Useful for impact-analysis reports that focus on long-running in-progress work, neglected-WIP alert pipelines, and \"these tasks have been in-flight too long\" gates. Composition rules mirror --filter-completed-before: AND within the started axis (`--filter-started-since 30d --filter-started-before 7d` = a fixed-width \"started 7-30 days ago\" window), UNION across axes. Same validation contract. The envelope gains a top-level `filter_started_before` field carrying the canonical humanized window when active.")
+	cmd.Flags().StringVar(&filterTouchedBefore, "filter-touched-before", "", "for --json: ergonomic shortcut sister of --filter-touched-since for the INVERSE-cutoff direction. Equivalent to setting BOTH --filter-completed-before AND --filter-started-before to the same value. The one-flag form of the \"what hasn't moved in the last N?\" / stale-chain triage query (UNION of old completions and old in-progress starts). Composition: if --filter-completed-before OR --filter-started-before is ALSO set explicitly, the individual flag WINS for that axis (matching --filter-touched-since's \"individual wins\" rule). Both `filter_completed_before` and `filter_started_before` marker fields are set on the envelope when --filter-touched-before is in use, so the on-disk shape stays compatible with scripts that look for the individual markers. Requires --json. Empty (default) = no filter.")
+	cmd.Flags().Int64Var(&jsonMaxBytes, "max-bytes", 0, "for --json --output --append: cap the JSONL file at this many bytes by evicting WHOLE oldest records (FIFO) until the file fits under the cap. Secondary safety net layered atop --rotate (the record-count cap): useful when records vary wildly in size (large impact graphs, fat envelopes with --include-all) and a fixed record-N is hard to set — the byte cap acts as a hard ceiling regardless of per-record size. 0 (default) = no byte cap. Composes with --rotate: both caps apply on every append, with the stricter winning. The most recent record is ALWAYS retained even when it's larger than the cap (a single pathologically-large record is preserved so the user sees the latest snapshot). Requires --append (the byte cap only applies to the JSONL streaming path; overwriting --output is a single record by definition).")
 	return cmd
 }
 
@@ -1130,6 +1255,94 @@ func rotateJSONLFile(path string, keepN int) (int, error) {
 	return dropped, nil
 }
 
+// rotateJSONLFileByBytes caps the JSONL file at maxBytes by evicting
+// WHOLE oldest records (FIFO) until the file fits under the cap.
+// Sister of rotateJSONLFile for the byte-size axis: where the
+// count-axis primitive trims by record count, this one trims by
+// on-disk size. Useful when records vary wildly in size (large
+// impact graphs, fat envelopes with --include-all) and a fixed
+// record-N is hard to set — the byte cap provides a hard safety
+// ceiling regardless of per-record size.
+//
+// Returns the number of records evicted (0 when the file already
+// fits or is empty/missing). Returns an error only on I/O failures.
+//
+// Eviction policy: records are dropped from the HEAD of the file
+// (oldest first) ONE AT A TIME, recomputing the remaining size on
+// every iteration, until either (a) the remaining body fits under
+// maxBytes, or (b) only one record is left (we never drop the
+// last record — even a single oversized record is preserved so
+// the user always sees the most recent snapshot). Same atomic-
+// replace contract as rotateJSONLFile (write to .tmp, rename over
+// the target).
+//
+// keepN=0 / maxBytes<=0 / missing file are all no-ops — the
+// callers' validation layers already enforced positive cap values
+// where required, so a zero here is the "feature disabled"
+// branch and should bail cleanly.
+func rotateJSONLFileByBytes(path string, maxBytes int64) (int, error) {
+	if maxBytes <= 0 {
+		return 0, nil
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read %s: %w", path, err)
+	}
+	// Already under cap: nothing to do.
+	if int64(len(body)) <= maxBytes {
+		return 0, nil
+	}
+	// Split and filter empties (trailing newline produces one).
+	rawLines := strings.Split(string(body), "\n")
+	lines := rawLines[:0]
+	for _, l := range rawLines {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) <= 1 {
+		// Single oversized record: preserve it. The byte cap
+		// is a guideline, not a guarantee against a single
+		// pathologically-large record.
+		return 0, nil
+	}
+	// Compute trial sizes by dropping oldest lines one at a
+	// time until we fit under cap or hit the single-record
+	// floor. Each line contributes len(line)+1 bytes (the
+	// trailing newline). Cheaper than re-encoding on every
+	// iteration; works on the in-memory lines slice.
+	totalSize := int64(0)
+	for _, l := range lines {
+		totalSize += int64(len(l)) + 1
+	}
+	dropped := 0
+	for totalSize > maxBytes && len(lines) > 1 {
+		totalSize -= int64(len(lines[0])) + 1
+		lines = lines[1:]
+		dropped++
+	}
+	if dropped == 0 {
+		return 0, nil
+	}
+	var sb strings.Builder
+	for _, l := range lines {
+		sb.WriteString(l)
+		sb.WriteString("\n")
+	}
+	tmp := path + ".maxbytes.tmp"
+	if err := os.WriteFile(tmp, []byte(sb.String()), 0o644); err != nil {
+		return 0, fmt.Errorf("write tmp %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return 0, fmt.Errorf("rename %s -> %s: %w", tmp, path, err)
+	}
+	return dropped, nil
+}
+
 // emitGraph dispatches based on the resolved format. When rootID
 // is set (>0) and the filter produced zero edges, the message is
 // more specific so the user understands "the root has no prereqs"
@@ -1449,13 +1662,15 @@ type subgraphEdge struct {
 // about THIS root; \"nothing depends on it\" is itself a useful
 // answer for the impact-analysis use case).
 type subgraphDoc struct {
-	RootID               int            `json:"root_id"`
-	Direction            string         `json:"direction"`
-	Nodes                []subgraphNode `json:"nodes"`
-	Edges                []subgraphEdge `json:"edges"`
-	Filter               string         `json:"filter,omitempty"`
-	FilterCompletedSince string         `json:"filter_completed_since,omitempty"`
-	FilterStartedSince   string         `json:"filter_started_since,omitempty"`
+	RootID                int            `json:"root_id"`
+	Direction             string         `json:"direction"`
+	Nodes                 []subgraphNode `json:"nodes"`
+	Edges                 []subgraphEdge `json:"edges"`
+	Filter                string         `json:"filter,omitempty"`
+	FilterCompletedSince  string         `json:"filter_completed_since,omitempty"`
+	FilterStartedSince    string         `json:"filter_started_since,omitempty"`
+	FilterCompletedBefore string         `json:"filter_completed_before,omitempty"`
+	FilterStartedBefore   string         `json:"filter_started_before,omitempty"`
 }
 
 // emitSubgraphJSON renders the stable JSON envelope for the
@@ -1531,7 +1746,7 @@ type subgraphDoc struct {
 // started surfaces work-began time. Useful for elapsed-time
 // analysis on currently-working tasks and "what's in flight in
 // this chain?" gates. Composes with all other --include-* opt-ins.
-func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool, filterCompletedActive bool, filterCompletedDur time.Duration, filterStartedActive bool, filterStartedDur time.Duration) error {
+func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int, rootKind string, open, compact, includePriority, includeTags, includeDue, includeCompleted, includeStarted, includePinned bool, filterCompletedActive bool, filterCompletedDur time.Duration, filterStartedActive bool, filterStartedDur time.Duration, filterCompletedBeforeActive bool, filterCompletedBeforeDur time.Duration, filterStartedBeforeActive bool, filterStartedBeforeDur time.Duration) error {
 	// Collect every node that appears (sources + targets), plus
 	// the root itself (so the empty-edges case still yields a
 	// useful one-node response).
@@ -1546,31 +1761,50 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)
-	// --filter-completed-since / --filter-started-since filtering:
-	// each recency filter trims to nodes matching its predicate
-	// (done+recently-completed for completed-since, in-progress+
-	// recently-started for started-since). The ROOT id is ALWAYS
-	// kept regardless of either filter — the consumer asked about
-	// THIS root; the answer "your root isn't itself recently-active
-	// but here's the recently-active subset around it" is more
-	// useful than "your root disappeared from its own subgraph".
-	// Dangling-edge nodes (no task) are dropped under any active
-	// filter (they have no timestamps to evaluate).
+	// --filter-completed-since / --filter-started-since /
+	// --filter-completed-before / --filter-started-before
+	// filtering: each recency-or-cutoff filter trims to nodes
+	// matching its predicate (done+within-window-since for
+	// completed-since; done+older-than-cutoff for
+	// completed-before; same for the started-* pair). The ROOT
+	// id is ALWAYS kept regardless of any filter — the consumer
+	// asked about THIS root; the answer "your root isn't itself
+	// in the time window but here's the subset around it" is
+	// more useful than "your root disappeared from its own
+	// subgraph". Dangling-edge nodes (no task) are dropped under
+	// any active filter (they have no timestamps to evaluate).
 	//
-	// Composition semantic when BOTH filters are active: UNION
-	// (logical OR). A node survives if EITHER recently-completed
-	// OR recently-started. This matches the "what's actively
-	// moving?" use case the two filters were designed for — done
-	// and in-progress are mutually exclusive states on the same
-	// task (tsk done clears Started; tsk start requires not-done),
-	// so an AND interpretation would always yield zero nodes
-	// (no single task satisfies both at once). UNION is the only
-	// composition that produces a useful result.
+	// Composition rules:
+	//   - Within an axis (completed-{since,before} or
+	//     started-{since,before}): AND. A done node must satisfy
+	//     BOTH its since window AND its before cutoff to survive
+	//     when both axis flags are set, letting users define a
+	//     fixed-width "no newer than X, no older than Y" slice.
+	//   - Across axes (completed vs started): OR (UNION). A
+	//     node survives if EITHER the completed-axis predicate
+	//     OR the started-axis predicate holds. Done and
+	//     in-progress are mutually exclusive states on the same
+	//     task, so an AND interpretation across axes would
+	//     always yield zero nodes — UNION is the only useful
+	//     composition.
+	anyFilterActive := filterCompletedActive || filterStartedActive || filterCompletedBeforeActive || filterStartedBeforeActive
 	kept := make(map[int]bool, len(ids))
-	if filterCompletedActive || filterStartedActive {
+	if anyFilterActive {
 		now := time.Now()
-		completedCutoff := now.Add(-filterCompletedDur)
-		startedCutoff := now.Add(-filterStartedDur)
+		var completedSinceCutoff, startedSinceCutoff time.Time
+		var completedBeforeCutoff, startedBeforeCutoff time.Time
+		if filterCompletedActive {
+			completedSinceCutoff = now.Add(-filterCompletedDur)
+		}
+		if filterStartedActive {
+			startedSinceCutoff = now.Add(-filterStartedDur)
+		}
+		if filterCompletedBeforeActive {
+			completedBeforeCutoff = now.Add(-filterCompletedBeforeDur)
+		}
+		if filterStartedBeforeActive {
+			startedBeforeCutoff = now.Add(-filterStartedBeforeDur)
+		}
 		for _, id := range ids {
 			if id == rootID {
 				kept[id] = true
@@ -1580,16 +1814,42 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 			if t == nil {
 				continue
 			}
-			// Apply each active filter; node survives if it
-			// matches AT LEAST ONE active predicate (UNION).
-			matched := false
-			if filterCompletedActive && t.Done && t.Completed != nil && !t.Completed.Before(completedCutoff) {
-				matched = true
+			// Per-axis predicate evaluation. The COMPLETED
+			// axis is active when either its SINCE or BEFORE
+			// flag is set; survives iff (a) the task is done
+			// and has a Completed stamp, and (b) every active
+			// per-axis flag for that axis matches (AND within
+			// axis). Same for STARTED.
+			completedAxisActive := filterCompletedActive || filterCompletedBeforeActive
+			startedAxisActive := filterStartedActive || filterStartedBeforeActive
+			completedAxisMatch := false
+			if completedAxisActive && t.Done && t.Completed != nil {
+				ok := true
+				if filterCompletedActive && t.Completed.Before(completedSinceCutoff) {
+					ok = false
+				}
+				if ok && filterCompletedBeforeActive && !t.Completed.Before(completedBeforeCutoff) {
+					// "Before" means strictly older than
+					// (now - dur). A completion at or
+					// after the cutoff is too recent.
+					ok = false
+				}
+				completedAxisMatch = ok
 			}
-			if !matched && filterStartedActive && t.Started != nil && !t.Started.Before(startedCutoff) {
-				matched = true
+			startedAxisMatch := false
+			if startedAxisActive && t.Started != nil {
+				ok := true
+				if filterStartedActive && t.Started.Before(startedSinceCutoff) {
+					ok = false
+				}
+				if ok && filterStartedBeforeActive && !t.Started.Before(startedBeforeCutoff) {
+					ok = false
+				}
+				startedAxisMatch = ok
 			}
-			if matched {
+			// UNION across axes: survive if at least one
+			// active axis matches.
+			if completedAxisMatch || startedAxisMatch {
 				kept[id] = true
 			}
 		}
@@ -1685,14 +1945,13 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 	}
 	jsonEdges := make([]subgraphEdge, 0, len(edges))
 	for _, e := range edges {
-		// Drop edges whose endpoints didn't survive the
-		// completed-since / started-since filter. When neither
-		// filter is active, kept is empty AND both flags are
-		// false, so we accept every edge. When either is active,
-		// both endpoints must be in the kept set (otherwise the
-		// edge points at a non-rendered node and would be
-		// meaningless).
-		if filterCompletedActive || filterStartedActive {
+		// Drop edges whose endpoints didn't survive any active
+		// recency/cutoff filter. When no filter is active, kept
+		// is empty AND anyFilterActive is false, so we accept
+		// every edge. When any is active, both endpoints must
+		// be in the kept set (otherwise the edge points at a
+		// non-rendered node and would be meaningless).
+		if anyFilterActive {
 			if !kept[e.from] || !kept[e.to] {
 				continue
 			}
@@ -1723,6 +1982,17 @@ func emitSubgraphJSON(w io.Writer, s *store.Store, edges []graphEdge, rootID int
 		// scripts can detect either / both filters and
 		// distinguish them by which field is present.
 		doc.FilterStartedSince = humanizeDuration(filterStartedDur)
+	}
+	if filterCompletedBeforeActive {
+		// Sister marker for --filter-completed-before. Inverse-
+		// cutoff direction: the field's presence tells scripts
+		// the envelope has been trimmed to completions OLDER
+		// than the named window.
+		doc.FilterCompletedBefore = humanizeDuration(filterCompletedBeforeDur)
+	}
+	if filterStartedBeforeActive {
+		// Sister marker for --filter-started-before.
+		doc.FilterStartedBefore = humanizeDuration(filterStartedBeforeDur)
 	}
 	enc := json.NewEncoder(w)
 	if !compact {
