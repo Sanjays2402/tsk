@@ -584,6 +584,45 @@ button.priority:focus-visible {
   color: var(--color-prio-urgent);
 }
 
+/* F35: offline / server-restarting banner — a thin strip at the very top. */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-base);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-hi);
+  color: var(--color-text-dim);
+  animation: help-fade var(--duration-base) var(--ease-out);
+}
+.offline-banner[data-connectivity="offline"] {
+  border-color: var(--color-prio-high);
+  background: rgba(249, 115, 22, 0.08);
+  color: var(--color-text);
+}
+.offline-banner[data-connectivity="server"] {
+  border-color: var(--color-prio-medium);
+  background: rgba(234, 179, 8, 0.07);
+}
+.offline-ico {
+  flex: none;
+  font-size: var(--fs-sm);
+}
+/* F35: the Install button stands out as the primary config action. */
+.set-cfg-install {
+  color: var(--color-accent-strong);
+  border-color: var(--color-accent);
+}
+.set-cfg-install:hover {
+  color: #0b0a09;
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
 /* Loading skeleton */
 .skeleton {
   display: flex;

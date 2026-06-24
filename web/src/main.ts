@@ -90,7 +90,15 @@ import {
   type FileFingerprint,
   type LiveStatus,
 } from "./live";
-import { registerServiceWorker } from "./pwa";
+import {
+  registerServiceWorker,
+  classifyConnectivity,
+  shouldShowOfflineBanner,
+  renderOfflineBanner,
+  canInstall,
+  isStandalone,
+  type InstallPromptEvent,
+} from "./pwa";
 import { resolveNotes } from "./notes";
 import {
   parseSettings,
@@ -129,6 +137,7 @@ if (!root) throw new Error("missing #root");
 
 root.innerHTML = `
   <div class="app" data-app>
+    <div class="offline-banner" data-offline-banner role="status" aria-live="polite" hidden></div>
     <header class="topbar">
       <h1>tsk<span class="dot" data-dot>// loading</span></h1>
       <div class="topbar-right">
@@ -240,6 +249,7 @@ const els = {
   tagpageClear: must<HTMLAnchorElement>("[data-tagpage-clear]"),
   bulkbar: must<HTMLElement>("[data-bulkbar]"),
   live: must<HTMLElement>("[data-live]"),
+  offlineBanner: must<HTMLElement>("[data-offline-banner]"),
 };
 
 function must<T extends HTMLElement>(sel: string): T {
@@ -711,6 +721,11 @@ function ensureSettingsEl(): HTMLElement {
       resetConfig();
       return;
     }
+    // F35: the injected Install button triggers the captured prompt.
+    if (t.closest("[data-config-install]")) {
+      triggerInstall();
+      return;
+    }
     const seg = t.closest<HTMLElement>("[data-set]");
     if (seg) {
       const key = seg.dataset.set as "density" | "motion";
@@ -734,6 +749,21 @@ function paintSettings(): void {
   const el = ensureSettingsEl();
   const panel = el.querySelector<HTMLElement>("[data-settings-panel]")!;
   panel.innerHTML = renderSettings(settings);
+  // F35: inject an "Install app" button into the config actions when the
+  // browser has offered a deferred install prompt and we're not already
+  // running standalone. Kept out of the pure renderSettings so that module
+  // stays free of install-prompt state.
+  if (installAvailable()) {
+    const actions = panel.querySelector<HTMLElement>(".set-config-actions");
+    if (actions) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "set-cfg-btn set-cfg-install";
+      btn.setAttribute("data-config-install", "");
+      btn.textContent = "Install app";
+      actions.insertBefore(btn, actions.firstChild);
+    }
+  }
 }
 
 /**
@@ -2617,6 +2647,30 @@ function setLiveStatus(status: LiveStatus): void {
   els.live.innerHTML = renderLiveIndicator(shown);
   els.live.title = liveTitle(shown);
   els.live.dataset.status = shown;
+  // F35: the stream status feeds the offline/server banner.
+  updateOfflineBanner();
+}
+
+/**
+ * F35: paint the offline/server banner from the SSE stream status + the
+ * browser's online flag. Distinguishes "tsk serve is restarting" (network up,
+ * stream down) from "you're offline" (device offline) so the copy is honest.
+ * A paused stream is intentionally muted — that's a user choice, not a fault.
+ */
+function updateOfflineBanner(): void {
+  const streamOffline = liveConnStatus === "offline" && !livePaused;
+  const online = typeof navigator === "undefined" ? true : navigator.onLine;
+  const c = classifyConnectivity(streamOffline, online);
+  if (!shouldShowOfflineBanner(c)) {
+    els.offlineBanner.hidden = true;
+    els.offlineBanner.innerHTML = "";
+    must<HTMLElement>("[data-app]").classList.remove("is-offline");
+    return;
+  }
+  els.offlineBanner.hidden = false;
+  els.offlineBanner.innerHTML = renderOfflineBanner(c);
+  els.offlineBanner.dataset.connectivity = c;
+  must<HTMLElement>("[data-app]").classList.add("is-offline");
 }
 
 /** The last real connection status (so un-pausing restores the right pill). */
@@ -2740,6 +2794,51 @@ els.live.addEventListener("keydown", (e) => {
   }
 });
 
+// --- F35: install prompt capture + offline/online detection -----------------
+
+/** The deferred beforeinstallprompt event, captured so the settings button can
+ * trigger the native install flow on demand. Null until the browser offers it. */
+let deferredInstall: InstallPromptEvent | null = null;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  // Prevent the mini-infobar so we control where the prompt lives (settings).
+  e.preventDefault();
+  deferredInstall = e as InstallPromptEvent;
+  // Repaint the drawer if it's open so the Install button appears immediately.
+  if (settingsOpen) paintSettings();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstall = null;
+  if (settingsOpen) paintSettings();
+  setStatus("installed", false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+});
+
+// F35: the device going on/offline updates the banner immediately, independent
+// of the SSE stream (which may not have noticed yet).
+window.addEventListener("online", updateOfflineBanner);
+window.addEventListener("offline", updateOfflineBanner);
+
+/** Whether the Install affordance should be shown (deferred prompt + not installed). */
+function installAvailable(): boolean {
+  return canInstall(deferredInstall, isStandalone());
+}
+
+/** Fire the captured install prompt; clears it after the user chooses. */
+async function triggerInstall(): Promise<void> {
+  if (!deferredInstall) return;
+  const evt = deferredInstall;
+  deferredInstall = null;
+  if (settingsOpen) paintSettings();
+  try {
+    await evt.prompt();
+    await evt.userChoice;
+  } catch {
+    // user dismissed or the browser refused — non-fatal.
+  }
+}
+
 // Escape hatches for upcoming slices.
 declare global {
   interface Window {
@@ -2787,6 +2886,8 @@ applyTheme();
 applySettings();
 // F21: open the live-reload stream so external edits flow into the open tab.
 connectLive();
+// F35: reflect initial connectivity in the banner (e.g. loaded while offline).
+updateOfflineBanner();
 // F22: register the offline-shell service worker (no-op where unsupported).
 registerServiceWorker();
 // F32: if the page loaded on a #view/<id> hash, recall that saved view once

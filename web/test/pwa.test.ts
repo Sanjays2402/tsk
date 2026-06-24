@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyRequest, type RequestInfoLike } from "../src/pwa.ts";
+import {
+  classifyRequest,
+  classifyConnectivity,
+  shouldShowOfflineBanner,
+  connectivityMessage,
+  renderOfflineBanner,
+  canInstall,
+  type RequestInfoLike,
+  type InstallPromptEvent,
+} from "../src/pwa.ts";
 
 const ORIGIN = "http://127.0.0.1:7878";
 
@@ -63,4 +72,48 @@ test("a non-navigate GET to / (e.g. shell prefetch) is cache-first", () => {
 
 test("malformed URLs passthrough rather than throw", () => {
   assert.equal(classifyRequest(req({ url: "::::not a url" }), ORIGIN), "passthrough");
+});
+
+// --- F35: connectivity classification ---------------------------------------
+
+test("classifyConnectivity: a live stream is always online", () => {
+  assert.equal(classifyConnectivity(false, true), "online");
+  assert.equal(classifyConnectivity(false, false), "online"); // stream up beats onLine
+});
+
+test("classifyConnectivity: stream down + online flag distinguishes server vs offline", () => {
+  assert.equal(classifyConnectivity(true, true), "server"); // network up, serve down
+  assert.equal(classifyConnectivity(true, false), "offline"); // device offline
+});
+
+test("shouldShowOfflineBanner only for the bad states", () => {
+  assert.equal(shouldShowOfflineBanner("online"), false);
+  assert.equal(shouldShowOfflineBanner("server"), true);
+  assert.equal(shouldShowOfflineBanner("offline"), true);
+});
+
+test("connectivityMessage: distinct honest copy per bad state, empty when healthy", () => {
+  assert.equal(connectivityMessage("online"), "");
+  assert.match(connectivityMessage("server"), /tsk serve|restart/i);
+  assert.match(connectivityMessage("offline"), /offline/i);
+  assert.notEqual(connectivityMessage("server"), connectivityMessage("offline"));
+});
+
+test("renderOfflineBanner: empty when online, carries the message otherwise", () => {
+  assert.equal(renderOfflineBanner("online"), "");
+  const server = renderOfflineBanner("server");
+  assert.match(server, /offline-msg/);
+  assert.match(server, /restart/i);
+  const offline = renderOfflineBanner("offline");
+  assert.match(offline, /offline-ico/);
+});
+
+// --- F35: install affordance ------------------------------------------------
+
+test("canInstall requires a captured prompt and a non-standalone window", () => {
+  const fakePrompt = {} as InstallPromptEvent;
+  assert.equal(canInstall(fakePrompt, false), true); // have prompt, browser tab
+  assert.equal(canInstall(fakePrompt, true), false); // already installed
+  assert.equal(canInstall(null, false), false); // no prompt captured yet
+  assert.equal(canInstall(null, true), false);
 });

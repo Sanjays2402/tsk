@@ -62,3 +62,87 @@ export async function registerServiceWorker(
     return null;
   }
 }
+
+// --- F35: install prompt + offline state ------------------------------------
+
+/**
+ * Connectivity state derived from two independent signals (F35):
+ *   - the SSE live stream status (live / connecting / offline / paused)
+ *   - the browser's navigator.onLine flag
+ *
+ * We distinguish three situations so the banner copy is honest:
+ *   - "online":    everything's fine (stream live or just paused).
+ *   - "server":    the network is up but the stream is down — the `tsk serve`
+ *                  process is probably restarting or stopped. The page still
+ *                  works against its last load + the cache.
+ *   - "offline":   the device itself is offline (navigator.onLine === false).
+ */
+export type Connectivity = "online" | "server" | "offline";
+
+/**
+ * Classify connectivity from the live-stream status + the online flag. A
+ * stream that is "live" or "paused" is fine. When the stream is down, a false
+ * onLine flag means the device is offline; otherwise it's the server that's
+ * unreachable.
+ */
+export function classifyConnectivity(streamOffline: boolean, online: boolean): Connectivity {
+  if (!streamOffline) return "online";
+  return online ? "server" : "offline";
+}
+
+/** Whether a banner should show for a given connectivity (only the bad states). */
+export function shouldShowOfflineBanner(c: Connectivity): boolean {
+  return c === "server" || c === "offline";
+}
+
+/** Human banner copy for a connectivity state. "" for the healthy state. */
+export function connectivityMessage(c: Connectivity): string {
+  switch (c) {
+    case "server":
+      return "Can't reach tsk serve — it may be restarting. Showing the last loaded tasks.";
+    case "offline":
+      return "You're offline. Showing cached tasks; changes will fail until you reconnect.";
+    case "online":
+      return "";
+  }
+}
+
+/**
+ * Render the offline/server banner. Returns "" for the healthy state so the
+ * caller can hide the element. Carries a data-connectivity hook for styling.
+ */
+export function renderOfflineBanner(c: Connectivity): string {
+  if (!shouldShowOfflineBanner(c)) return "";
+  const icon = c === "offline" ? "&#9888;" : "&#8635;"; // warning / restart
+  return `<span class="offline-ico" aria-hidden="true">${icon}</span><span class="offline-msg">${connectivityMessage(c)}</span>`;
+}
+
+/**
+ * The minimal shape of the beforeinstallprompt event we depend on (it isn't in
+ * the standard lib types). Captured so the settings "Install app" button can
+ * trigger it on demand.
+ */
+export interface InstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+/**
+ * Decide whether to show the "Install app" affordance: only when we captured a
+ * deferred prompt AND the app isn't already running as an installed PWA.
+ */
+export function canInstall(prompt: InstallPromptEvent | null, standalone: boolean): boolean {
+  return prompt !== null && !standalone;
+}
+
+/**
+ * True when the page is running as an installed/standalone PWA. Checks both the
+ * display-mode media query and the iOS-only navigator.standalone flag. Guarded
+ * so it's safe to call without a browser (returns false).
+ */
+export function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  const mm = window.matchMedia?.("(display-mode: standalone)").matches ?? false;
+  const ios = (navigator as unknown as { standalone?: boolean }).standalone === true;
+  return mm || ios;
+}
