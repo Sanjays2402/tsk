@@ -54,6 +54,9 @@ export function renderRow(t: Task, now: Date): string {
   const tagsHTML = t.tags
     .map((tag) => `<span class="tag">${escapeHTML(tag)}</span>`)
     .join("");
+  const dueCell = dueLabel
+    ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
+    : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
   return `
     <li class="${classes}" data-id="${t.id}">
       <input type="checkbox" class="check" data-toggle aria-label="Toggle done" ${t.done ? "checked" : ""}>
@@ -63,7 +66,7 @@ export function renderRow(t: Task, now: Date): string {
       </div>
       <div class="meta">
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
-        ${dueLabel ? `<span class="due" title="${escapeHTML(t.due ?? "")}">${escapeHTML(dueLabel)}</span>` : ""}
+        ${dueCell}
         <span class="priority ${escapeHTML(t.priority)}" title="${escapeHTML(t.priority)} priority">${priorityShort(t.priority)}</span>
         <button class="row-del" data-del type="button" aria-label="Delete task" title="Delete (x)">&times;</button>
       </div>

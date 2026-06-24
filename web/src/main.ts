@@ -30,6 +30,13 @@ import {
   type FilterState,
   type Priority,
 } from "./filter";
+import {
+  previewVM,
+  resolveDueCommit,
+  renderPresets,
+  renderDuePreview,
+  type DuePreviewVM,
+} from "./duepicker";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
@@ -424,8 +431,140 @@ async function commitEdit(id: number, title: string): Promise<void> {
   }
 }
 
-// --- F6: quick-add composer ------------------------------------------------
+// --- F12: natural-language due-date picker ---------------------------------
 
+/** True while the due-picker popover is mounted, so list nav keys stand down. */
+let duePicking = false;
+/** Monotonic token so a slow parse response for stale input is ignored. */
+let dueParseSeq = 0;
+
+/**
+ * Open the due-date picker for a task. Renders a small popover anchored under
+ * the row with a natural-language input (today, fri, in 3d, eom, 2026-07-04),
+ * quick presets, and a live "resolves to Sat, Jul 4" preview validated by the
+ * server's /api/parse-date. Enter / preset-click commits via PATCH; Escape or
+ * a click-away cancels. Clearing the field removes the due date.
+ */
+function openDuePicker(id: number): void {
+  if (duePicking || editing) return;
+  const row = els.content.querySelector<HTMLElement>(`[data-id="${id}"]`);
+  if (!row) return;
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+
+  duePicking = true;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const pop = document.createElement("div");
+  pop.className = "due-pop";
+  pop.setAttribute("data-due-pop", "");
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "Set due date");
+  pop.innerHTML = `
+    <div class="due-pop-row">
+      <input class="due-input" data-due-input type="text" spellcheck="false"
+             placeholder="today, fri, in 3d, eom, 2026-07-04…"
+             aria-label="Due date (natural language)">
+    </div>
+    <div class="due-presets" data-due-presets>${renderPresets()}</div>
+    <div class="due-preview-line" data-due-preview-line>${renderDuePreview(previewVM(task.due ?? "", task.due ? { ok: true, input: task.due, date: task.due, pretty: prettyLocal(task.due) } : null))}</div>`;
+  row.appendChild(pop);
+
+  const input = pop.querySelector<HTMLInputElement>("[data-due-input]")!;
+  const previewLine = pop.querySelector<HTMLElement>("[data-due-preview-line]")!;
+  input.value = task.due ?? "";
+  input.focus();
+  input.select();
+
+  let settled = false;
+  const close = (): void => {
+    if (settled) return;
+    settled = true;
+    duePicking = false;
+    pop.remove();
+    document.removeEventListener("click", onAway, true);
+    render();
+  };
+  const commit = async (raw: string): Promise<void> => {
+    const patch = resolveDueCommit(raw, task.due);
+    close();
+    if (patch) await commitDue(id, patch.due);
+  };
+
+  const updatePreview = async (raw: string): Promise<void> => {
+    const seq = ++dueParseSeq;
+    if (raw.trim() === "") {
+      previewLine.innerHTML = renderDuePreview(previewVM("", null));
+      return;
+    }
+    previewLine.innerHTML = renderDuePreview(previewVM(raw, null)); // "Parsing…"
+    try {
+      const res = await api.parseDate(raw);
+      if (seq !== dueParseSeq) return; // a newer keystroke superseded us
+      const vm: DuePreviewVM = previewVM(raw, res);
+      previewLine.innerHTML = renderDuePreview(vm);
+    } catch {
+      if (seq !== dueParseSeq) return;
+      previewLine.innerHTML = renderDuePreview(previewVM(raw, { ok: false, input: raw, error: "offline" }));
+    }
+  };
+
+  input.addEventListener("input", () => updatePreview(input.value));
+  input.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commit(input.value);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close();
+    }
+  });
+  pop.addEventListener("click", (e) => {
+    const preset = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-due-preset]");
+    if (preset) {
+      e.stopPropagation();
+      commit(preset.dataset.duePreset ?? "");
+    }
+  });
+  // Click outside the popover closes it (capture so it beats row handlers).
+  const onAway = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node)) close();
+  };
+  setTimeout(() => document.addEventListener("click", onAway, true), 0);
+}
+
+/** Persist a due-date change via PATCH, optimistic with rollback. */
+async function commitDue(id: number, due: string): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  try {
+    const confirmed = await api.patchTask(id, { due });
+    currentTasks[idx] = confirmed;
+    render();
+  } catch (err) {
+    currentTasks[idx] = before;
+    render();
+    setStatus(`due failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 4_000);
+  }
+}
+
+/** Best-effort local pretty-print of a YYYY-MM-DD for the picker's seed preview. */
+function prettyLocal(due: string): string {
+  const [y, m, d] = due.split("-").map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return due;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// --- F6: quick-add composer ------------------------------------------------
 /** Re-render the live token preview and toggle the submit-enabled state. */
 function updateComposerPreview(): void {
   const parsed = parseQuickAdd(els.input.value);
@@ -561,6 +700,10 @@ els.content.addEventListener("click", (e) => {
     requestDelete(id);
     return;
   }
+  if (target.closest("[data-due]")) {
+    openDuePicker(id);
+    return;
+  }
   nav = select(nav, visibleIds, id);
   applySelection();
 });
@@ -608,7 +751,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
-  if (editing) return; // inline edit input handles its own keys
+  if (editing || duePicking) return; // inline edit / due picker handle their own keys
 
   switch (e.key) {
     case "j":
@@ -652,6 +795,12 @@ document.addEventListener("keydown", (e) => {
         enterEditMode(nav.selectedId);
       }
       break;
+    case "d":
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        openDuePicker(nav.selectedId);
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -690,6 +839,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["g / G", "Jump to first / last"],
   ["space / enter", "Toggle the selected task done"],
   ["e", "Edit the selected task's title"],
+  ["d", "Set / change the due date"],
   ["x / del", "Delete the selected task (undoable)"],
   ["u", "Undo the last delete"],
   ["n", "Focus the add-task field"],
@@ -749,6 +899,7 @@ declare global {
       del: (id: number) => void;
       undo: () => void;
       edit: (id: number) => void;
+      due: (id: number) => void;
     };
   }
 }
@@ -765,6 +916,7 @@ window.tsk = {
   del: requestDelete,
   undo: undoDelete,
   edit: enterEditMode,
+  due: openDuePicker,
 };
 
 refresh();

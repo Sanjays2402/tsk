@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -114,6 +115,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/tasks", s.handleTasks)
 	s.mux.HandleFunc("/api/tasks/", s.handleTaskByID)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.HandleFunc("/api/parse-date", s.handleParseDate)
 
 	// Root: serve SPA when StaticFS is provided, otherwise a tiny landing page.
 	if s.opts.StaticFS != nil {
@@ -409,6 +411,64 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	now := s.opts.Now()
 	writeJSON(w, http.StatusOK, computeStatsDTO(st.Tasks, now))
+}
+
+// handleParseDate validates a natural-language date string (today, fri, in 3d,
+// eow, 2026-07-04, ...) against the same dateparse package the CLI and the
+// create/update handlers use, and echoes back the resolved YYYY-MM-DD plus a
+// short relative label. It is read-only (no store access) so the F12 due-date
+// picker can give live "this resolves to Sat, Jul 4" feedback as you type.
+func (s *Server) handleParseDate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	raw := strings.TrimSpace(r.URL.Query().Get("q"))
+	if raw == "" {
+		writeError(w, http.StatusBadRequest, "missing date query (?q=)")
+		return
+	}
+	now := s.opts.Now()
+	parsed, err := dateparse.Parse(raw, now, s.opts.TZ)
+	if err != nil {
+		// 200 with ok:false keeps this a non-exceptional "you're still typing"
+		// signal rather than a console-spamming 400 on every keystroke.
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":    false,
+			"input": raw,
+			"error": err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":       true,
+		"input":    raw,
+		"date":     parsed.Format(model.DateLayout),
+		"weekday":  parsed.Format("Mon"),
+		"pretty":   parsed.Format("Mon, Jan 2 2006"),
+		"relative": relativeDayLabel(parsed, now),
+	})
+}
+
+// relativeDayLabel renders a short human delta ("today", "tomorrow", "in 3d",
+// "5d ago") between a target date and now, matching the web list's formatDue.
+func relativeDayLabel(target, now time.Time) string {
+	t0 := time.Date(target.Year(), target.Month(), target.Day(), 0, 0, 0, 0, target.Location())
+	n0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	// Round rather than truncate so a 23h/25h DST day still lands on the right delta.
+	days := int(math.Round(t0.Sub(n0).Hours() / 24))
+	switch {
+	case days == 0:
+		return "today"
+	case days == 1:
+		return "tomorrow"
+	case days == -1:
+		return "yesterday"
+	case days < 0:
+		return fmt.Sprintf("%dd ago", -days)
+	default:
+		return fmt.Sprintf("in %dd", days)
+	}
 }
 
 // handlePlaceholder is served when no embedded SPA is wired (e.g. the binary

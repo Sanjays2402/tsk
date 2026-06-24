@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -283,5 +284,71 @@ func TestInvalidIDReturns400(t *testing.T) {
 	rec, _ := do(t, s.Handler(), http.MethodGet, "/api/tasks/abc", nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestParseDateValid(t *testing.T) {
+	s, _ := newTestServer(t) // now anchored at 2026-06-24 (a Wednesday) UTC
+	h := s.Handler()
+
+	cases := []struct {
+		q        string
+		date     string
+		relative string
+	}{
+		{"today", "2026-06-24", "today"},
+		{"tomorrow", "2026-06-25", "tomorrow"},
+		{"2026-07-04", "2026-07-04", "in 10d"},
+		{"in 3d", "2026-06-27", "in 3d"},
+	}
+	for _, c := range cases {
+		rec, body := do(t, h, http.MethodGet, "/api/parse-date?q="+url.QueryEscape(c.q), nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("q=%q status = %d body=%s", c.q, rec.Code, rec.Body.String())
+		}
+		if body["ok"] != true {
+			t.Fatalf("q=%q ok = %v, want true (body=%v)", c.q, body["ok"], body)
+		}
+		if body["date"] != c.date {
+			t.Fatalf("q=%q date = %v, want %s", c.q, body["date"], c.date)
+		}
+		if body["relative"] != c.relative {
+			t.Fatalf("q=%q relative = %v, want %s", c.q, body["relative"], c.relative)
+		}
+		if body["pretty"] == "" || body["pretty"] == nil {
+			t.Fatalf("q=%q missing pretty label: %v", c.q, body)
+		}
+	}
+}
+
+func TestParseDateInvalidIsSoft200(t *testing.T) {
+	s, _ := newTestServer(t)
+	// An unparseable string is a soft failure (200 + ok:false), not a 400, so
+	// the live picker doesn't spam errors while you're still typing.
+	rec, body := do(t, s.Handler(), http.MethodGet, "/api/parse-date?q=next+groundhog+day", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (soft fail)", rec.Code)
+	}
+	if body["ok"] != false {
+		t.Fatalf("ok = %v, want false", body["ok"])
+	}
+	if body["error"] == nil || body["error"] == "" {
+		t.Fatalf("expected error field on soft fail: %v", body)
+	}
+}
+
+func TestParseDateMissingQueryReturns400(t *testing.T) {
+	s, _ := newTestServer(t)
+	rec, _ := do(t, s.Handler(), http.MethodGet, "/api/parse-date", nil)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestParseDateMethodNotAllowed(t *testing.T) {
+	s, _ := newTestServer(t)
+	rec, _ := do(t, s.Handler(), http.MethodPost, "/api/parse-date?q=today", nil)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
 	}
 }

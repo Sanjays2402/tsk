@@ -36,6 +36,16 @@ export interface Stats {
   top_tags: Array<{ tag: string; count: number }>;
 }
 
+export interface ParseDate {
+  ok: boolean;
+  input: string;
+  date?: string; // YYYY-MM-DD when ok
+  weekday?: string; // "Mon"
+  pretty?: string; // "Sat, Jul 4 2026"
+  relative?: string; // "in 10d"
+  error?: string;
+}
+
 export interface TaskInput {
   title: string;
   priority?: Priority;
@@ -96,5 +106,7 @@ export const api = {
   deleteTask: (id: number) =>
     request<{ ok: boolean; id: number }>("DELETE", `/api/tasks/${id}`),
   stats: () => request<Stats>("GET", "/api/stats"),
+  parseDate: (q: string) =>
+    request<ParseDate>("GET", `/api/parse-date?q=${encodeURIComponent(q)}`),
   health: () => request<{ ok: boolean; file: string; now: string }>("GET", "/api/health"),
 };

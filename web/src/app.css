@@ -821,3 +821,113 @@ kbd {
   color: var(--color-accent);
   font-style: normal;
 }
+
+/* F12: due-date picker popover + the +date affordance on undated rows */
+.due-add {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.row:hover .due-add,
+.row.is-selected .due-add,
+.due-add:focus-visible {
+  opacity: 1;
+}
+.due-add:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+.due {
+  cursor: pointer;
+}
+.due:hover {
+  color: var(--color-accent);
+}
+
+.due-pop {
+  position: absolute;
+  z-index: 40;
+  right: var(--sp-4);
+  margin-top: var(--sp-2);
+  width: min(320px, 86vw);
+  padding: var(--sp-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  cursor: default;
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.row {
+  position: relative;
+}
+.due-pop-row {
+  display: flex;
+}
+.due-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+  background: var(--color-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.due-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.due-preset {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.due-preset:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.due-preview-line {
+  font-size: var(--fs-xs);
+  min-height: 16px;
+  padding-top: 2px;
+}
+.due-preview {
+  font-family: var(--font-mono);
+}
+.due-preview.is-valid {
+  color: var(--color-accent);
+}
+.due-preview.is-empty {
+  color: var(--color-text-faint);
+}
+.due-preview.is-invalid {
+  color: var(--color-overdue);
+}
