@@ -38,14 +38,14 @@ type taskInputDTO struct {
 // taskPatchDTO is the body shape for PATCH /api/tasks/:id. Every field is a
 // pointer so omitted fields are left untouched; explicit "" for due clears it.
 type taskPatchDTO struct {
-	Title    *string   `json:"title,omitempty"`
-	Priority *string   `json:"priority,omitempty"`
-	Due      *string   `json:"due,omitempty"`
-	Tags     *[]string `json:"tags,omitempty"`
-	Notes    *string   `json:"notes,omitempty"`
-	Done     *bool     `json:"done,omitempty"`
-	Pinned    *bool    `json:"pinned,omitempty"`     // F27: set/clear the sticky flag
-	DependsOn *[]int   `json:"depends_on,omitempty"` // F26: replace the blocker set
+	Title     *string   `json:"title,omitempty"`
+	Priority  *string   `json:"priority,omitempty"`
+	Due       *string   `json:"due,omitempty"`
+	Tags      *[]string `json:"tags,omitempty"`
+	Notes     *string   `json:"notes,omitempty"`
+	Done      *bool     `json:"done,omitempty"`
+	Pinned    *bool     `json:"pinned,omitempty"`     // F27: set/clear the sticky flag
+	DependsOn *[]int    `json:"depends_on,omitempty"` // F26: replace the blocker set
 }
 
 // moveInputDTO is the body shape for POST /api/tasks/:id/move. Before is the
