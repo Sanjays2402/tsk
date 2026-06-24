@@ -295,7 +295,9 @@ function render(): void {
   // F26: build the done-index over ALL live tasks (not just the filtered view)
   // so a blocker hidden by the current filter still counts as blocking.
   const doneIdx = doneIndex(notDeleted);
-  els.content.innerHTML = renderSections(sections, now, { done: doneIdx });
+  // F30: pass the active search query so matched title chars get highlighted.
+  const query = filter.query.trim();
+  els.content.innerHTML = renderSections(sections, now, { done: doneIdx, query });
   els.count.innerHTML = summarize(shown);
   renderFilterBar(routed, shown.length);
   renderTagPage(routed.length);

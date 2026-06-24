@@ -319,6 +319,14 @@ body {
 .row.is-done:hover .title {
   text-decoration: line-through;
 }
+/* F30: search-match highlight — mark the matched chars in a filtered title. */
+.title mark {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
 /* F7: inline title edit input replaces the .title span in place */
 .title-edit {
   flex: 1;

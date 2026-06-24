@@ -9,6 +9,7 @@ import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
 import { renderNotesButton } from "./notes";
 import { blockedClass, renderBlockedBadge, type DepTask } from "./deps";
+import { highlightTitle } from "./highlight";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -50,11 +51,13 @@ export function dueClassFor(due: string | undefined, done: boolean, now: Date): 
 
 /**
  * Per-render context threaded into row rendering. `done` is the id->done index
- * (F26) used to compute blocked state; absent context means "no dependency
+ * (F26) used to compute blocked state; `query` is the active filter text (F30)
+ * used to highlight matched characters in titles. Absent context means "no
  * decoration" (keeps renderRow usable in isolation / tests).
  */
 export interface RowContext {
   done?: Map<number, boolean>;
+  query?: string;
 }
 
 /** Render a single task row as HTML. */
@@ -74,13 +77,16 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
     : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
   const depBadge = ctx.done ? renderBlockedBadge(t as DepTask, ctx.done) : "";
   const pinBtn = `<button class="pin-btn${t.pinned ? " is-on" : ""}" data-pin type="button" aria-pressed="${t.pinned ? "true" : "false"}" aria-label="${t.pinned ? "Unpin task" : "Pin task"}" title="${t.pinned ? "Unpin (p)" : "Pin to top (p)"}" tabindex="-1">${t.pinned ? "★" : "☆"}</button>`;
+  // F30: when a search query is active, mark the matched characters in the
+  // title. highlightTitle escapes the title itself, so it's safe in innerHTML.
+  const titleHTML = ctx.query ? highlightTitle(t.title, ctx.query) : escapeHTML(t.title);
   return `
     <li class="${classes}" data-id="${t.id}" draggable="true">
       <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>
       <input type="checkbox" class="check" data-toggle aria-label="Toggle done" ${t.done ? "checked" : ""}>
       <div class="title-wrap">
         ${pinBtn}
-        <span class="title" title="${escapeHTML(t.title)}">${escapeHTML(t.title)}</span>
+        <span class="title" title="${escapeHTML(t.title)}">${titleHTML}</span>
         <span class="id">#${t.id}</span>
       </div>
       <div class="meta">
