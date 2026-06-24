@@ -19,8 +19,15 @@ import {
   trackMove,
   type PressState,
 } from "./touch";
-import { parseQuickAdd, isSubmittable } from "./quickadd";
+import { parseQuickAdd, isSubmittable, splitPasteLines, isMultiLine } from "./quickadd";
 import { renderComposerPreview } from "./composer";
+import {
+  activeToken,
+  suggestFor,
+  applySuggestion,
+  renderAutocomplete,
+  type Suggestion,
+} from "./autocomplete";
 import { groupIntoSections, flattenSections } from "./sections";
 import { emptyNav, reconcile, move, select, type NavMove, type NavState } from "./keynav";
 import { renderToast, deletedMessage } from "./toast";
@@ -175,11 +182,15 @@ root.innerHTML = `
           data-input
           type="text"
           name="quickadd"
-          placeholder="Add a task…  try: ship release !high @fri #work"
-          aria-label="Add a task. Use !priority @due #tag for inline metadata."
+          placeholder="Add a task…  try: ship release !high @fri #work depends:#3"
+          aria-label="Add a task. Use !priority @due #tag depends:#N for inline metadata."
           spellcheck="false"
+          aria-autocomplete="list"
+          aria-expanded="false"
+          aria-controls="composer-ac"
         >
         <button class="composer-submit" type="submit" data-submit tabindex="-1">Add</button>
+        <ul class="composer-ac" id="composer-ac" data-composer-ac role="listbox" aria-label="Suggestions" hidden></ul>
       </div>
       <div class="composer-preview" data-preview></div>
     </form>
@@ -240,6 +251,7 @@ const els = {
   field: must<HTMLElement>("[data-field]"),
   input: must<HTMLInputElement>("[data-input]"),
   preview: must<HTMLElement>("[data-preview]"),
+  composerAc: must<HTMLElement>("[data-composer-ac]"),
   filterbar: must<HTMLElement>("[data-filterbar]"),
   filterInput: must<HTMLInputElement>("[data-filter-input]"),
   filterClear: must<HTMLButtonElement>("[data-filter-clear]"),
@@ -1815,14 +1827,91 @@ function updateComposerPreview(): void {
   els.field.classList.toggle("can-submit", isSubmittable(parsed));
 }
 
+// --- F38: composer autocomplete (#tag + @due) ------------------------------
+
+/** Current suggestion list + highlighted index for the composer dropdown. */
+let acSuggestions: Suggestion[] = [];
+let acIndex = 0;
+let acOpen = false;
+
+/** True while the autocomplete dropdown is showing suggestions. */
+function isAutocompleteOpen(): boolean {
+  return acOpen;
+}
+
+/** Hide + reset the composer autocomplete dropdown. */
+function closeAutocomplete(): void {
+  if (!acOpen && els.composerAc.hidden) return;
+  acOpen = false;
+  acSuggestions = [];
+  acIndex = 0;
+  els.composerAc.hidden = true;
+  els.composerAc.innerHTML = "";
+  els.input.setAttribute("aria-expanded", "false");
+}
+
+/** Recompute suggestions for the token under the caret and paint the dropdown. */
+function refreshAutocomplete(): void {
+  const caret = els.input.selectionStart ?? els.input.value.length;
+  const token = activeToken(els.input.value, caret);
+  const tags = collectTags(currentTasks).map((t) => ({ tag: t.tag, count: t.count }));
+  acSuggestions = suggestFor(token, tags);
+  if (acSuggestions.length === 0) {
+    closeAutocomplete();
+    return;
+  }
+  acOpen = true;
+  acIndex = clampIndex(acIndex, acSuggestions.length);
+  paintAutocomplete();
+  els.input.setAttribute("aria-expanded", "true");
+}
+
+/** Repaint the dropdown list + active row. */
+function paintAutocomplete(): void {
+  els.composerAc.hidden = false;
+  els.composerAc.innerHTML = renderAutocomplete(acSuggestions, acIndex);
+  const active = els.composerAc.querySelector<HTMLElement>(".is-active");
+  active?.scrollIntoView({ block: "nearest" });
+}
+
+/** Insert the highlighted (or given) suggestion into the input at its token. */
+function acceptAutocomplete(index = acIndex): void {
+  const sugg = acSuggestions[index];
+  if (!sugg) return;
+  const caret = els.input.selectionStart ?? els.input.value.length;
+  const token = activeToken(els.input.value, caret);
+  if (!token) {
+    closeAutocomplete();
+    return;
+  }
+  const { text, caret: nextCaret } = applySuggestion(els.input.value, token, sugg.value);
+  els.input.value = text;
+  els.input.setSelectionRange(nextCaret, nextCaret);
+  closeAutocomplete();
+  updateComposerPreview();
+  // Re-run in case the caret now sits in a new token (rare, e.g. chained).
+  refreshAutocomplete();
+}
+
 /**
  * Submit the composer: parse the inline syntax, POST the task, then refresh.
  * The input clears immediately (optimistic) so you can keep typing the next
  * task without waiting on the round-trip. On error we restore the text and
  * flash a status so nothing is lost.
+ *
+ * F38: a multi-line value (a paste of several lines) is split into N tasks and
+ * added sequentially, so you can dump a checklist and get N rows.
  */
 async function submitComposer(): Promise<void> {
   const raw = els.input.value;
+  closeAutocomplete();
+
+  // F38: multi-line paste -> one task per non-blank line (list markers stripped).
+  if (isMultiLine(raw)) {
+    await submitMultiLine(raw);
+    return;
+  }
+
   const parsed = parseQuickAdd(raw);
   if (!isSubmittable(parsed)) return;
 
@@ -1835,6 +1924,7 @@ async function submitComposer(): Promise<void> {
       priority: parsed.priority,
       due: parsed.due,
       tags: parsed.tags.length ? parsed.tags : undefined,
+      depends_on: parsed.dependsOn.length ? parsed.dependsOn : undefined,
     });
     await refresh();
   } catch (err) {
@@ -1847,7 +1937,56 @@ async function submitComposer(): Promise<void> {
   }
 }
 
-els.input.addEventListener("input", updateComposerPreview);
+/**
+ * F38: add one task per line of a multi-line paste. Each line goes through the
+ * same inline token grammar, so "- buy milk #shop" still parses its tag. Runs
+ * sequentially (not parallel) so ids stay in paste order and a later
+ * depends:#N can reference an earlier line by its known id. Reports a count.
+ */
+async function submitMultiLine(raw: string): Promise<void> {
+  const lines = splitPasteLines(raw).filter((l) => isSubmittable(parseQuickAdd(l)));
+  if (lines.length === 0) return;
+  els.input.value = "";
+  updateComposerPreview();
+  setStatus(`adding ${lines.length} tasks…`, false);
+  let added = 0;
+  try {
+    for (const line of lines) {
+      const p = parseQuickAdd(line);
+      await api.createTask({
+        title: p.title,
+        priority: p.priority,
+        due: p.due,
+        tags: p.tags.length ? p.tags : undefined,
+        depends_on: p.dependsOn.length ? p.dependsOn : undefined,
+      });
+      added++;
+    }
+    await refresh();
+    setStatus(`added ${added} tasks`, false);
+    setTimeout(() => setStatus("ready", false), 2_500);
+  } catch (err) {
+    await refresh();
+    setStatus(`added ${added}/${lines.length}, then failed: ${formatErr(err)}`, true);
+    setTimeout(() => setStatus("ready", false), 5_000);
+  }
+}
+
+els.input.addEventListener("input", () => {
+  updateComposerPreview();
+  refreshAutocomplete(); // F38: live #tag / @due suggestions
+});
+// F38: clicking a suggestion inserts it.
+els.composerAc.addEventListener("mousedown", (e) => {
+  // mousedown (not click) so the input doesn't blur-and-close first.
+  const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-ac-value]");
+  if (!item) return;
+  e.preventDefault();
+  const i = Array.from(els.composerAc.children).indexOf(item);
+  if (i >= 0) acceptAutocomplete(i);
+});
+// Close the dropdown when the input loses focus (slight delay for the click).
+els.input.addEventListener("blur", () => setTimeout(closeAutocomplete, 120));
 els.composer.addEventListener("submit", (e) => {
   e.preventDefault();
   submitComposer();
@@ -2191,9 +2330,35 @@ els.tagpageClear.addEventListener("click", (e) => {
 
 // Escape clears + blurs the composer.
 els.input.addEventListener("keydown", (e) => {
+  // F38: when the autocomplete dropdown is open, it owns the arrow/enter/tab keys.
+  if (isAutocompleteOpen()) {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      acIndex = moveIndex(acIndex, acSuggestions.length, 1);
+      paintAutocomplete();
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      acIndex = moveIndex(acIndex, acSuggestions.length, -1);
+      paintAutocomplete();
+      return;
+    }
+    if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      acceptAutocomplete();
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeAutocomplete();
+      return;
+    }
+  }
   if (e.key === "Escape") {
     els.input.value = "";
     updateComposerPreview();
+    closeAutocomplete();
     els.input.blur();
   }
 });

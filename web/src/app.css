@@ -81,6 +81,7 @@ body {
   border-radius: var(--radius-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-soft);
+  position: relative; /* F38: anchor for the autocomplete dropdown */
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
@@ -131,6 +132,47 @@ body {
 .composer-field.can-submit .composer-submit {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* F38: composer autocomplete dropdown (#tag + @due suggestions). Drops below
+   the input field, anchored to .composer-field. */
+.composer-ac {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  z-index: 45;
+  min-width: 200px;
+  max-width: 320px;
+  max-height: 260px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.composer-ac[hidden] {
+  display: none;
+}
+.ac-item {
+  display: flex;
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ac-item.is-active,
+.ac-item:hover {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+.ac-label {
+  font-family: var(--font-mono);
 }
 .composer-field.can-submit .composer-submit:hover {
   background: var(--color-accent-strong);

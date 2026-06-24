@@ -16,6 +16,8 @@
  *                strings ("next week") aren't expressible inline — use the row
  *                editor or CLI for those.
  *   - `#<tag>`   adds a tag (lower-cased + de-duplicated to match the store).
+ *   - `depends:#N` / `dep:N` / `needs:N` adds a dependency on task N (F38).
+ *                Accepts a comma list (`depends:1,2`) and an optional `#`.
  *
  * Everything not matched as a token is the title. A bare `!`, `@`, or `#`
  * (nothing after it) is treated as literal title text, and an `@`/`#`/`!` in
@@ -34,6 +36,12 @@ export interface ParsedQuickAdd {
   due?: string;
   /** Lower-cased, de-duplicated tags from `#tag` tokens, in first-seen order. */
   tags: string[];
+  /**
+   * Task ids this new task should depend on, from `depends:#N` / `dep:N`
+   * tokens (F38). De-duplicated, first-seen order. The server validates them
+   * (rejects unknown ids) at create time.
+   */
+  dependsOn: number[];
 }
 
 /** Maps every accepted priority word (short + long) to its canonical form. */
@@ -59,12 +67,29 @@ export function parseQuickAdd(input: string): ParsedQuickAdd {
   const tokens = input.trim().split(/\s+/).filter(Boolean);
   const titleParts: string[] = [];
   const tags: string[] = [];
+  const dependsOn: number[] = [];
   let priority: Priority | undefined;
   let due: string | undefined;
 
   for (const tok of tokens) {
     const sigil = tok[0];
     const rest = tok.slice(1);
+
+    // F38: a `depends:#N` / `dep:N` token adds a blocker. Accepts an optional
+    // `#` before the number; multiple ids via repeats or a comma list
+    // (`depends:1,2`). Non-numeric payloads fall through to the title.
+    const depMatch = /^(?:depends|dep|needs):(.+)$/i.exec(tok);
+    if (depMatch) {
+      const ids = depMatch[1]
+        .split(",")
+        .map((s) => parseInt(s.replace(/^#/, "").trim(), 10))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      if (ids.length > 0) {
+        for (const n of ids) if (!dependsOn.includes(n)) dependsOn.push(n);
+        continue;
+      }
+      // No valid ids parsed — keep the token in the title.
+    }
 
     if (sigil === "#" && rest.length > 0) {
       const tag = rest.toLowerCase();
@@ -86,10 +111,43 @@ export function parseQuickAdd(input: string): ParsedQuickAdd {
     titleParts.push(tok);
   }
 
-  return { title: titleParts.join(" "), priority, due, tags };
+  return { title: titleParts.join(" "), priority, due, tags, dependsOn };
 }
 
 /** True when a parse yields a non-empty title (i.e. it's submittable). */
 export function isSubmittable(parsed: ParsedQuickAdd): boolean {
   return parsed.title.trim().length > 0;
+}
+
+/**
+ * Split a multi-line paste into individual quick-add lines (F38). Trims each
+ * line, drops blanks, and strips common list markers a user might paste from a
+ * markdown or plain-text checklist:
+ *   - `- buy milk`        (dash bullet)
+ *   - `* buy milk`        (star bullet)
+ *   - `1. buy milk`       (ordered list)
+ *   - `- [ ] buy milk`    (markdown task — open)
+ *   - `- [x] buy milk`    (markdown task — done marker stripped, not honored)
+ * Each cleaned line is still subject to the inline token grammar when added.
+ * A single line (no newline) yields a one-element array, so callers can always
+ * treat the result uniformly.
+ */
+export function splitPasteLines(input: string): string[] {
+  return input
+    .split(/\r?\n/)
+    .map((line) => stripListMarker(line.trim()))
+    .filter((line) => line.length > 0);
+}
+
+/** Strip a leading bullet / ordinal / task-checkbox marker from one line. */
+export function stripListMarker(line: string): string {
+  // Order matters: peel an optional bullet/ordinal, then an optional checkbox.
+  let out = line.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
+  out = out.replace(/^\[[ xX]\]\s+/, "");
+  return out.trim();
+}
+
+/** True when the input contains more than one non-blank line (a multi-paste). */
+export function isMultiLine(input: string): boolean {
+  return splitPasteLines(input).length > 1;
 }

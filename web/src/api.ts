@@ -54,6 +54,7 @@ export interface TaskInput {
   due?: string;
   tags?: string[];
   notes?: string;
+  depends_on?: number[]; // F38: set blockers at creation time
 }
 
 export interface TaskPatch {

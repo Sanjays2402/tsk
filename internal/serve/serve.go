@@ -319,6 +319,27 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// F38: optional depends_on set at creation time (the composer's
+	// `depends:#N` token). Validate against the now-saved store so the new
+	// task's own id is known to sanitizeDeps, then persist again. A bad dep id
+	// fails the whole create with 400 (the task was already added, so roll it
+	// back by removing it to keep create atomic from the client's view).
+	if len(in.DependsOn) > 0 {
+		deps, err := sanitizeDeps(st, id, in.DependsOn)
+		if err != nil {
+			st.Remove(id)
+			_ = st.Save()
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if t := st.ByID(id); t != nil {
+			t.DependsOn = deps
+			if err := st.Save(); err != nil {
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
 	created := st.ByID(id)
 	if created == nil {
 		writeError(w, http.StatusInternalServerError, "task disappeared after save")

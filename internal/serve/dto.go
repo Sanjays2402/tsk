@@ -33,6 +33,11 @@ type taskInputDTO struct {
 	Due      string   `json:"due,omitempty"` // natural language ok
 	Tags     []string `json:"tags,omitempty"`
 	Notes    string   `json:"notes,omitempty"`
+	// DependsOn lets the web composer's `depends:#N` token (F38) set blockers
+	// at creation time, saving a follow-up PATCH. Validated via sanitizeDeps
+	// (drops dupes, refuses self-ref — impossible pre-create — rejects unknown
+	// ids). Omitted/empty means no dependencies.
+	DependsOn []int `json:"depends_on,omitempty"`
 }
 
 // taskPatchDTO is the body shape for PATCH /api/tasks/:id. Every field is a
