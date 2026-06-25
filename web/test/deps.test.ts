@@ -7,6 +7,8 @@ import {
   blockerLabel,
   blockedToggleConfirm,
   needsBlockedConfirm,
+  blockedInBulkToggle,
+  bulkBlockedConfirm,
   computeDepStats,
   filterBlocked,
   renderBlockedBadge,
@@ -117,6 +119,47 @@ test("blockedToggleConfirm lists multiple blockers", () => {
 test("blockedToggleConfirm is empty when nothing blocks", () => {
   const idx = doneIndex(tasks);
   assert.equal(blockedToggleConfirm(tasks[2], idx), ""); // #3 only deps on done #1
+});
+
+// --- F60: bulk blocked-toggle guard ----------------------------------------
+
+test("blockedInBulkToggle flags only the ids that would complete while blocked", () => {
+  // From the fixture: #4 and #5 are blocked + undone; #2 is undone but
+  // unblocked; #6 is done (re-opening, never flagged); #3 deps only on done #1.
+  const flagged = blockedInBulkToggle([2, 3, 4, 5, 6], tasks);
+  assert.deepEqual(flagged, [4, 5]);
+});
+
+test("blockedInBulkToggle follows the input id order", () => {
+  const flagged = blockedInBulkToggle([5, 4], tasks);
+  assert.deepEqual(flagged, [5, 4]);
+});
+
+test("blockedInBulkToggle skips ids not in the list (deleted)", () => {
+  const flagged = blockedInBulkToggle([4, 999], tasks);
+  assert.deepEqual(flagged, [4]);
+});
+
+test("blockedInBulkToggle returns [] when nothing in the selection is blocked", () => {
+  assert.deepEqual(blockedInBulkToggle([1, 2, 3, 6], tasks), []);
+});
+
+test("bulkBlockedConfirm summarizes how many of the selection are blocked", () => {
+  assert.equal(
+    bulkBlockedConfirm([4, 5], 5),
+    "2 of 5 tasks are blocked (#4, #5) — complete all anyway?",
+  );
+});
+
+test("bulkBlockedConfirm uses singular grammar for one blocked task", () => {
+  assert.equal(
+    bulkBlockedConfirm([4], 3),
+    "1 of 3 task is blocked (#4) — complete all anyway?",
+  );
+});
+
+test("bulkBlockedConfirm is empty when none are blocked", () => {
+  assert.equal(bulkBlockedConfirm([], 4), "");
 });
 
 test("renderBlockedBadge is empty when nothing blocks", () => {

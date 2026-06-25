@@ -104,6 +104,43 @@ export function needsBlockedConfirm(task: DepTask, done: Map<number, boolean>): 
 }
 
 /**
+ * F60: the bulk sibling of F45's single-task guard. Given the ids about to be
+ * bulk-toggled and the current task list, return the ids that would be
+ * COMPLETED while still BLOCKED — i.e. each id whose task is currently undone
+ * (a toggle completes it) AND has at least one open blocker. Re-opening a done
+ * task, or completing an unblocked one, is never flagged. Ids not in the list
+ * (deleted) are skipped. Order follows the input `ids` so the confirm reads
+ * predictably. Pure → unit-tested.
+ */
+export function blockedInBulkToggle(ids: number[], tasks: DepTask[]): number[] {
+  const done = doneIndex(tasks);
+  const byId = new Map<number, DepTask>();
+  for (const t of tasks) byId.set(t.id, t);
+  const out: number[] = [];
+  for (const id of ids) {
+    const task = byId.get(id);
+    if (!task) continue;
+    if (needsBlockedConfirm(task, done)) out.push(id);
+  }
+  return out;
+}
+
+/**
+ * F60: the confirmation message for a bulk toggle that would complete one or
+ * more blocked tasks. Names how many of the selection are blocked out of the
+ * total being toggled, so the user can decide before overriding the dependency
+ * gate. Returns "" when none are blocked (no confirm needed). `blocked` is the
+ * count from blockedInBulkToggle; `total` is the whole selection size.
+ */
+export function bulkBlockedConfirm(blocked: number[], total: number): string {
+  if (blocked.length === 0) return "";
+  const list = blocked.map((id) => `#${id}`).join(", ");
+  const n = blocked.length;
+  const noun = n === 1 ? "task is" : "tasks are";
+  return `${n} of ${total} ${noun} blocked (${list}) — complete all anyway?`;
+}
+
+/**
  * F42: the ids of tasks that just became UNBLOCKED across a change in the
  * done-set. Given the task list BEFORE and AFTER a toggle, returns the ids of
  * tasks that were blocked before and are no longer blocked after AND are

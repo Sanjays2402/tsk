@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, filterBlocked, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, filterBlocked, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -510,6 +510,15 @@ function bulkClear(): void {
 async function bulkToggleDone(): Promise<void> {
   const ids = selectedInOrder(bulk, visibleIds);
   if (ids.length === 0) return;
+  // F60: the bulk sibling of F45's single-task guard. If toggling would COMPLETE
+  // one or more still-blocked tasks, list them in a single confirm before
+  // overriding the dependency gate. Re-opening done tasks never prompts. The
+  // done-index is built over ALL live tasks so a blocker outside the selection
+  // still counts.
+  const blocked = blockedInBulkToggle(ids, currentTasks as DepTask[]);
+  if (blocked.length > 0 && typeof confirm === "function") {
+    if (!confirm(bulkBlockedConfirm(blocked, ids.length))) return;
+  }
   bulkClear();
   setStatus(`toggling ${ids.length}…`, false);
   try {
