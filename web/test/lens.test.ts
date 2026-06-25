@@ -5,6 +5,9 @@ import {
   applyLens,
   lensMeta,
   renderLensChipBody,
+  lensForDigit,
+  activeLensSummary,
+  LENS_ORDER,
   type LensKind,
   type LensTask,
 } from "../src/lens.ts";
@@ -131,4 +134,44 @@ test("renderLensChipBody escapes the (static) label safely", () => {
     const html = renderLensChipBody(k);
     assert.doesNotMatch(html, /<script>/);
   }
+});
+
+// --- F71: lens keyboard shortcuts ------------------------------------------
+
+test("LENS_ORDER is the five tile lenses in tile order", () => {
+  assert.deepEqual([...LENS_ORDER], ["blocked", "overdue", "today", "week", "nodue"]);
+});
+
+test("lensForDigit maps 1-5 to the lens at that slot", () => {
+  assert.equal(lensForDigit("1"), "blocked");
+  assert.equal(lensForDigit("2"), "overdue");
+  assert.equal(lensForDigit("3"), "today");
+  assert.equal(lensForDigit("4"), "week");
+  assert.equal(lensForDigit("5"), "nodue");
+});
+
+test("lensForDigit returns null for out-of-range / non-digit keys", () => {
+  assert.equal(lensForDigit("6"), null); // only 5 lenses
+  assert.equal(lensForDigit("0"), null);
+  assert.equal(lensForDigit("9"), null);
+  assert.equal(lensForDigit("a"), null);
+  assert.equal(lensForDigit("Enter"), null);
+  assert.equal(lensForDigit(""), null);
+  assert.equal(lensForDigit("12"), null); // not a single key
+});
+
+test("lensForDigit stays in sync with LENS_ORDER", () => {
+  LENS_ORDER.forEach((kind, i) => {
+    assert.equal(lensForDigit(String(i + 1)), kind);
+  });
+});
+
+test("activeLensSummary names the active lens with its glyph", () => {
+  const s = activeLensSummary("overdue");
+  assert.match(s, /overdue/);
+  assert.ok(s.startsWith(lensMeta("overdue").glyph));
+});
+
+test("activeLensSummary is empty when no lens is active", () => {
+  assert.equal(activeLensSummary(null), "");
 });

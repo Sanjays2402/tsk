@@ -58,6 +58,8 @@ import {
   applyLens,
   renderLensChipBody,
   lensMeta,
+  lensForDigit,
+  activeLensSummary,
   type LensKind,
 } from "./lens";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -3484,6 +3486,16 @@ document.addEventListener("keydown", (e) => {
   if (isTypingTarget(e.target)) return;
   if (editing || duePicking || notesEditing) return; // inline edit / due picker / notes handle their own keys
 
+  // F71: number keys 1-5 toggle a stats lens (blocked / overdue / today / week /
+  // no-due) without opening the sidebar. Pressing the active lens's digit again
+  // clears it. Lives before the switch so it doesn't collide with letter keys.
+  const digitLens = lensForDigit(e.key);
+  if (digitLens !== null) {
+    e.preventDefault();
+    setLens(activeLens === digitLens ? null : digitLens);
+    return;
+  }
+
   switch (e.key) {
     case "j":
     case "ArrowDown":
@@ -3658,6 +3670,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["shift P", "Pin the selected task and float it to the top"],
   ["[ / ]", "Lower / raise the selected task's priority"],
   ["shift [ / ]", "Jump priority to the floor (low) / ceiling (urgent)"],
+  ["1 \u2026 5", "Toggle a stats lens (blocked / overdue / today / week / no-due)"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
@@ -3690,6 +3703,7 @@ function ensureHelpEl(): HTMLElement {
             `<div class="help-row"><dt><kbd>${escapeAttr(keys)}</kbd></dt><dd>${escapeAttr(desc)}</dd></div>`,
         ).join("")}
       </dl>
+      <div class="help-foot" data-help-active></div>
       <div class="help-foot">Press <kbd>?</kbd> or <kbd>esc</kbd> to close</div>
     </div>`;
   // Click the backdrop (not the card) to dismiss.
@@ -3703,6 +3717,14 @@ function ensureHelpEl(): HTMLElement {
 function toggleHelp(open: boolean): void {
   helpOpen = open;
   const el = ensureHelpEl();
+  // F71: reflect the active stats lens (if any) so the overlay doubles as a
+  // "what am I currently looking at?" readout. Empty -> the line collapses.
+  const activeEl = el.querySelector<HTMLElement>("[data-help-active]");
+  if (activeEl) {
+    const summary = activeLensSummary(activeLens);
+    activeEl.hidden = summary === "";
+    activeEl.textContent = summary ? `Active lens: ${summary}` : "";
+  }
   el.classList.toggle("is-open", open);
 }
 

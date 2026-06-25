@@ -1156,6 +1156,18 @@ kbd {
   text-align: center;
 }
 
+/* F71: the "active lens" readout line in the help overlay. Tighter than the
+   close hint below it, accented so it reads as live state, hidden when empty. */
+.help-foot[data-help-active] {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  color: var(--color-amber-600);
+  font-weight: 600;
+}
+.help-foot[data-help-active][hidden] {
+  display: none;
+}
+
 @media (max-width: 640px) {
   .app { padding: var(--sp-5) var(--sp-3) var(--sp-8); }
   .row { grid-template-columns: auto auto 1fr; }

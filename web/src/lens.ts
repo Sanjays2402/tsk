@@ -126,6 +126,43 @@ export function lensMeta(kind: LensKind): LensMeta {
   return LENS_META[kind];
 }
 
+/**
+ * F71: the canonical lens order for the number-key shortcuts (and the help
+ * overlay row). Digit 1 -> blocked, 2 -> overdue, 3 -> today, 4 -> week,
+ * 5 -> no-due — the same left-to-right order the stats tiles read in. Kept as a
+ * single source of truth so the keyboard map and any "lens N" labelling can't
+ * drift from the tile order.
+ */
+export const LENS_ORDER: ReadonlyArray<LensKind> = [
+  "blocked",
+  "overdue",
+  "today",
+  "week",
+  "nodue",
+];
+
+/**
+ * F71: map a KeyboardEvent.key ("1".."5") to the lens at that 1-based slot, or
+ * null for anything else. Pure → unit-tested. main.ts toggles the returned lens
+ * (pressing the active lens's digit again clears it) without opening the
+ * sidebar, so the whole stats-lens set is reachable keyboard-only.
+ */
+export function lensForDigit(key: string): LensKind | null {
+  if (key.length !== 1 || key < "1" || key > "9") return null;
+  const idx = key.charCodeAt(0) - "1".charCodeAt(0);
+  return idx < LENS_ORDER.length ? LENS_ORDER[idx] : null;
+}
+
+/**
+ * F71: a one-line, human summary of the active lens for the help overlay's
+ * "current view" line. Returns "" when no lens is active so the line can hide.
+ */
+export function activeLensSummary(kind: LensKind | null): string {
+  if (kind === null) return "";
+  const meta = LENS_META[kind];
+  return `${meta.glyph} ${meta.label}`;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
