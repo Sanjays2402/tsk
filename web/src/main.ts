@@ -124,6 +124,7 @@ import {
 } from "./palette";
 import {
   exportUrl,
+  scopedExportUrl,
   exportFilename,
   renderExportMenu,
   type ExportFormat,
@@ -2972,8 +2973,11 @@ function toggleExportMenu(open: boolean): void {
   els.exportMenu.hidden = !open;
   els.exportToggle.setAttribute("aria-expanded", String(open));
   els.exportToggle.classList.toggle("is-active", open);
-  if (open && els.exportMenu.childElementCount === 0) {
-    els.exportMenu.innerHTML = renderExportMenu();
+  if (open) {
+    // F75: rebuild each open so the "Export N shown" header reflects the live
+    // lens/filter scope (null -> whole store, no header).
+    const scopedCount = isExportScoped() ? visibleIds.length : null;
+    els.exportMenu.innerHTML = renderExportMenu(scopedCount);
   }
 }
 
@@ -2981,17 +2985,32 @@ function toggleExportMenu(open: boolean): void {
  * Trigger a download of the task list in the chosen format. Uses a temporary
  * anchor with the download attribute so the browser saves the file (the server
  * also sets Content-Disposition as a belt-and-suspenders). Closes the menu.
+ *
+ * F75: when a lens / filter / tag-route is narrowing the board, export only the
+ * subset you SEE (the visible ids, in store order) rather than the whole store,
+ * so "what you see is what you get". With nothing active it's the full export.
  */
 function downloadExport(format: ExportFormat): void {
+  const scoped = isExportScoped();
+  const href = scoped ? scopedExportUrl(format, visibleIds) : exportUrl(format);
   const a = document.createElement("a");
-  a.href = exportUrl(format);
+  a.href = href;
   a.download = exportFilename(format);
   document.body.appendChild(a);
   a.click();
   a.remove();
   toggleExportMenu(false);
-  setStatus(`exported ${format}`, false);
+  setStatus(scoped ? `exported ${format} (${visibleIds.length} shown)` : `exported ${format}`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
+ * F75: is the export currently scoped to a visible subset? True when a stats
+ * lens, a search/facet filter, or a tag route is narrowing the board — the same
+ * conditions that make `visibleIds` a strict subset of the store.
+ */
+function isExportScoped(): boolean {
+  return activeLens !== null || isFilterActive(filter) || route.kind === "tag";
 }
 
 els.exportToggle.addEventListener("click", (e) => {

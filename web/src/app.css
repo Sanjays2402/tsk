@@ -2696,6 +2696,16 @@ button.stat-metric.metric-blocked:hover {
 .export-menu[hidden] {
   display: none;
 }
+/* F75: "Export N shown" header when a lens/filter/tag scopes the download. */
+.export-scope {
+  padding: var(--sp-2) var(--sp-2) var(--sp-1);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-amber-600);
+  letter-spacing: 0.02em;
+}
 .export-item {
   display: flex;
   align-items: center;

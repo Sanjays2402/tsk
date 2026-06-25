@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/Sanjays2402/tsk/internal/model"
@@ -41,6 +42,16 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// F75: an optional ?ids=1,2,3 narrows the export to exactly that subset, in
+	// the store's order, so the web client can "export what you see" — the active
+	// lens / filter / tag-route subset rather than the whole store. Unknown ids
+	// are silently skipped; a present-but-empty ids list yields an empty export
+	// (you asked for a subset and it resolved to nothing). Absent ids => whole
+	// store, the original behavior.
+	tasks := st.Tasks
+	if raw := r.URL.Query().Get("ids"); r.URL.Query().Has("ids") {
+		tasks = filterTasksByIDs(st.Tasks, raw)
+	}
 	switch format {
 	case "json":
 		w.Header().Set("Content-Type", "application/json")
@@ -48,20 +59,48 @@ func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(st.Tasks)
+		_ = enc.Encode(tasks)
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="tasks.csv"`)
 		w.Header().Set("Cache-Control", "no-store")
-		_ = exportCSVTo(w, st.Tasks)
+		_ = exportCSVTo(w, tasks)
 	case "markdown":
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="tasks.md"`)
 		w.Header().Set("Cache-Control", "no-store")
-		_ = exportMarkdownTo(w, st.Tasks)
+		_ = exportMarkdownTo(w, tasks)
 	default:
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown export format %q: expected json, csv, or markdown", format))
 	}
+}
+
+// filterTasksByIDs returns the subset of tasks whose ID appears in the comma-
+// separated id list, preserving the input (store) order. Malformed or unknown
+// ids are skipped. Used by the F75 "export what you see" path so the download
+// carries exactly the client's visible subset. A blank list yields nil (an
+// empty export), which is the honest answer when the active lens shows nothing.
+func filterTasksByIDs(tasks []model.Task, raw string) []model.Task {
+	want := make(map[int]bool)
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(part); err == nil {
+			want[n] = true
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	out := make([]model.Task, 0, len(want))
+	for _, t := range tasks {
+		if want[t.ID] {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // exportCSVTo writes the CSV form, header + one row per task. Field order
