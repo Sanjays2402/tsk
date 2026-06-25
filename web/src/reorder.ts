@@ -90,6 +90,29 @@ export function arraysEqual(a: number[], b: number[]): boolean {
 }
 
 /**
+ * F44: compute the reorder that moves `moved` to the very TOP of the file
+ * order (used by the "pin to top" shortcut). Returns the new order plus the
+ * `before` id to persist — which is whatever currently sits first that ISN'T
+ * the moved task, so `store.Move(moved, before)` drops it in front of the
+ * whole list. A no-op when `moved` is already first or unknown.
+ */
+export function computePinToTop(order: number[], moved: number): ReorderResult {
+  const from = order.indexOf(moved);
+  if (from < 0) {
+    return { order: order.slice(), before: moved, changed: false };
+  }
+  // The first id that isn't the moved task — moved will land in front of it.
+  const firstOther = order.find((id) => id !== moved);
+  if (firstOther === undefined || from === 0) {
+    // Already at the top (or the only task): nothing to do.
+    return { order: order.slice(), before: moved, changed: false };
+  }
+  const without = order.filter((id) => id !== moved);
+  const next = [moved, ...without];
+  return { order: next, before: firstOther, changed: !arraysEqual(order, next) };
+}
+
+/**
  * Given the bounding rect of a row and the pointer's clientY, decide whether
  * the drop should land before (top half) or after (bottom half) the row.
  */

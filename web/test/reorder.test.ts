@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   computeReorder,
   computeSectionReorder,
+  computePinToTop,
   arraysEqual,
   dropPosForY,
   type DropPos,
@@ -160,4 +161,44 @@ test("section reorder does not mutate inputs", () => {
   computeSectionReorder(g, s, 2, 1, "before");
   assert.deepEqual(g, [1, 2, 3]);
   assert.deepEqual(s, [1, 2]);
+});
+
+// --- F44: pin-to-top reorder (shift+P shortcut) ----------------------------
+
+test("pin-to-top moves a middle task to the front, before the old first", () => {
+  const r = computePinToTop([1, 2, 3, 4, 5], 3);
+  assert.equal(r.changed, true);
+  assert.equal(r.before, 1); // lands in front of the old first id
+  assert.deepEqual(r.order, [3, 1, 2, 4, 5]);
+});
+
+test("pin-to-top moves the last task to the front", () => {
+  const r = computePinToTop([1, 2, 3], 3);
+  assert.equal(r.changed, true);
+  assert.equal(r.before, 1);
+  assert.deepEqual(r.order, [3, 1, 2]);
+});
+
+test("pin-to-top is a no-op when already first", () => {
+  const r = computePinToTop([1, 2, 3], 1);
+  assert.equal(r.changed, false);
+  assert.deepEqual(r.order, [1, 2, 3]);
+});
+
+test("pin-to-top is a no-op for an unknown id", () => {
+  const r = computePinToTop([1, 2, 3], 99);
+  assert.equal(r.changed, false);
+  assert.deepEqual(r.order, [1, 2, 3]);
+});
+
+test("pin-to-top is a no-op for a single-task list", () => {
+  const r = computePinToTop([7], 7);
+  assert.equal(r.changed, false);
+  assert.deepEqual(r.order, [7]);
+});
+
+test("pin-to-top does not mutate its input", () => {
+  const order = [1, 2, 3];
+  computePinToTop(order, 2);
+  assert.deepEqual(order, [1, 2, 3]);
 });

@@ -74,7 +74,7 @@ import {
   renderBulkBar,
   type BulkState,
 } from "./bulkselect";
-import { computeReorder, computeSectionReorder, dropPosForY, type DropPos } from "./reorder";
+import { computeReorder, computeSectionReorder, computePinToTop, dropPosForY, type DropPos } from "./reorder";
 import {
   parseTagOps,
   isNoopTagOps,
@@ -1370,6 +1370,30 @@ async function togglePin(id: number): Promise<void> {
   } finally {
     inFlight.delete(key);
   }
+}
+
+/**
+ * F44: pin a task AND float it to the very top of the file order in one
+ * gesture (the `shift+P` shortcut). If the task isn't pinned yet, pin it first
+ * (so it lands in the Pinned section), then persist a move to the front of the
+ * file so it sits at the top of that section's hand-curated order. Idempotent:
+ * an already-pinned, already-first task is a no-op.
+ */
+async function pinToTop(id: number): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  // Ensure the task is pinned (togglePin only flips, so guard on current state).
+  if (!currentTasks[idx].pinned) {
+    await togglePin(id);
+  }
+  // Then move it to the very top of the file order.
+  const order = currentTasks.map((t) => t.id);
+  const result = computePinToTop(order, id);
+  if (result.changed) {
+    await commitReorder(id, result.before, result.order);
+  }
+  nav = select(nav, visibleIds, id);
+  applySelection();
 }
 
 /**
@@ -2909,6 +2933,27 @@ document.addEventListener("keydown", (e) => {
         togglePin(nav.selectedId);
       }
       break;
+    case "P":
+      // F44: shift+P pins the selected task AND floats it to the top.
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        pinToTop(nav.selectedId);
+      }
+      break;
+    case "]":
+      // F44: raise the selected task's priority (sister of the F29 chip click).
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        cyclePriority(nav.selectedId, false);
+      }
+      break;
+    case "[":
+      // F44: lower the selected task's priority.
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        cyclePriority(nav.selectedId, true);
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -2977,6 +3022,8 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["i", "Edit the selected task's notes"],
   ["b", "Edit the selected task's blockers"],
   ["p", "Pin / unpin the selected task"],
+  ["shift P", "Pin the selected task and float it to the top"],
+  ["[ / ]", "Lower / raise the selected task's priority"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
