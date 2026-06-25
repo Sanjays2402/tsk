@@ -2171,6 +2171,56 @@ button.stat-metric.metric-blocked:hover {
   text-transform: uppercase;
   color: var(--color-text-dim);
 }
+/* F80: lensed-subset breakdown — shown under the stats grid only while a lens
+   is active, so the sidebar reflects what's on screen. A headline count plus a
+   wrap of small priority / cross-cut pills. */
+.lens-bd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.lens-bd-head {
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+}
+.lens-bd-head strong {
+  font-family: var(--font-mono);
+  color: var(--color-text);
+}
+.lens-bd-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.lens-bd-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+}
+.lens-bd-n {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--color-text);
+}
+.lens-bd-pill.bd-urgent .lens-bd-n {
+  color: var(--color-prio-urgent);
+}
+.lens-bd-pill.bd-overdue .lens-bd-n {
+  color: var(--color-overdue);
+}
+.lens-bd-pill.bd-blocked .lens-bd-n {
+  color: var(--color-overdue);
+}
 .stat-tags {
   display: flex;
   flex-direction: column;

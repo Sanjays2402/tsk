@@ -103,6 +103,80 @@ export function applyLens<T extends LensTask>(
   return tasks.filter((t) => matchesLens(t, kind, now, done));
 }
 
+/**
+ * F80: the richer task shape the lens breakdown needs — a lens task plus its
+ * priority, so the sidebar can show how the lensed subset distributes across
+ * urgency levels.
+ */
+export interface LensBreakdownTask extends LensTask {
+  /** "low" | "medium" | "high" | "urgent"; absent counts toward none. */
+  priority?: string;
+}
+
+/**
+ * F80: a small distribution of the tasks matched by the active lens, so the
+ * stats sidebar can read as "what am I actually looking at?" rather than always
+ * reporting whole-board numbers. Carries the lensed total, the per-priority
+ * split, and two cross-cuts (how many of the lensed subset are ALSO overdue /
+ * blocked) that the renderer suppresses when they'd be redundant with the lens
+ * itself.
+ */
+export interface LensBreakdown {
+  total: number;
+  urgent: number;
+  high: number;
+  medium: number;
+  low: number;
+  /** How many of the lensed tasks are overdue (redundant under the overdue lens). */
+  overdue: number;
+  /** How many of the lensed tasks are blocked (redundant under the blocked lens). */
+  blocked: number;
+}
+
+/**
+ * F80: compute the breakdown of the subset a lens selects. Pure → unit-tested.
+ * Applies the lens first (reusing applyLens + the same whole-list done-index),
+ * then tallies the per-priority counts and the overdue / blocked cross-cuts.
+ * The cross-cuts reuse matchesLens so they stay perfectly consistent with the
+ * lenses the user can switch to.
+ */
+export function computeLensBreakdown(
+  tasks: LensBreakdownTask[],
+  kind: LensKind,
+  now: Date,
+  done: Map<number, boolean>,
+): LensBreakdown {
+  const subset = applyLens(tasks, kind, now, done);
+  const out: LensBreakdown = {
+    total: subset.length,
+    urgent: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    overdue: 0,
+    blocked: 0,
+  };
+  for (const t of subset) {
+    switch (t.priority) {
+      case "urgent":
+        out.urgent++;
+        break;
+      case "high":
+        out.high++;
+        break;
+      case "medium":
+        out.medium++;
+        break;
+      case "low":
+        out.low++;
+        break;
+    }
+    if (kind !== "overdue" && matchesLens(t, "overdue", now, done)) out.overdue++;
+    if (kind !== "blocked" && matchesLens(t, "blocked", now, done)) out.blocked++;
+  }
+  return out;
+}
+
 /** Display metadata for the active-lens chip. */
 export interface LensMeta {
   /** Short chip label, lower-case to match the hide-done pill. */
@@ -194,4 +268,43 @@ export function renderLensChipBody(kind: LensKind | null): string {
   if (kind === null) return "";
   const meta = LENS_META[kind];
   return `${meta.glyph} ${escapeHTML(meta.label)} <span class="lens-x" aria-hidden="true">&times;</span>`;
+}
+
+/**
+ * F80: render the lensed-subset breakdown for the stats sidebar. Pure →
+ * unit-tested. Shown only while a lens is active so the sidebar reflects "what
+ * I'm looking at": a headline ("12 blocked") plus a row of small count pills for
+ * the priority split (urgent/high/medium/low, each shown only when non-zero)
+ * and the overdue / blocked cross-cuts (suppressed when they'd be redundant with
+ * the active lens, which computeLensBreakdown already zeroes). Returns "" when
+ * no lens is active or the subset is empty so the section collapses cleanly.
+ */
+export function renderLensBreakdown(
+  kind: LensKind | null,
+  bd: LensBreakdown,
+): string {
+  if (kind === null || bd.total === 0) return "";
+  const meta = LENS_META[kind];
+  const pills: Array<{ cls: string; label: string; n: number }> = [
+    { cls: "bd-urgent", label: "urgent", n: bd.urgent },
+    { cls: "bd-high", label: "high", n: bd.high },
+    { cls: "bd-medium", label: "medium", n: bd.medium },
+    { cls: "bd-low", label: "low", n: bd.low },
+    { cls: "bd-overdue", label: "overdue", n: bd.overdue },
+    { cls: "bd-blocked", label: "blocked", n: bd.blocked },
+  ];
+  const body = pills
+    .filter((p) => p.n > 0)
+    .map(
+      (p) =>
+        `<span class="lens-bd-pill ${p.cls}"><span class="lens-bd-n">${p.n}</span> ${escapeHTML(p.label)}</span>`,
+    )
+    .join("");
+  const pillRow = body ? `<div class="lens-bd-pills">${body}</div>` : "";
+  return `
+    <div class="stats-section-label">In view</div>
+    <div class="lens-bd">
+      <div class="lens-bd-head">${meta.glyph} <strong>${bd.total}</strong> ${escapeHTML(meta.label)}</div>
+      ${pillRow}
+    </div>`;
 }

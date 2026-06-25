@@ -8,9 +8,12 @@ import {
   lensForDigit,
   lensDigit,
   activeLensSummary,
+  computeLensBreakdown,
+  renderLensBreakdown,
   LENS_ORDER,
   type LensKind,
   type LensTask,
+  type LensBreakdownTask,
 } from "../src/lens.ts";
 import { doneIndex } from "../src/deps.ts";
 
@@ -206,4 +209,94 @@ test("lensDigit stays in sync with LENS_ORDER positions", () => {
   LENS_ORDER.forEach((kind, i) => {
     assert.equal(lensDigit(kind), String(i + 1));
   });
+});
+
+// --- F80: lens-aware breakdown ---------------------------------------------
+
+function bdTasks(): LensBreakdownTask[] {
+  return [
+    { id: 1, done: false, due: "2026-06-20", priority: "urgent" }, // overdue, urgent
+    { id: 2, done: false, due: "2026-06-20", priority: "high" }, // overdue, high
+    { id: 3, done: false, due: "2026-06-24", priority: "medium" }, // today, medium
+    { id: 4, done: false, priority: "low" }, // no due, low
+    { id: 5, done: false }, // no due, no priority -> counts toward none
+    { id: 6, done: false, depends_on: [5], priority: "high" }, // blocked by undone #5
+  ];
+}
+
+test("computeLensBreakdown tallies the priority split of the lensed subset", () => {
+  const ts = bdTasks();
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  assert.equal(bd.total, 2); // #1 + #2
+  assert.equal(bd.urgent, 1); // #1
+  assert.equal(bd.high, 1); // #2
+  assert.equal(bd.medium, 0);
+  assert.equal(bd.low, 0);
+});
+
+test("computeLensBreakdown zeroes the cross-cut redundant with the lens", () => {
+  const ts = bdTasks();
+  // Under the overdue lens, the overdue cross-cut is suppressed (would be == total).
+  const overdue = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  assert.equal(overdue.overdue, 0);
+  // Under the blocked lens, the blocked cross-cut is suppressed.
+  const blocked = computeLensBreakdown(ts, "blocked", NOW, doneIndex(ts));
+  assert.equal(blocked.blocked, 0);
+  assert.equal(blocked.total, 1); // #6
+  assert.equal(blocked.high, 1); // #6 is high priority
+});
+
+test("computeLensBreakdown reports the overdue cross-cut under a non-overdue lens", () => {
+  const ts = bdTasks();
+  // The nodue lens picks every undated undone task: #4 (low), #5 (none), and
+  // #6 (high — it has depends_on but no due, so it's undated too). None are
+  // overdue (no due date), so the overdue cross-cut is 0.
+  const nodue = computeLensBreakdown(ts, "nodue", NOW, doneIndex(ts));
+  assert.equal(nodue.total, 3);
+  assert.equal(nodue.overdue, 0);
+  assert.equal(nodue.low, 1); // #4
+  assert.equal(nodue.high, 1); // #6
+  // #6 is blocked (by undone #5), so the blocked cross-cut surfaces here.
+  assert.equal(nodue.blocked, 1);
+});
+
+test("computeLensBreakdown: an empty subset reports all zeros", () => {
+  const ts: LensBreakdownTask[] = [{ id: 1, done: true, due: "2026-06-20", priority: "urgent" }];
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  assert.equal(bd.total, 0);
+  assert.equal(bd.urgent, 0);
+});
+
+test("renderLensBreakdown shows the headline + non-zero pills", () => {
+  const ts = bdTasks();
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  const html = renderLensBreakdown("overdue", bd);
+  assert.match(html, /In view/);
+  assert.match(html, /<strong>2<\/strong>/);
+  assert.match(html, /overdue/); // the lens label in the headline
+  assert.match(html, /bd-urgent/);
+  assert.match(html, /bd-high/);
+  // zero-count levels are omitted
+  assert.doesNotMatch(html, /bd-medium/);
+  assert.doesNotMatch(html, /bd-low/);
+});
+
+test("renderLensBreakdown is empty with no active lens or an empty subset", () => {
+  const empty = { total: 0, urgent: 0, high: 0, medium: 0, low: 0, overdue: 0, blocked: 0 };
+  assert.equal(renderLensBreakdown(null, empty), "");
+  assert.equal(renderLensBreakdown("overdue", empty), "");
+});
+
+test("renderLensBreakdown shows the blocked cross-cut under a schedule lens", () => {
+  // A board where a due-today task is also blocked, so the today lens reports
+  // a "blocked" cross-cut pill.
+  const ts: LensBreakdownTask[] = [
+    { id: 1, done: false }, // open blocker
+    { id: 2, done: false, due: "2026-06-24", priority: "high", depends_on: [1] }, // today + blocked
+  ];
+  const bd = computeLensBreakdown(ts, "today", NOW, doneIndex(ts));
+  assert.equal(bd.total, 1);
+  assert.equal(bd.blocked, 1);
+  const html = renderLensBreakdown("today", bd);
+  assert.match(html, /bd-blocked/);
 });

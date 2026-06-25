@@ -60,7 +60,10 @@ import {
   lensMeta,
   lensForDigit,
   activeLensSummary,
+  computeLensBreakdown,
+  renderLensBreakdown,
   type LensKind,
+  type LensBreakdownTask,
 } from "./lens";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
 import {
@@ -1154,7 +1157,23 @@ async function refreshStats(): Promise<void> {
     // F59: the schedule lens (due-this-week / no-due) is likewise derived from
     // the live list, relative to the client's "today".
     const sched = computeScheduleStats(currentTasks, new Date());
-    els.statsPanel.innerHTML = renderStatsPanel(stats, dep, sched);
+    let html = renderStatsPanel(stats, dep, sched);
+    // F80: when a lens is active, append a breakdown of the lensed subset so the
+    // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
+    // not just whole-board totals. Computed over the same not-deleted pool the
+    // render pipeline lenses, with the whole-list done-index so cross-task
+    // (blocked) and time windows see the real graph.
+    if (activeLens) {
+      const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+      const bd = computeLensBreakdown(
+        notDeleted as LensBreakdownTask[],
+        activeLens,
+        new Date(),
+        doneIndex(notDeleted),
+      );
+      html += renderLensBreakdown(activeLens, bd);
+    }
+    els.statsPanel.innerHTML = html;
   } catch {
     els.statsPanel.innerHTML = `<div class="stats-empty">Stats unavailable</div>`;
   }
