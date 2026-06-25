@@ -119,6 +119,7 @@ import {
   renderPaletteList,
   buildPriorityCommands,
   buildDueCommands,
+  dueTokenForCommandId,
   type Command,
 } from "./palette";
 import {
@@ -3740,6 +3741,8 @@ let paletteIndex = 0;
 let paletteResults: Command[] = [];
 /** F57: the live palette query, so the result list can highlight the match. */
 let paletteQuery = "";
+/** F73: seq guard for the highlighted-command due preview's async parse. */
+let paletteDueParseSeq = 0;
 
 /**
  * Build the command registry from the live app state. Rebuilt each open so
@@ -3986,6 +3989,7 @@ function ensurePaletteEl(): HTMLElement {
              placeholder="Type a command…" aria-label="Command palette" role="combobox"
              aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list">
       <ul class="cmdk-list" id="cmdk-list" data-cmdk-list role="listbox"></ul>
+      <div class="cmdk-due-preview" data-cmdk-due-preview hidden></div>
       <div class="cmdk-foot"><kbd>↑↓</kbd> navigate <kbd>↵</kbd> run <kbd>esc</kbd> close</div>
     </div>`;
   // Backdrop click closes; clicks inside the card don't.
@@ -4053,6 +4057,48 @@ function paintPalette(): void {
   list.innerHTML = renderPaletteList(paletteResults, paletteIndex, paletteQuery);
   const active = list.querySelector<HTMLElement>(".is-active");
   active?.scrollIntoView({ block: "nearest" });
+  // F73: when the highlighted command sets a due date, live-preview the resolved
+  // date below the list (mirrors the F47 bulk-due preview) so you can confirm
+  // "this weekend = Jun 28" before Enter.
+  paintPaletteDuePreview();
+}
+
+/**
+ * F73: drive the palette's due-preview line from the highlighted command. If
+ * it's a "Set due: <preset>" command, resolve its NL token via the same
+ * /api/parse-date endpoint the picker uses and render the date; the "clear"
+ * command shows "Clears the due date"; any other command hides the line. A seq
+ * guard drops out-of-order responses as the highlight moves.
+ */
+function paintPaletteDuePreview(): void {
+  const el = document.querySelector<HTMLElement>("[data-cmdk]");
+  const line = el?.querySelector<HTMLElement>("[data-cmdk-due-preview]");
+  if (!line) return;
+  const cmd = paletteResults[paletteIndex];
+  const token = cmd ? dueTokenForCommandId(cmd.id) : null;
+  if (token === null) {
+    line.hidden = true;
+    line.innerHTML = "";
+    return;
+  }
+  line.hidden = false;
+  const seq = ++paletteDueParseSeq;
+  if (token.trim() === "") {
+    // The clear command — no parse needed.
+    line.innerHTML = renderDuePreview(previewVM("", null));
+    return;
+  }
+  line.innerHTML = renderDuePreview(previewVM(token, null)); // "Parsing…"
+  void api
+    .parseDate(token)
+    .then((res) => {
+      if (seq !== paletteDueParseSeq) return; // a newer highlight superseded us
+      line.innerHTML = renderDuePreview(previewVM(token, res));
+    })
+    .catch(() => {
+      if (seq !== paletteDueParseSeq) return;
+      line.innerHTML = renderDuePreview(previewVM(token, { ok: false, input: token, error: "offline" }));
+    });
 }
 
 function openPalette(): void {
@@ -4070,6 +4116,7 @@ function openPalette(): void {
 function closePalette(): void {
   if (!paletteOpen) return;
   paletteOpen = false;
+  paletteDueParseSeq++; // F73: invalidate any in-flight due preview parse
   const el = document.querySelector<HTMLElement>("[data-cmdk]");
   el?.classList.remove("is-open");
 }

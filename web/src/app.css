@@ -2633,6 +2633,25 @@ button.stat-metric.metric-blocked:hover {
   color: var(--color-text-dim);
 }
 
+/* F73: live due-date preview line under the palette list — shown only while a
+   "Set due: <preset>" command is highlighted, echoing the bulk-due preview. */
+.cmdk-due-preview {
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-dim);
+}
+.cmdk-due-preview[hidden] {
+  display: none;
+}
+.cmdk-due-preview .due-preview.is-valid {
+  color: var(--color-amber-600);
+}
+.cmdk-due-preview .due-preview.is-invalid {
+  color: var(--color-prio-urgent);
+}
+
 /* F19: export menu — topbar pill + dropdown */
 .export-wrap {
   position: relative;

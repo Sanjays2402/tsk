@@ -202,3 +202,20 @@ export function buildDueCommands(hasSel: boolean): DueCommand[] {
     disabled: !hasSel,
   }));
 }
+
+/**
+ * F73: decode the natural-language due token a `due-set-<token>` command id
+ * carries, so the palette can live-preview the resolved date when the command
+ * is highlighted (mirroring the F47 bulk-due preview). Pure → unit-tested.
+ *   - "due-set-today"  -> "today"
+ *   - "due-set-1w"     -> "1w"
+ *   - "due-set-clear"  -> ""   (the clear command — caller shows "Clears…")
+ *   - anything else    -> null (not a due command; no preview)
+ * The "" return for clear is intentionally distinct from null: clear IS a due
+ * command (it previews "Clears the due date"), it just carries no NL token.
+ */
+export function dueTokenForCommandId(id: string): string | null {
+  if (id === "due-set-clear") return "";
+  if (id.startsWith("due-set-")) return id.slice("due-set-".length);
+  return null;
+}

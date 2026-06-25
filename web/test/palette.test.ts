@@ -9,6 +9,7 @@ import {
   renderPaletteList,
   buildPriorityCommands,
   buildDueCommands,
+  dueTokenForCommandId,
   type Command,
 } from "../src/palette.ts";
 
@@ -240,4 +241,31 @@ test("buildDueCommands rows fuzzy-match via filterCommands keywords", () => {
   // "tomorrow" matches the tomorrow preset
   const out2 = filterCommands(cmds, "tomorrow");
   assert.equal(out2[0].id, "due-set-tomorrow");
+});
+
+// --- F73: due-preview token decoding ---------------------------------------
+
+test("dueTokenForCommandId decodes the NL token a due command carries", () => {
+  assert.equal(dueTokenForCommandId("due-set-today"), "today");
+  assert.equal(dueTokenForCommandId("due-set-tomorrow"), "tomorrow");
+  assert.equal(dueTokenForCommandId("due-set-eow"), "eow");
+  assert.equal(dueTokenForCommandId("due-set-1w"), "1w");
+  assert.equal(dueTokenForCommandId("due-set-eom"), "eom");
+});
+
+test("dueTokenForCommandId returns '' for the clear command (distinct from null)", () => {
+  assert.equal(dueTokenForCommandId("due-set-clear"), "");
+});
+
+test("dueTokenForCommandId returns null for non-due commands", () => {
+  assert.equal(dueTokenForCommandId("prio-set-urgent"), null);
+  assert.equal(dueTokenForCommandId("toggle"), null);
+  assert.equal(dueTokenForCommandId("view:abc"), null);
+  assert.equal(dueTokenForCommandId(""), null);
+});
+
+test("dueTokenForCommandId round-trips every buildDueCommands id to its token", () => {
+  for (const c of buildDueCommands(true)) {
+    assert.equal(dueTokenForCommandId(c.id), c.token);
+  }
 });
