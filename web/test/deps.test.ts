@@ -11,6 +11,7 @@ import {
   bulkBlockedConfirm,
   computeDepStats,
   filterBlocked,
+  deepestChainFrom,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -175,6 +176,16 @@ test("renderBlockedBadge carries the first blocker as a jump target", () => {
   assert.match(html, /class="dep-badge"/);
 });
 
+// --- F61: chain-walk button on the badge ------------------------------------
+
+test("renderBlockedBadge adds a chain-walk button carrying this task's id", () => {
+  const idx = doneIndex(tasks);
+  const html = renderBlockedBadge(tasks[3], idx); // #4 -> blocked by #2
+  assert.match(html, /dep-badge-group/);
+  assert.match(html, /data-chain-from="4"/);
+  assert.match(html, /dep-chain-btn/);
+});
+
 test("blockedClass returns the css flag only when blocked", () => {
   const idx = doneIndex(tasks);
   assert.equal(blockedClass(tasks[3], idx), "is-blocked");
@@ -275,4 +286,62 @@ test("computeDepStats: deleted blocker ids don't extend depth", () => {
   const s = computeDepStats(list);
   assert.equal(s.blocked, 0); // dep #99 doesn't exist
   assert.equal(s.longestChain, 0);
+});
+
+// --- F61: deepestChainFrom (per-task chain walk) ----------------------------
+
+test("deepestChainFrom walks the chain from a specific task to its root", () => {
+  // #4 -> #3 -> #2 -> #1; starting at #3 yields just #3 -> #2 -> #1.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+    { id: 4, done: false, depends_on: [3] },
+  ];
+  assert.deepEqual(deepestChainFrom(list, 3), [3, 2, 1]);
+  assert.deepEqual(deepestChainFrom(list, 4), [4, 3, 2, 1]);
+});
+
+test("deepestChainFrom picks the deeper branch at a fork from the start", () => {
+  // #5 -> #4 (deep: ->#3->#2) and #1 (shallow). From #5 the deep branch wins.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false },
+    { id: 3, done: false, depends_on: [2] },
+    { id: 4, done: false, depends_on: [3] },
+    { id: 5, done: false, depends_on: [1, 4] },
+  ];
+  assert.deepEqual(deepestChainFrom(list, 5), [5, 4, 3, 2]);
+});
+
+test("deepestChainFrom is empty for an unblocked / done / missing start", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: true, depends_on: [1] },
+  ];
+  assert.deepEqual(deepestChainFrom(list, 1), []); // #1 has no blockers
+  assert.deepEqual(deepestChainFrom(list, 3), []); // #3 is done
+  assert.deepEqual(deepestChainFrom(list, 99), []); // not in the list
+});
+
+test("deepestChainFrom skips a done blocker (only open links extend)", () => {
+  // #3 -> done #2 and open #1; the only open step is to #1.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: true },
+    { id: 3, done: false, depends_on: [1, 2] },
+  ];
+  assert.deepEqual(deepestChainFrom(list, 3), [3, 1]);
+});
+
+test("deepestChainFrom terminates on a cycle", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false, depends_on: [2] },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const path = deepestChainFrom(list, 1);
+  assert.ok(path.length <= 2);
+  assert.equal(new Set(path).size, path.length); // no id repeats
+  assert.equal(path[0], 1); // starts where asked
 });

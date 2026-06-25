@@ -820,6 +820,39 @@ button.priority:focus-visible {
   outline: 2px solid var(--color-overdue);
   outline-offset: 1px;
 }
+/* F61: the badge + chain-walk button sit together as one group; the chain
+   button reuses the badge hue but reads as a quiet secondary affordance until
+   hovered (the primary action is the jump). */
+.dep-badge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.dep-chain-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1;
+  color: var(--color-overdue);
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--color-overdue) 28%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.dep-chain-btn:hover {
+  background: color-mix(in srgb, var(--color-overdue) 20%, transparent);
+  border-color: var(--color-overdue);
+}
+.dep-chain-btn:focus-visible {
+  outline: 2px solid var(--color-overdue);
+  outline-offset: 1px;
+}
 .row.is-blocked .title {
   color: var(--color-text-dim);
 }

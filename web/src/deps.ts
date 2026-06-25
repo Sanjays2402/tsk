@@ -176,16 +176,22 @@ export function unblockedMessage(ids: number[]): string {
 
 /**
  * Render the "blocked by #N" badge for a row. Returns "" when the task has no
- * open blockers so the badge collapses. The badge is a button so a future
- * slice can wire a click to jump to / highlight the blocker; for now it carries
- * the data hook and a descriptive title.
+ * open blockers so the badge collapses. The badge is a group of two buttons:
+ *   - the label button (data-dep-jump) jumps to the first open blocker (F26);
+ *   - a small chain button (data-chain-from, F61) opens the chain-drill popover
+ *     for THIS task's deepest blocker path, so you can walk #this -> ... -> root
+ *     without leaving the row (vs. the F56 tile, which only walks the GLOBAL
+ *     longest chain). The chain button carries this task's id; main.ts builds
+ *     the path via deepestChainFrom on click.
  */
 export function renderBlockedBadge(task: DepTask, done: Map<number, boolean>): string {
   const blockers = openBlockers(task, done);
   if (blockers.length === 0) return "";
   const label = blockerLabel(blockers);
   const first = blockers[0];
-  return `<button type="button" class="dep-badge" data-dep-jump="${first}" title="${escapeHTML(label)} — click to jump to #${first}" aria-label="${escapeHTML(label)}">&#9211; ${escapeHTML(blockers.map((id) => `#${id}`).join(" "))}</button>`;
+  const jumpBtn = `<button type="button" class="dep-badge" data-dep-jump="${first}" title="${escapeHTML(label)} — click to jump to #${first}" aria-label="${escapeHTML(label)}">&#9211; ${escapeHTML(blockers.map((id) => `#${id}`).join(" "))}</button>`;
+  const chainBtn = `<button type="button" class="dep-chain-btn" data-chain-from="${task.id}" title="Walk the blocker chain from #${task.id}" aria-label="Walk the blocker chain from #${task.id}">&#8627;</button>`;
+  return `<span class="dep-badge-group">${jumpBtn}${chainBtn}</span>`;
 }
 
 /**
@@ -328,6 +334,73 @@ export function longestChainPath(tasks: DepStatsTask[]): number[] {
   const path: number[] = [];
   const seen = new Set<number>();
   let cur: number | undefined = head;
+  while (cur !== undefined && !seen.has(cur)) {
+    path.push(cur);
+    seen.add(cur);
+    const task = byId.get(cur);
+    if (!task) break;
+    const open = openBlockers(task, done);
+    if (open.length === 0) break;
+    let next: number | undefined;
+    let bestD = -1;
+    for (const dep of open) {
+      const d = subDepth(dep);
+      if (d > bestD) {
+        bestD = d;
+        next = dep;
+      }
+    }
+    cur = next;
+  }
+  return path;
+}
+
+/**
+ * F61: the deepest chain of OPEN blockers starting from a SPECIFIC task —
+ * #start -> ... -> #root — so the "blocked by #N" row badge can open the chain
+ * popover for THAT task's own blocker path, not just the global longest chain
+ * (F56). Same greedy "step into the deepest sub-chain" walk and the same
+ * determinism / cycle guard as longestChainPath; the only difference is the
+ * head is fixed to `start` instead of searched for. Returns [] when `start`
+ * isn't in the list, is done, or has no open blockers (nothing to walk).
+ */
+export function deepestChainFrom(tasks: DepStatsTask[], start: number): number[] {
+  const done = doneIndex(tasks);
+  const byId = new Map<number, DepStatsTask>();
+  for (const t of tasks) byId.set(t.id, t);
+
+  const head = byId.get(start);
+  if (!head || head.done) return [];
+  if (openBlockers(head, done).length === 0) return [];
+
+  // memoized sub-chain depth per id (same shape as longestChainPath's helper).
+  const depth = new Map<number, number>();
+  const onPath = new Set<number>();
+  const subDepth = (id: number): number => {
+    const cached = depth.get(id);
+    if (cached !== undefined) return cached;
+    if (onPath.has(id)) return 0;
+    const task = byId.get(id);
+    if (!task) return 0;
+    const open = openBlockers(task, done);
+    if (open.length === 0) {
+      depth.set(id, 0);
+      return 0;
+    }
+    onPath.add(id);
+    let best = 0;
+    for (const dep of open) {
+      const d = subDepth(dep) + 1;
+      if (d > best) best = d;
+    }
+    onPath.delete(id);
+    depth.set(id, best);
+    return best;
+  };
+
+  const path: number[] = [];
+  const seen = new Set<number>();
+  let cur: number | undefined = start;
   while (cur !== undefined && !seen.has(cur)) {
     path.push(cur);
     seen.add(cur);

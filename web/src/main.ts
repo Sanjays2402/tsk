@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -3119,6 +3119,15 @@ els.content.addEventListener("click", (e) => {
     cyclePriority(id, e.shiftKey || e.altKey);
     return;
   }
+  // F61: the small chain button on the "blocked by" badge opens the chain-drill
+  // popover for THIS task's deepest blocker path (checked before data-dep-jump
+  // since it's the more specific affordance inside the badge group).
+  const chainFrom = target.closest<HTMLElement>("[data-chain-from]");
+  if (chainFrom) {
+    const fromId = Number(chainFrom.dataset.chainFrom);
+    if (Number.isFinite(fromId) && fromId > 0) openChainDrill(fromId);
+    return;
+  }
   // F26: the "blocked by #N" badge jumps to (selects + scrolls to) the blocker.
   const depJump = target.closest<HTMLElement>("[data-dep-jump]");
   if (depJump) {
@@ -3308,7 +3317,14 @@ function closeChainDrill(): void {
 
 function onChainAway(e: MouseEvent): void {
   const t = e.target as HTMLElement | null;
-  if (t?.closest("[data-chain-pop]") || t?.closest("[data-chain-drill]")) return;
+  // Don't close on a click inside the popover, the stats tile, or a row's F61
+  // chain-from badge (those toggle / re-open it themselves).
+  if (
+    t?.closest("[data-chain-pop]") ||
+    t?.closest("[data-chain-drill]") ||
+    t?.closest("[data-chain-from]")
+  )
+    return;
   closeChainDrill();
 }
 
@@ -3350,19 +3366,31 @@ function onChainKey(e: KeyboardEvent): void {
   paintChainNav();
 }
 
-function openChainDrill(): void {
+function openChainDrill(fromId?: number): void {
   closeChainDrill();
-  const path = longestChainPath(currentTasks as DepStatsTask[]);
+  // F56: no id -> the GLOBAL longest open-blocker chain (driven by the stats
+  // "chain depth" tile). F61: an id -> the deepest chain starting at THAT task
+  // (driven by the row's "blocked by" badge), so you can walk one row's path.
+  const path =
+    fromId !== undefined
+      ? deepestChainFrom(currentTasks as DepStatsTask[], fromId)
+      : longestChainPath(currentTasks as DepStatsTask[]);
   if (path.length === 0) return;
   const titleById = new Map(currentTasks.map((t) => [t.id, t.title] as const));
   const nodes: ChainNode[] = path.map((id) => ({ id, title: titleById.get(id) ?? `#${id}` }));
   const pop = document.createElement("div");
   pop.className = "chain-pop";
   pop.setAttribute("data-chain-pop", "");
-  pop.innerHTML = `<div class="chain-pop-head">Longest blocker chain<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes)}`;
-  // Anchor under the chain tile if present, else the stats panel corner.
+  const head = fromId !== undefined ? `Blocker chain from #${fromId}` : "Longest blocker chain";
+  pop.innerHTML = `<div class="chain-pop-head">${head}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes)}`;
+  // Anchor under the chain tile if present (F56), else the badge that opened it
+  // (F61), else the stats panel corner.
   const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");
-  const anchor = (tile ?? els.statsPanel).getBoundingClientRect();
+  const badge =
+    fromId !== undefined
+      ? els.content.querySelector<HTMLElement>(`[data-chain-from="${fromId}"]`)
+      : null;
+  const anchor = (badge ?? tile ?? els.statsPanel).getBoundingClientRect();
   pop.style.position = "fixed";
   pop.style.visibility = "hidden";
   document.body.appendChild(pop);
