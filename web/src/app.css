@@ -1325,6 +1325,27 @@ kbd {
   letter-spacing: 0.03em;
   text-transform: lowercase;
 }
+/* F64: the blocked-only lens chip — same shape as the hide-done pill, with a
+   tiny trailing x to signal it clears. Always renders "active" (it only shows
+   while the lens is on) using the overdue hue to echo the blocked tile. */
+.fpill.lens-blocked {
+  width: auto;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.fpill.lens-blocked.is-active {
+  border-color: var(--color-overdue);
+  background: var(--color-overdue);
+  color: #fff;
+}
+.fpill.lens-blocked .lens-x {
+  font-size: var(--fs-sm);
+  opacity: 0.8;
+}
 .fchip {
   display: inline-flex;
   align-items: center;
@@ -1960,6 +1981,16 @@ kbd {
 .stat-metric.metric-pinned .stat-num,
 .stat-metric.metric-chain .stat-num {
   color: var(--color-accent);
+}
+/* F64: the Blocked tile is a button when anything is blocked — it filters the
+   list to just those tasks. Match the chain tile's interactive affordance. */
+button.stat-metric.metric-blocked {
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  font: inherit;
+}
+button.stat-metric.metric-blocked:hover {
+  background: var(--color-accent-soft);
 }
 /* F59: schedule lens. Two tiles (due-this-week / no-due) sharing the dep row's
    spacing. The week tile uses the calm "today" hue so it reads as planning

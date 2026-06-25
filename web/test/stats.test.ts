@@ -118,6 +118,21 @@ test("renderDepStats shows blocked, pinned, and chain depth", () => {
   assert.match(html, /metric-blocked is-alert/); // alert since blocked > 0
 });
 
+// --- F64: blocked tile click-to-filter -------------------------------------
+
+test("renderDepStats: the Blocked tile is a drill button when anything is blocked", () => {
+  const html = renderDepStats({ blocked: 2, pinned: 0, longestChain: 0 });
+  assert.match(html, /data-blocked-drill/);
+  assert.match(html, /button[^>]*metric-blocked/);
+});
+
+test("renderDepStats: the Blocked tile is static (no drill) when nothing is blocked", () => {
+  const html = renderDepStats({ blocked: 0, pinned: 2, longestChain: 0 });
+  assert.doesNotMatch(html, /data-blocked-drill/);
+  // still shows the (zero) Blocked tile as a plain div
+  assert.match(html, /Blocked/);
+});
+
 test("renderDepStats omits the chain tile when the graph is flat", () => {
   const html = renderDepStats({ blocked: 0, pinned: 2, longestChain: 0 });
   assert.doesNotMatch(html, /Chain depth/);

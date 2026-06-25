@@ -105,6 +105,19 @@ export function renderTopTags(stats: Stats): string {
 export function renderDepStats(dep: DepStats): string {
   if (dep.blocked === 0 && dep.pinned === 0 && dep.longestChain === 0) return "";
   const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
+  // F64: when anything is blocked, the Blocked tile becomes a button that
+  // filters the list to just those tasks; when nothing is blocked it stays a
+  // static tile (no point filtering to an empty set).
+  const blockedTile =
+    dep.blocked > 0
+      ? `<button type="button" class="stat-metric metric-blocked${blockedAlert}" data-blocked-drill title="Show only blocked tasks">
+        <span class="stat-num">${dep.blocked}</span>
+        <span class="stat-label">Blocked</span>
+      </button>`
+      : `<div class="stat-metric metric-blocked">
+        <span class="stat-num">${dep.blocked}</span>
+        <span class="stat-label">Blocked</span>
+      </div>`;
   const chainTile =
     dep.longestChain > 0
       ? `<button type="button" class="stat-metric metric-chain" data-chain-drill title="Longest chain of open blockers — click to walk it">
@@ -115,10 +128,7 @@ export function renderDepStats(dep: DepStats): string {
   return `
     <div class="stats-section-label">Dependencies</div>
     <div class="stats-grid stats-grid-dep">
-      <div class="stat-metric metric-blocked${blockedAlert}">
-        <span class="stat-num">${dep.blocked}</span>
-        <span class="stat-label">Blocked</span>
-      </div>
+      ${blockedTile}
       <div class="stat-metric metric-pinned">
         <span class="stat-num">${dep.pinned}</span>
         <span class="stat-label">Pinned</span>

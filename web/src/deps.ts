@@ -55,6 +55,18 @@ export function isBlocked(task: DepTask, done: Map<number, boolean>): boolean {
   return openBlockers(task, done).length > 0;
 }
 
+/**
+ * F64: narrow a task list to only the tasks that are currently BLOCKED (an
+ * undone task with at least one open blocker), using the supplied done-index.
+ * Generic so it preserves the caller's concrete task type (it's applied to the
+ * live `Task[]` in the render pipeline). Pure → unit-tested. Input order is
+ * preserved. The done-index should be built over the WHOLE live list so a
+ * blocker hidden by another filter still counts.
+ */
+export function filterBlocked<T extends DepTask>(tasks: T[], done: Map<number, boolean>): T[] {
+  return tasks.filter((t) => isBlocked(t, done));
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

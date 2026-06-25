@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, filterBlocked, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -222,6 +222,7 @@ root.innerHTML = `
       <div class="filter-facets">
         <div class="filter-prios" data-filter-prios role="group" aria-label="Filter by priority"></div>
         <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
+        <button class="fpill lens-blocked" data-filter-blocked type="button" aria-pressed="false" title="Showing only blocked tasks — click to clear" hidden>&#9211; blocked <span class="lens-x" aria-hidden="true">&times;</span></button>
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
       <div class="filter-views" data-views-row hidden>
@@ -270,6 +271,7 @@ const els = {
   filterPrios: must<HTMLElement>("[data-filter-prios]"),
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
+  filterBlocked: must<HTMLButtonElement>("[data-filter-blocked]"),
   viewsRow: must<HTMLElement>("[data-views-row]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
   viewsSave: must<HTMLButtonElement>("[data-views-save]"),
@@ -356,6 +358,15 @@ try {
  */
 let recalledViewId: string | null = null;
 
+/**
+ * F64: a render-pipeline lens that narrows the list to only BLOCKED tasks. It
+ * lives OUTSIDE FilterState on purpose: "blocked" is a cross-task property
+ * (it depends on other tasks' done state), not a per-task facet, so it must
+ * not be serialized into saved views / settings. Toggled by clicking the
+ * stats "Blocked" tile; a chip in the filter bar clears it.
+ */
+let blockedOnly = false;
+
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
@@ -365,7 +376,13 @@ function render(): void {
   const routed = r.kind === "tag"
     ? notDeleted.filter((t) => t.tags.includes(r.tag))
     : notDeleted;
-  const shown = applyFilter(routed, filter);
+  let shown = applyFilter(routed, filter);
+  // F64: the blocked-only lens runs after the text/facet filter. The done-index
+  // is built over ALL live tasks so a blocker hidden by the active filter still
+  // counts as blocking.
+  if (blockedOnly) {
+    shown = filterBlocked(shown, doneIndex(notDeleted));
+  }
   const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
   visibleIds = flattenSections(sections).map((t) => t.id);
@@ -409,10 +426,14 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
   if (!hasTasks) return;
   els.filterPrios.innerHTML = renderPriorityPills(filter);
   els.filterTags.innerHTML = renderTagChips(collectTags(allTasks), filter);
-  const active = isFilterActive(filter);
+  const active = isFilterActive(filter) || blockedOnly;
   els.filterClear.hidden = !active;
   els.filterHideDone.classList.toggle("is-active", filter.hideDone);
   els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
+  // F64: reflect the blocked-only lens chip (hidden unless the lens is on).
+  els.filterBlocked.hidden = !blockedOnly;
+  els.filterBlocked.classList.toggle("is-active", blockedOnly);
+  els.filterBlocked.setAttribute("aria-pressed", String(blockedOnly));
   els.filterbar.classList.toggle("is-active", active);
   renderViewsRow();
   if (active) {
@@ -2425,6 +2446,18 @@ function setFilter(next: Partial<FilterState>): void {
   render();
 }
 
+/**
+ * F64: toggle the blocked-only lens. Driven by clicking the stats "Blocked"
+ * tile (sets it on) and the filter-bar blocked chip / clear-all (sets it off).
+ * When turning it ON we also make sure the filter bar is reachable so the
+ * clear chip is visible. Re-renders through the normal pipeline.
+ */
+function setBlockedOnly(on: boolean): void {
+  if (blockedOnly === on) return;
+  blockedOnly = on;
+  render();
+}
+
 // --- F25: saved views ------------------------------------------------------
 
 /** Extract the saveable filter slice (query + facets + hide-done) from state. */
@@ -2581,10 +2614,16 @@ els.filterHideDone.addEventListener("click", () => {
   setFilter({ hideDone: !filter.hideDone });
 });
 
+// F64: the blocked-lens chip clears the lens when clicked.
+els.filterBlocked.addEventListener("click", () => {
+  setBlockedOnly(false);
+});
+
 // Clear-all affordance resets every facet.
 els.filterClear.addEventListener("click", () => {
   els.filterInput.value = "";
   filter = emptyFilter();
+  blockedOnly = false; // F64: clear the blocked lens too
   recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
   els.filterInput.focus();
@@ -2669,6 +2708,11 @@ els.statsPanel.addEventListener("click", (e) => {
   // jump-list so you can walk #downstream -> ... -> #root blocker.
   if (target?.closest("[data-chain-drill]")) {
     openChainDrill();
+    return;
+  }
+  // F64: clicking the "Blocked" tile filters the list to only blocked tasks.
+  if (target?.closest("[data-blocked-drill]")) {
+    setBlockedOnly(true);
     return;
   }
   const row = target?.closest<HTMLElement>("[data-stat-tag]");
@@ -3102,15 +3146,21 @@ function openChainDrill(): void {
  */
 function jumpToTask(id: number): void {
   if (!visibleIds.includes(id)) {
-    // The blocker is hidden by the active filter or tag route — reset to the
-    // full board so the jump can land, then re-render.
+    // The blocker is hidden by the active filter, the blocked lens, or a tag
+    // route — reset whichever is in play so the jump can land, then re-render.
     if (route.kind === "tag") navigateToAll();
+    let needsRender = false;
+    if (blockedOnly) {
+      blockedOnly = false; // F64: clear the blocked lens too
+      needsRender = true;
+    }
     if (isFilterActive(filter)) {
       filter = emptyFilter();
       filter.hideDone = settings.hideDone;
       els.filterInput.value = "";
-      render();
+      needsRender = true;
     }
+    if (needsRender) render();
   }
   nav = select(nav, visibleIds, id);
   applySelection();

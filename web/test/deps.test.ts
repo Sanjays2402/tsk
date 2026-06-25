@@ -8,6 +8,7 @@ import {
   blockedToggleConfirm,
   needsBlockedConfirm,
   computeDepStats,
+  filterBlocked,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -135,6 +136,39 @@ test("blockedClass returns the css flag only when blocked", () => {
   const idx = doneIndex(tasks);
   assert.equal(blockedClass(tasks[3], idx), "is-blocked");
   assert.equal(blockedClass(tasks[2], idx), "");
+});
+
+// --- F64: blocked-only lens -------------------------------------------------
+
+test("filterBlocked keeps only the currently-blocked tasks", () => {
+  const idx = doneIndex(tasks);
+  const blocked = filterBlocked(tasks, idx);
+  // #4 (open #2) and #5 (open #2) are the only blocked ones in the fixture.
+  assert.deepEqual(blocked.map((t) => t.id), [4, 5]);
+});
+
+test("filterBlocked preserves input order", () => {
+  const list: DepTask[] = [
+    { id: 3, done: false, depends_on: [1] },
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const idx = doneIndex(list);
+  // #3 and #2 both depend on open #1; result keeps the [3, 2] input order.
+  assert.deepEqual(filterBlocked(list, idx).map((t) => t.id), [3, 2]);
+});
+
+test("filterBlocked returns [] when nothing is blocked", () => {
+  const list: DepTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1, 99] }, // #1 open -> actually blocked
+  ];
+  // Make #1 done so #2 is unblocked.
+  const idx = doneIndex([
+    { id: 1, done: true },
+    { id: 2, done: false, depends_on: [1, 99] },
+  ]);
+  assert.deepEqual(filterBlocked(list, idx), []);
 });
 
 // --- F46: dependency stats aggregate ---------------------------------------
