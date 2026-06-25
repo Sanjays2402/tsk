@@ -1003,35 +1003,168 @@ review), F53 (palette row-actions), F54 (touch context menu), F65 (notes-snippet
 highlight in the chain drill + dep badge titles). Fresh follow-ons after the
 T12 lens / palette-due / popnav / bulk-pin / chain-walk cluster:
 
-- [ ] **F71** Lens keyboard shortcuts: number keys (or a small lens row in the `?`
+- [x] **F71** Lens keyboard shortcuts: number keys (or a small lens row in the `?`
       overlay) to toggle each stats lens (blocked / overdue / today / week / nodue)
       without opening the sidebar — reuse the F66 setLens. Surface the active lens
-      in the help overlay's "current filter/sort" line.
+      in the help overlay's "current filter/sort" line. (tick T13 2026-06-25)
 - [ ] **F72** Saved-view + lens coexistence: a recalled saved view currently can't
       carry a lens (lenses are non-serializable by design), but the active lens
       should survive a view recall (apply the view's facets, keep the lens) instead
       of being implicitly cleared — audit setFilter/recallView and make the
-      interaction intentional + documented.
-- [ ] **F73** Palette "Set due ▸" live-preview: when a due-set command is
+      interaction intentional + documented. NOTE: audited T13 — recallView ALREADY
+      leaves activeLens untouched (only clear-all, jump-to-hidden, and the chip
+      clear it). The lens already survives a recall and stays visible via its
+      filter-bar chip. F72-as-written describes a bug that doesn't exist; dropped
+      as a no-op (like T12's F68) rather than padded. Pulled the carried F65 to
+      round out a real 5.
+- [x] **F73** Palette "Set due ▸" live-preview: when a due-set command is
       highlighted in Cmd-K, show the resolved date inline (reuse parse-date) so you
       confirm "this weekend = Jun 28" before Enter — mirrors the F47 bulk preview.
-- [ ] **F74** Chain-walk from the dep EDITOR (F39) too: while editing blockers, a
+      (tick T13 2026-06-25)
+- [x] **F74** Chain-walk from the dep EDITOR (F39) too: while editing blockers, a
       tiny "walk chain" affordance per candidate so you can see what a prospective
       blocker would chain into before adding it (reuse deepestChainFrom + the
-      keyboard-nav popover).
-- [ ] **F75** Lens + export: an "export this lens" action so the current
+      keyboard-nav popover). (tick T13 2026-06-25)
+- [x] **F75** Lens + export: an "export this lens" action so the current
       blocked/overdue/etc. subset can be exported (JSON/CSV/MD) — the export
       endpoints take the whole store today; thread the active lens (and filter)
-      into the export query so what you SEE is what you GET.
-- [ ] **F65** (carried) Notes-snippet highlight in the chain drill + dep badge
+      into the export query so what you SEE is what you GET. (tick T13 2026-06-25)
+- [x] **F65** (carried) Notes-snippet highlight in the chain drill + dep badge
       titles, so a search that matched on a blocker's text is visible when you walk
-      the chain (reuse the generic highlightText engine).
+      the chain (reuse the generic highlightText engine). (tick T13 2026-06-25 —
+      shipped as chain-drill + unblocked-picker title highlight)
 - [ ] **F48** (carried) Context-menu submenus: nest the priority levels + a "due
       presets" flyout inside the F37 row menu, keyboard-navigable (now that popnav.ts
       exists, reuse it for submenu arrow-nav).
 - [ ] **F49** (carried) Autocomplete depth: extend the F38 composer dropdown to the
       inline EDIT field (F7) and the filter box (F11) so #tag/@due completion is
       everywhere; add a `!priority` completion too.
+- [ ] **F50** (carried) Dependency mini-graph in the dep editor (F39): a tiny
+      ASCII/SVG "what blocks what" preview of the selected task's neighborhood.
+- [ ] **F54** (carried) Row context menu on touch: long-press (reuse the F28 machine)
+      to open the F37 menu, with a press-and-hold disambiguation.
+
+### T13 — 2026-06-25 08:03 PT — lens keyboard + palette/chain/export depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+WAS mounted this tick — the lock wrapper resolved the repo cleanly (no cd
+failure), HEAD was exactly at origin/main c474c99 with a clean tree, node_modules
+present. Pushed a clean fast-forward. The SSD-absent fallback (see T2-T11 notes)
+was not needed.
+
+Slices shipped (5/5 — a cohesive "lenses are keyboard-first + the palette/chain/
+export all respect what you're looking at" cluster; F72 dropped honestly, see
+below):
+
+- F71 feat(web): number-key lens shortcuts + active-lens readout (16e612c)
+- F73 feat(web): live due-date preview in the palette "Set due" group (3cf0d6a)
+- F75 feat(web): export only the visible lens/filter subset (fa42c82)
+- F74 feat(web): walk a prospective blocker's chain from the dep editor (1db180c)
+- F65 feat(web): highlight the search match while walking blocker chains (978b66a)
+- (+ chore 4050acb: rebuilt embedded SPA bundle for all five slices)
+
+Why F72 dropped (5 solid slices, not 5-plus-a-no-op): the standing T13 queue led
+with F71-F75, but F72 (make the active lens "survive" a view recall) turned out a
+no-op on audit — `recallView` already leaves `activeLens` untouched (only
+clear-all, jump-to-hidden, and the chip itself clear it), so the lens ALREADY
+survives a recall and stays visible via its filter-bar chip. F72-as-written
+describes a bug that doesn't exist; shipping it would mean inventing a "fix".
+Instead I pulled the carried F65 (chain-drill search highlight) from the backlog —
+a genuine, demoable slice that pairs naturally with F74's chain work — to round
+out a real 5. Quality over the number (same call as T12's F68 -> F61).
+
+Design notes worth keeping:
+- F71 adds lens.ts pure helpers: LENS_ORDER (single source of truth for the
+  tile/digit order), lensForDigit (key "1".."5" -> lens, null otherwise),
+  activeLensSummary (glyph+label for the help line). The digit handler sits
+  BEFORE the main key switch so it never collides with letter hotkeys; pressing
+  the active lens's digit again clears it (toggle). The `?` overlay gained a
+  "1 … 5" row + a live "Active lens: ..." readout (data-help-active, hidden when
+  none).
+- F73 adds palette.dueTokenForCommandId (id -> NL token; "" for clear, null for
+  non-due) so the decode is pure-tested. paintPalette drives a preview line under
+  the cmdk list: a highlighted "Set due: X" command resolves its token via the
+  SAME /api/parse-date the F12 picker + F47 bulk preview use, with a seq guard
+  (paletteDueParseSeq) that also invalidates on close. "Clear" shows "Clears the
+  due date"; non-due commands hide the line.
+- F75 is the one with backend teeth: /api/export gains an optional ?ids=1,2,3
+  that narrows to that subset in STORE order (new filterTasksByIDs, skipping
+  unknown/malformed, blank-list -> nil/empty export); json/csv/markdown all honor
+  it. Client: export.scopedExportUrl / exportScopeLabel pure helpers;
+  downloadExport threads visibleIds when isExportScoped() (lens OR filter OR tag
+  route active); the menu rebuilds each open with an "Export N shown" header.
+- F74 adds deps.hasWalkableChain (deepestChainFrom length >= 2) to gate a "walk
+  chain" button on dep-editor candidates that chain further; renderDepCandidates
+  takes an optional walkable set and emits data-dep-walk only for those.
+  main.ts computes the set over the live graph each paint, routes the button
+  through the existing openChainDrill(id) (inherits F70 keyboard-nav for free).
+- F65 threads an optional query into renderChainDrill + renderUnblockedPicker;
+  titles now route through the generic highlightText engine (which subsumed the
+  old local escapeChainHTML — both render paths share one escaper). main.ts
+  passes filter.query.trim() into both popovers, so a search that landed on a
+  blocker's text stays <mark>ed as you walk the chain.
+
+Tests: +26 net new web tests (493 -> 519). New/extended pure modules each
+unit-tested under node --test: lens.ts (+6 F71), palette.ts (+4 F73), export.ts
+(+5 F75), deps.ts (+3 F74 hasWalkableChain + threaded query), depedit.ts (+3 F74
+walk button), chain.ts (+5 F65 highlight). Go side adds export_scope_test.go
+(6 endpoint tests + 1 unit on filterTasksByIDs) for F75.
+
+Gates (run once at end of batch) — all green:
+- gofmt -l clean, go vet clean, go build ok
+- go test ./... ok all packages (internal/commands 59.5s; internal/serve cached
+  against the freshly-embedded T13 bundle + the new export-ids path)
+- web: npm run check 519 pass (was 493; +26 net new), npm run build ok
+  (40 modules, JS 32.72KB gz, CSS 8.85KB gz)
+
+Live end-to-end proof: built the binary, init + 4 tasks with a #1->#2->#3 blocker
+chain, an overdue #1 (due 2026-06-20), and a due-this-week #4 (due 2026-06-26);
+`tsk serve`. F75: /api/export?format=csv with no ids returned all 4; ids=1,4
+returned exactly #1+#4 in store order; ids=3 markdown returned just "fix the
+bug"; empty ids -> null (empty); ids=999,2 skipped the unknown and returned only
+#2. F73: /api/parse-date resolved eow -> Sun Jun 28 (in 3d), 1w -> Thu Jul 2 (in
+7d) — exactly what the palette preview renders. The served bundle carries every
+slice's hooks (Active lens + "1 … 5" + data-lens-drill, cmdk-due-preview +
+data-cmdk-due-preview, export-scope + ids=, data-dep-walk, chain-title +
+data-chain-jump/data-unblock-jump). The hand-editable .tsk.md is byte-clean with
+the depends: chain intact and `tsk show 1` reads #2 back — the CLI/TUI storage
+contract is fully preserved.
+
+Roadmap status: F1-F71, F73-F75 done; F65 done; F66-F70 done (66 of the 75-item
+F-roadmap shipped; F68 + F72 dropped as no-ops). Unstarted: F48 (context-menu
+submenus), F49 (autocomplete in edit/filter), F50 (dep mini-graph), F54 (touch
+context menu). T14 backlog appended below so the loop never starves.
+
+### T14 — depth (appended T13 2026-06-25 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T13 lens-keyboard / palette-preview / chain-walk / scoped-export / chain-
+highlight cluster:
+
+- [ ] **F76** Lens digit hints in the stats sidebar: render the "1".."5" shortcut
+      key on each stats tile (a small kbd badge) so the keyboard shortcut is
+      discoverable at the point of use, not just in the `?` overlay. Reuse LENS_ORDER
+      so the badge can't drift from lensForDigit.
+- [ ] **F77** Palette "Set priority ▸" live-preview parity: mirror F73 for the F63
+      priority group — when a "Set priority: X" command is highlighted, show the
+      target task's current -> new level inline so the change is previewed before
+      Enter (no parse needed; pure from selTask.priority).
+- [ ] **F78** Scoped export in the command palette: add explicit "Export N shown
+      (JSON/CSV/MD)" commands to Cmd-K when a lens/filter is active, distinct from
+      the whole-store export commands, so the scoped download is reachable
+      keyboard-only (reuse isExportScoped + scopedExportUrl).
+- [ ] **F79** Chain-walk from the dep editor's CURRENT blockers too (F74 only wired
+      the candidate list): a walk affordance on each existing blocker chip so you can
+      audit what an already-added blocker chains into, not just prospective ones.
+- [ ] **F80** Lens-aware stats: when a lens is active, show the lensed subset's
+      mini-counts (e.g. "of 12 blocked: 3 urgent, 5 overdue") in the sidebar so the
+      numbers reflect what you're looking at, not just the whole board.
+- [ ] **F48** (carried) Context-menu submenus: nest the priority levels + a "due
+      presets" flyout inside the F37 row menu, keyboard-navigable (reuse popnav.ts
+      for submenu arrow-nav).
+- [ ] **F49** (carried) Autocomplete depth: extend the F38 composer dropdown to the
+      inline EDIT field (F7) and the filter box (F11); add a `!priority` completion.
 - [ ] **F50** (carried) Dependency mini-graph in the dep editor (F39): a tiny
       ASCII/SVG "what blocks what" preview of the selected task's neighborhood.
 - [ ] **F54** (carried) Row context menu on touch: long-press (reuse the F28 machine)
