@@ -869,27 +869,171 @@ never starves.
 
 ### T12 — depth (appended T11 2026-06-24 so the loop never starves)
 
-Standing unstarted: F47, F48, F49, F50, F51, F52, F53, F54 (the T9 backlog),
-F61 (chain-drill from the "blocked by #N" row badge), F65 (notes-snippet
-highlight in the chain drill + dep badge titles). Fresh follow-ons after the
-T11 schedule-lens / blocked-filter / palette-priority / bulk-guard / unblock-
-picker cluster:
+Standing unstarted: F48, F49, F50, F51, F52, F53, F54 (the T9 backlog),
+F65 (notes-snippet highlight in the chain drill + dep badge titles).
+Fresh follow-ons after the T11 schedule-lens / blocked-filter /
+palette-priority / bulk-guard / unblock-picker cluster:
 
-- [ ] **F66** Schedule-tile click-to-filter: clicking the F59 "Due this week"
+- [x] **F66** Schedule-tile click-to-filter: clicking the F59 "Due this week"
       tile narrows the list to that 7-day window (a new render-pipeline lens like
       F64's blocked-only), and the "No due" tile filters to undated tasks; chips
       clear them. Reuse the F64 lens plumbing rather than FilterState.
-- [ ] **F67** Palette "Set due ▸" group: mirror F63 for due dates — a Cmd-K group
+      (tick T12 2026-06-25 — generalized into a 5-lens model in lens.ts)
+- [x] **F67** Palette "Set due ▸" group: mirror F63 for due dates — a Cmd-K group
       with the NL presets (today / tomorrow / this weekend / next week / clear)
       acting on the selection via the existing parse-date + PATCH, keyboard-only.
+      (tick T12 2026-06-25)
 - [ ] **F68** Bulk priority/pin guard parity: when a bulk action touches blocked
       tasks (e.g. bulk-complete via the F36 menu), route it through the same F60
       confirm so every multi-task completion path is guarded, not just the bar's
-      toggle button.
-- [ ] **F69** Stats "Open" + "Overdue" tiles click-to-filter: extend the F64
+      toggle button. NOTE: audited T12 — the ONLY bulk completion path is the
+      bulkbar toggle, which ALREADY routes through the F60 guard (bulkToggleDone).
+      The F36 menu sets priority/tag/due/pin, none of which complete a task. So
+      there is no unguarded completion path to fix; F68 is a no-op as written and
+      is dropped rather than padded. Revisit only if a new bulk-complete entry
+      point is added.
+- [x] **F69** Stats "Open" + "Overdue" tiles click-to-filter: extend the F64
       pattern so the time-based metric tiles also drive the list (Overdue ->
       overdue-only, Open -> hide-done), giving the whole sidebar a consistent
-      "click a number to see those tasks" affordance.
-- [ ] **F70** Unblock picker keyboard nav: arrow-key + Enter selection inside the
+      "click a number to see those tasks" affordance. (tick T12 2026-06-25 —
+      shipped with F66 as one unified lens model; Open routes to the hide-done
+      FACET, the rest to lenses)
+- [x] **F70** Unblock picker keyboard nav: arrow-key + Enter selection inside the
       F62 picker popover (and the F56 chain drill), so the just-unblocked jump is
       reachable without the mouse — matching the palette's keyboard model.
+      (tick T12 2026-06-25 — new popnav.ts; wired into BOTH popovers)
+
+### T12 — 2026-06-25 03:01 PT — sidebar lenses + keyboard depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+WAS mounted this tick — git resolved against it cleanly (the lock wrapper did
+not log a cd failure), was at origin/main e34fe01 with a clean tree. Needed
+`npm --prefix web install` (node_modules was partial — @types/node absent, which
+broke the test typecheck until reinstalled). Pushed a clean fast-forward
+e34fe01..765c32c, verified HEAD == origin/main, 0/0.
+
+Slices shipped (5/5 — a cohesive "make the sidebar clickable + the popovers +
+due-setting keyboard-first" cluster; F68 dropped honestly, see below):
+
+- F66+F69 feat(web): stats sidebar tiles become click-to-filter lenses (cbacb5a)
+- F67 feat(web): "Set due" command group in the command palette (9a341f3)
+- F70 feat(web): keyboard nav inside the chain-drill + unblock popovers (27f06b5)
+- F47 feat(web): bulk pin/unpin + live due preview in the bulk bar (c72f167)
+- F61 feat(web): walk the blocker chain from the row badge (aa2fc66)
+- (+ chore 765c32c: rebuilt embedded SPA bundle for all five slices)
+
+Why F68 dropped (5 solid slices, not 5-plus-a-no-op): the standing T12 queue
+listed F66-F70, but F68 (bulk guard parity) turned out to be a no-op on audit —
+the ONLY bulk path that COMPLETES a task is the bulkbar "toggle done" button,
+which already routes through the F60 blocked-guard (blockedInBulkToggle +
+bulkBlockedConfirm). The F36 bulk-edit menu only sets priority/tag/due/pin, none
+of which complete a task, so there's nothing to guard there. Shipping F68 would
+have meant inventing a path to "fix". Instead I pulled F61 (chain-walk from the
+row badge) from the standing T11 backlog — a genuine, demoable slice — to round
+out a real 5. Quality over the number.
+
+Design notes worth keeping:
+- F66 generalized F64's one-off `blockedOnly` boolean into a small lens.ts model
+  (LensKind = blocked|overdue|today|week|nodue + matchesLens + applyLens + chip
+  metadata). A lens is a DERIVED, cross-task or clock-relative subset, so it
+  lives OUTSIDE FilterState (must not serialize into saved views) — exactly where
+  the blocked lens already sat. main.ts now holds a single `activeLens` slot; the
+  blocked tile migrated to the unified `data-lens-drill` dispatch.
+- F69's "Open" tile is the one exception — it maps to the real hide-done FACET
+  (which DOES serialize), so it routes through setFilter, not the lens. The other
+  metric/schedule tiles set the matching lens. The active-lens chip wears a hue
+  (alert / today / neutral) echoing its source tile.
+- F67 mirrors F63 exactly: buildDueCommands (pure) emits 6 commands each carrying
+  a natural-language `token` handed verbatim to the same commitDue PATCH the F12
+  picker uses, so the dates resolve identically via the server's dateparse. No
+  backend change.
+- F70's popnav.ts (keyToPopNavAction + nextPopNavIndex) is a tiny pure model
+  mirroring the palette: arrows/jk move with wrap, Home/End + g/G jump, Enter
+  activates, Escape closes. Wired into BOTH the chain drill (F56) and the unblock
+  picker (F62) — each tracks a row-id list + highlighted index, paints the active
+  row, and Enter jumps.
+- F47 deepens the F36 bulk cluster: a 4th "pin" opener (Pin all / Unpin all over
+  the PATCH `pinned` setter, skipping no-ops) and a live NL due preview line in
+  the bulk-due popover (same previewVM + /api/parse-date the F12 picker uses,
+  seq-guarded).
+- F61 adds deepestChainFrom(tasks, start) — the same greedy walk as F56's
+  longestChainPath but head-fixed to a specific task; the "blocked by #N" badge
+  gains a chain-walk button that opens the drill popover for THAT row's path
+  (inherits F70's keyboard nav for free).
+
+Tests: +42 net new web tests (451 -> 493). New pure modules each unit-tested
+under node --test: lens.ts (13), popnav.ts (9); extended stats.ts (+10 lens
+tiles), palette.ts (+5 Set-due), bulkedit.ts (+2 pin/preview), deps.ts (+6
+deepestChainFrom + badge). The F64 blocked-tile test updated for the unified
+data-lens-drill hook. No backend Go test change (no backend change this tick),
+but internal/serve re-ran against the freshly-embedded T12 bundle.
+
+Gates (run once at end of batch) — all green:
+- gofmt -l clean, go vet clean, go build ok
+- go test ./... ok all packages (internal/commands 62.4s; internal/serve 5.05s
+  against the new embed)
+- web: npm run check 493 pass (was 451; +42 net new), npm run build ok
+  (40 modules, JS 32.09KB gz, CSS 8.68KB gz)
+
+Live end-to-end proof: built the binary, init + 6 tasks with a #1->#2->#3 blocker
+chain plus a due-in-2d (#4), an overdue (#5, due 2026-06-20), and a no-due
+backlog (#6); `tsk serve`. F67: PATCH /api/tasks/6 {due:"eow"} resolved to
+2026-06-28 on disk as `due:2026-06-28` (NL parse path the palette drives). F47:
+PATCH /api/tasks/4 {pinned:true} set `pin:true` while PRESERVING `due:2026-06-27`
+(contract intact); `tsk show 4` reads pinned:yes + due back. F66/F69: stats
+report overdue=1 (#5) / today=0, matching what the lens tiles render; the chain
+#1->#2->#3 is the deepestChainFrom(#1) walk F61/F70 drive. The served bundle
+carries every slice's hooks (data-lens-drill, lens-hue-*, "Set due:" +
+due-set-clear, chain-pop-keys, data-bulk-set-pin + bulk-due-preview,
+data-chain-from + dep-chain-btn). The hand-editable .tsk.md storage contract is
+intact — CLI reads back every web write.
+
+Roadmap status: F1-F67, F69-F70 done; F66 done (62 of the 70-item F-roadmap
+shipped, F68 dropped as a no-op). Unstarted: F48-F54 (T9 backlog: context
+submenus, autocomplete in edit/filter, dep mini-graph, all-section reorder,
+multi-paste review, palette row-actions, touch context menu), F65 (notes
+highlight in the chain/badge). T13 backlog appended below so the loop never
+starves.
+
+### T13 — depth (appended T12 2026-06-25 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F51 (all-section reorder), F52 (multi-paste
+review), F53 (palette row-actions), F54 (touch context menu), F65 (notes-snippet
+highlight in the chain drill + dep badge titles). Fresh follow-ons after the
+T12 lens / palette-due / popnav / bulk-pin / chain-walk cluster:
+
+- [ ] **F71** Lens keyboard shortcuts: number keys (or a small lens row in the `?`
+      overlay) to toggle each stats lens (blocked / overdue / today / week / nodue)
+      without opening the sidebar — reuse the F66 setLens. Surface the active lens
+      in the help overlay's "current filter/sort" line.
+- [ ] **F72** Saved-view + lens coexistence: a recalled saved view currently can't
+      carry a lens (lenses are non-serializable by design), but the active lens
+      should survive a view recall (apply the view's facets, keep the lens) instead
+      of being implicitly cleared — audit setFilter/recallView and make the
+      interaction intentional + documented.
+- [ ] **F73** Palette "Set due ▸" live-preview: when a due-set command is
+      highlighted in Cmd-K, show the resolved date inline (reuse parse-date) so you
+      confirm "this weekend = Jun 28" before Enter — mirrors the F47 bulk preview.
+- [ ] **F74** Chain-walk from the dep EDITOR (F39) too: while editing blockers, a
+      tiny "walk chain" affordance per candidate so you can see what a prospective
+      blocker would chain into before adding it (reuse deepestChainFrom + the
+      keyboard-nav popover).
+- [ ] **F75** Lens + export: an "export this lens" action so the current
+      blocked/overdue/etc. subset can be exported (JSON/CSV/MD) — the export
+      endpoints take the whole store today; thread the active lens (and filter)
+      into the export query so what you SEE is what you GET.
+- [ ] **F65** (carried) Notes-snippet highlight in the chain drill + dep badge
+      titles, so a search that matched on a blocker's text is visible when you walk
+      the chain (reuse the generic highlightText engine).
+- [ ] **F48** (carried) Context-menu submenus: nest the priority levels + a "due
+      presets" flyout inside the F37 row menu, keyboard-navigable (now that popnav.ts
+      exists, reuse it for submenu arrow-nav).
+- [ ] **F49** (carried) Autocomplete depth: extend the F38 composer dropdown to the
+      inline EDIT field (F7) and the filter box (F11) so #tag/@due completion is
+      everywhere; add a `!priority` completion too.
+- [ ] **F50** (carried) Dependency mini-graph in the dep editor (F39): a tiny
+      ASCII/SVG "what blocks what" preview of the selected task's neighborhood.
+- [ ] **F54** (carried) Row context menu on touch: long-press (reuse the F28 machine)
+      to open the F37 menu, with a press-and-hold disambiguation.
+
