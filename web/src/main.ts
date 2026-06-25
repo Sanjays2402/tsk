@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, type DepTask, type DepStatsTask } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -2660,7 +2660,14 @@ els.statsToggle.addEventListener("click", () => toggleStats(!statsOpen));
 els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen));
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
-  const row = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-stat-tag]");
+  const target = e.target as HTMLElement | null;
+  // F56: clicking the "chain depth" tile opens the longest blocker chain as a
+  // jump-list so you can walk #downstream -> ... -> #root blocker.
+  if (target?.closest("[data-chain-drill]")) {
+    openChainDrill();
+    return;
+  }
+  const row = target?.closest<HTMLElement>("[data-stat-tag]");
   if (!row) return;
   const tag = row.dataset.statTag ?? "";
   if (!tag) return;
@@ -3013,6 +3020,74 @@ function isTypingTarget(el: EventTarget | null): boolean {
 function navMove(dir: NavMove): void {
   nav = move(nav, visibleIds, dir);
   applySelection();
+}
+
+/**
+ * F56: open the longest open-blocker chain as a jump-list popover anchored on
+ * the stats panel. Each step jumps to (selects + scrolls to) that task, so you
+ * can walk from the most-downstream blocked task to its deepest root blocker.
+ * No-ops when the graph is flat. Outside-click / Escape / a jump all dismiss it.
+ */
+function closeChainDrill(): void {
+  document.querySelector("[data-chain-pop]")?.remove();
+  document.removeEventListener("click", onChainAway, true);
+  document.removeEventListener("keydown", onChainKey, true);
+}
+
+function onChainAway(e: MouseEvent): void {
+  const t = e.target as HTMLElement | null;
+  if (t?.closest("[data-chain-pop]") || t?.closest("[data-chain-drill]")) return;
+  closeChainDrill();
+}
+
+function onChainKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeChainDrill();
+  }
+}
+
+function openChainDrill(): void {
+  closeChainDrill();
+  const path = longestChainPath(currentTasks as DepStatsTask[]);
+  if (path.length === 0) return;
+  const titleById = new Map(currentTasks.map((t) => [t.id, t.title] as const));
+  const nodes: ChainNode[] = path.map((id) => ({ id, title: titleById.get(id) ?? `#${id}` }));
+  const pop = document.createElement("div");
+  pop.className = "chain-pop";
+  pop.setAttribute("data-chain-pop", "");
+  pop.innerHTML = `<div class="chain-pop-head">Longest blocker chain</div>${renderChainDrill(nodes)}`;
+  // Anchor under the chain tile if present, else the stats panel corner.
+  const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");
+  const anchor = (tile ?? els.statsPanel).getBoundingClientRect();
+  pop.style.position = "fixed";
+  pop.style.visibility = "hidden";
+  document.body.appendChild(pop);
+  const rect = pop.getBoundingClientRect();
+  const { left, top } = clampMenuPosition(
+    anchor.left,
+    anchor.bottom + 4,
+    rect.width,
+    rect.height,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.style.visibility = "visible";
+
+  pop.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-chain-jump]");
+    if (!btn) return;
+    const id = Number(btn.dataset.chainJump);
+    closeChainDrill();
+    if (Number.isFinite(id) && id > 0) jumpToTask(id);
+  });
+
+  setTimeout(() => {
+    document.addEventListener("click", onChainAway, true);
+    document.addEventListener("keydown", onChainKey, true);
+  }, 0);
 }
 
 /**

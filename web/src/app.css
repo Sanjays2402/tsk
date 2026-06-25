@@ -650,6 +650,86 @@ button.priority:focus-visible {
   line-height: 1;
 }
 
+/* F56: chain drill-down popover — the longest blocker chain as a jump-list. */
+.chain-pop {
+  z-index: 60;
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--sp-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+}
+.chain-pop-head {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-faint);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+}
+.chain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chain-step {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.chain-arrow {
+  color: var(--color-text-faint);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  text-align: center;
+  padding: 2px 0;
+}
+.chain-jump {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.chain-jump:hover {
+  background: var(--color-accent-soft);
+}
+.chain-step.is-root .chain-jump {
+  border-color: var(--color-border);
+}
+.chain-id {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-accent);
+  flex: 0 0 auto;
+}
+.chain-title {
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-chain {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.metric-chain:hover {
+  background: var(--color-accent-soft);
+}
+
 /* F27: pin star — sits before the title, lit gold when pinned. */
 .pin-btn {
   border: none;

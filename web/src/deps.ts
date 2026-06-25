@@ -220,3 +220,124 @@ export function computeDepStats(tasks: DepStatsTask[]): DepStats {
 
   return { blocked, pinned, longestChain };
 }
+
+/**
+ * F56: the actual longest chain of OPEN blockers as an ordered list of ids,
+ * from the most-downstream blocked task to its deepest root blocker
+ * (#blocked -> ... -> #root). This is the path whose length is computeDepStats'
+ * `longestChain`, materialized so the UI can offer a "walk to the root blocker"
+ * jump-list. Returns [] when the graph is flat (no open blockers). Ties pick the
+ * first task in list order, then the first open blocker at each step, so the
+ * result is deterministic. A cycle is bounded by a visited-on-path guard.
+ */
+export function longestChainPath(tasks: DepStatsTask[]): number[] {
+  const done = doneIndex(tasks);
+  const byId = new Map<number, DepStatsTask>();
+  for (const t of tasks) byId.set(t.id, t);
+
+  // Walk from a start id, always stepping into the open blocker whose own
+  // sub-chain is longest, recording the path. memo holds best depth per id.
+  const depth = new Map<number, number>();
+  const onPath = new Set<number>();
+  const subDepth = (id: number): number => {
+    const cached = depth.get(id);
+    if (cached !== undefined) return cached;
+    if (onPath.has(id)) return 0;
+    const task = byId.get(id);
+    if (!task) return 0;
+    const open = openBlockers(task, done);
+    if (open.length === 0) {
+      depth.set(id, 0);
+      return 0;
+    }
+    onPath.add(id);
+    let best = 0;
+    for (const dep of open) {
+      const d = subDepth(dep) + 1;
+      if (d > best) best = d;
+    }
+    onPath.delete(id);
+    depth.set(id, best);
+    return best;
+  };
+
+  // Find the undone task with the deepest chain (the head of the longest path).
+  let head = -1;
+  let headDepth = 0;
+  for (const t of tasks) {
+    if (t.done) continue;
+    const d = subDepth(t.id);
+    if (d > headDepth) {
+      headDepth = d;
+      head = t.id;
+    }
+  }
+  if (head < 0 || headDepth === 0) return [];
+
+  // Materialize the path: at each node, step into the open blocker with the
+  // greatest sub-depth (ties -> first in declared order).
+  const path: number[] = [];
+  const seen = new Set<number>();
+  let cur: number | undefined = head;
+  while (cur !== undefined && !seen.has(cur)) {
+    path.push(cur);
+    seen.add(cur);
+    const task = byId.get(cur);
+    if (!task) break;
+    const open = openBlockers(task, done);
+    if (open.length === 0) break;
+    let next: number | undefined;
+    let bestD = -1;
+    for (const dep of open) {
+      const d = subDepth(dep);
+      if (d > bestD) {
+        bestD = d;
+        next = dep;
+      }
+    }
+    cur = next;
+  }
+  return path;
+}
+
+/** F56: a node in the chain drill-down jump-list: id + display title. */
+export interface ChainNode {
+  id: number;
+  title: string;
+}
+
+/** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
+function escapeChainHTML(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}
+
+/**
+ * F56: render the longest-chain drill-down as an ordered jump-list. Each step
+ * is a button carrying `data-chain-jump="<id>"` so a delegated click selects +
+ * scrolls to that task; an arrow separates the steps to read the chain
+ * direction (downstream blocked task first, deepest root blocker last). The
+ * last node is tagged `is-root` so the UI can label "root blocker". Returns ""
+ * for an empty chain so the caller can skip opening an empty popover.
+ */
+export function renderChainDrill(nodes: ChainNode[]): string {
+  if (nodes.length === 0) return "";
+  const items = nodes
+    .map((n, i) => {
+      const root = i === nodes.length - 1 ? " is-root" : "";
+      const arrow =
+        i < nodes.length - 1
+          ? `<span class="chain-arrow" aria-hidden="true">&#8595;</span>`
+          : "";
+      return `<li class="chain-step${root}">
+        <button type="button" class="chain-jump" data-chain-jump="${n.id}" title="Jump to #${n.id}">
+          <span class="chain-id">#${n.id}</span>
+          <span class="chain-title">${escapeChainHTML(n.title)}</span>
+        </button>
+        ${arrow}
+      </li>`;
+    })
+    .join("");
+  return `<ul class="chain-list" role="menu" aria-label="Blocker chain">${items}</ul>`;
+}

@@ -106,10 +106,10 @@ export function renderDepStats(dep: DepStats): string {
   const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
   const chainTile =
     dep.longestChain > 0
-      ? `<div class="stat-metric metric-chain" title="Longest chain of open blockers">
+      ? `<button type="button" class="stat-metric metric-chain" data-chain-drill title="Longest chain of open blockers — click to walk it">
       <span class="stat-num">${dep.longestChain}</span>
       <span class="stat-label">Chain depth</span>
-    </div>`
+    </button>`
       : "";
   return `
     <div class="stats-section-label">Dependencies</div>
