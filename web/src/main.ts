@@ -107,6 +107,7 @@ import {
   moveIndex,
   clampIndex,
   renderPaletteList,
+  buildPriorityCommands,
   type Command,
 } from "./palette";
 import {
@@ -3438,7 +3439,11 @@ let paletteQuery = "";
 function buildCommands(): Command[] {
   const sel = nav.selectedId;
   const hasSel = sel !== null;
-  const selPinned = sel !== null && (currentTasks.find((t) => t.id === sel)?.pinned ?? false);
+  const selTask = sel !== null ? currentTasks.find((t) => t.id === sel) : undefined;
+  const selPinned = selTask?.pinned ?? false;
+  // F63: the selected task's current priority, so the matching "Set priority"
+  // command can be disabled (it's already in effect).
+  const selPriority = selTask?.priority;
   const viewCommands: Command[] = views.map((v) => ({
     id: `view:${v.id}`,
     title: `View: ${v.name}`,
@@ -3509,6 +3514,11 @@ function buildCommands(): Command[] {
       keywords: ["priority", "low", "demote", "cycle"],
       disabled: !hasSel,
     },
+    // F63: a "Set priority ▸" group — pick an exact level keyboard-only from the
+    // palette, without leaving it for the chip / picker. Each acts on the
+    // selection via setPriority; the one already in effect is disabled so the
+    // palette doubles as a "current priority" readout.
+    ...buildPriorityCommands(hasSel, selPriority),
     {
       id: "delete",
       title: "Delete selected task",
@@ -3570,6 +3580,19 @@ function runCommand(id: string): void {
       break;
     case "prio-down":
       if (sel !== null) cyclePriority(sel, true);
+      break;
+    // F63: exact priority set from the palette.
+    case "prio-set-urgent":
+      if (sel !== null) setPriority(sel, "urgent");
+      break;
+    case "prio-set-high":
+      if (sel !== null) setPriority(sel, "high");
+      break;
+    case "prio-set-medium":
+      if (sel !== null) setPriority(sel, "medium");
+      break;
+    case "prio-set-low":
+      if (sel !== null) setPriority(sel, "low");
       break;
     case "delete":
       if (sel !== null) requestDelete(sel);

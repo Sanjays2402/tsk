@@ -139,3 +139,32 @@ export function renderPaletteList(
     })
     .join("");
 }
+
+/**
+ * F63: the four "Set priority: X" palette commands, in urgent-first order. Pure
+ * so the id/title/disabled shape is unit-tested without the app. `hasSel` gates
+ * them on a selection existing; `current` (the selected task's priority)
+ * disables the level already in effect so the group also reads as a "current
+ * priority" indicator. The ids are the same `prio-set-<level>` keys runCommand
+ * dispatches on via setPriority.
+ */
+export type PriorityLevel = "urgent" | "high" | "medium" | "low";
+
+export function buildPriorityCommands(
+  hasSel: boolean,
+  current: PriorityLevel | undefined,
+): Command[] {
+  const levels: ReadonlyArray<{ level: PriorityLevel; label: string; keywords: string[] }> = [
+    { level: "urgent", label: "Urgent", keywords: ["priority", "u", "important", "now"] },
+    { level: "high", label: "High", keywords: ["priority", "h"] },
+    { level: "medium", label: "Medium", keywords: ["priority", "m", "normal"] },
+    { level: "low", label: "Low", keywords: ["priority", "l", "later", "someday"] },
+  ];
+  return levels.map(({ level, label, keywords }) => ({
+    id: `prio-set-${level}`,
+    title: `Set priority: ${label}`,
+    group: "Priority",
+    keywords,
+    disabled: !hasSel || current === level,
+  }));
+}

@@ -7,6 +7,7 @@ import {
   moveIndex,
   clampIndex,
   renderPaletteList,
+  buildPriorityCommands,
   type Command,
 } from "../src/palette.ts";
 
@@ -150,4 +151,47 @@ test("renderPaletteList still escapes while highlighting", () => {
   assert.doesNotMatch(html, /<b>/);
   assert.match(html, /&lt;b&gt;/);
   assert.match(html, /<mark>tag<\/mark>/);
+});
+
+// --- F63: "Set priority" palette command group ------------------------------
+
+test("buildPriorityCommands emits the four levels, urgent-first", () => {
+  const cmds = buildPriorityCommands(true, "medium");
+  assert.deepEqual(
+    cmds.map((c) => c.id),
+    ["prio-set-urgent", "prio-set-high", "prio-set-medium", "prio-set-low"],
+  );
+  assert.deepEqual(
+    cmds.map((c) => c.title),
+    ["Set priority: Urgent", "Set priority: High", "Set priority: Medium", "Set priority: Low"],
+  );
+  // all share the Priority group
+  assert.ok(cmds.every((c) => c.group === "Priority"));
+});
+
+test("buildPriorityCommands disables the level already in effect", () => {
+  const cmds = buildPriorityCommands(true, "high");
+  const high = cmds.find((c) => c.id === "prio-set-high")!;
+  const low = cmds.find((c) => c.id === "prio-set-low")!;
+  assert.equal(high.disabled, true); // current -> disabled
+  assert.equal(low.disabled, false); // a different level -> enabled
+});
+
+test("buildPriorityCommands disables everything with no selection", () => {
+  const cmds = buildPriorityCommands(false, undefined);
+  assert.ok(cmds.every((c) => c.disabled === true));
+});
+
+test("buildPriorityCommands enables all four when nothing matches current", () => {
+  // An undefined current (shouldn't happen with a selection, but be safe) keeps
+  // every level actionable.
+  const cmds = buildPriorityCommands(true, undefined);
+  assert.ok(cmds.every((c) => c.disabled === false));
+});
+
+test("buildPriorityCommands rows fuzzy-match via filterCommands", () => {
+  // The group is reachable by typing a single letter mnemonic (keyword).
+  const cmds = buildPriorityCommands(true, "low");
+  const out = filterCommands(cmds, "urgent");
+  assert.equal(out[0].id, "prio-set-urgent");
 });
