@@ -60,3 +60,14 @@ test("renderPriorityPicker has the menu role + aria-label", () => {
   assert.match(html, /aria-label="Set priority"/);
   assert.match(html, /role="menuitemradio"/);
 });
+
+test("renderPriorityPicker marks the current level with a check (F55)", () => {
+  const html = renderPriorityPicker("high");
+  // exactly one check glyph, on the active row
+  assert.equal((html.match(/prio-pick-check/g) ?? []).length, 1);
+});
+
+test("renderPriorityPicker shows no check for an unknown current value (F55)", () => {
+  const html = renderPriorityPicker("bogus");
+  assert.doesNotMatch(html, /prio-pick-check/);
+});

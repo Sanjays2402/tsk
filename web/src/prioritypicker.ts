@@ -57,16 +57,24 @@ function escapeHTML(s: string): string {
 /**
  * Render the picker's inner list for a task. Each option carries
  * `data-set-prio="<priority>"` so a delegated listener dispatches on it; the
- * active option carries `is-active` + aria-checked. The glyph chips reuse the
- * `.priority` color classes so each level reads the same as it does on the row.
+ * active option carries `is-active` + aria-checked AND a trailing check glyph
+ * (F55) so the current level is unmistakable at a glance. The glyph chips reuse
+ * the `.priority` color classes so each level reads the same as it does on the
+ * row.
  */
 export function renderPriorityPicker(current: string): string {
   const items = priorityOptions(current)
     .map((opt) => {
       const cls = ["prio-pick-item", opt.active ? "is-active" : ""].filter(Boolean).join(" ");
+      // F55: a check marks the task's CURRENT priority so the active row is
+      // obvious without relying on the subtle is-active background alone.
+      const check = opt.active
+        ? `<span class="prio-pick-check" aria-hidden="true">&#10003;</span>`
+        : "";
       return `<li class="${cls}" role="menuitemradio" aria-checked="${opt.active}" data-set-prio="${opt.priority}" tabindex="-1">
         <span class="prio-pick-glyph priority ${opt.priority}">${escapeHTML(opt.glyph)}</span>
         <span class="prio-pick-label">${escapeHTML(opt.label)}</span>
+        ${check}
       </li>`;
     })
     .join("");

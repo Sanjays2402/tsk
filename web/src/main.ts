@@ -843,6 +843,8 @@ function openPriorityPicker(id: number, x: number, y: number): void {
     if (!item) return;
     const prio = item.dataset.setPrio as CyclePriority;
     closePriorityPicker();
+    // F55: a tiny haptic confirms the tap on touch devices that support it.
+    if (navigator.vibrate) navigator.vibrate(10);
     setPriority(id, prio);
   });
 
@@ -2899,6 +2901,14 @@ els.content.addEventListener("contextmenu", (e) => {
   if (!row) return;
   const id = Number(row.dataset.id);
   if (!Number.isFinite(id) || id <= 0) return;
+  // F55: a right-click landing ON the priority chip opens the 4-way priority
+  // picker at the pointer (desktop parity with the F41 touch long-press), so
+  // the chip has the same menu the row's F37 context menu exposes for priority.
+  if (target.closest("[data-prio-cycle]")) {
+    e.preventDefault();
+    openPriorityPicker(id, e.clientX, e.clientY);
+    return;
+  }
   e.preventDefault();
   openContextMenu(id, e.clientX, e.clientY);
 });

@@ -638,6 +638,17 @@ button.priority:focus-visible {
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
+/* F55: the label takes the slack so the current-priority check (if any) pins
+   to the right edge of the row. */
+.prio-pick-label {
+  flex: 1 1 auto;
+}
+/* F55: a check marking the task's current priority in the picker. */
+.prio-pick-check {
+  color: var(--color-accent);
+  font-size: var(--fs-sm);
+  line-height: 1;
+}
 
 /* F27: pin star — sits before the title, lit gold when pinned. */
 .pin-btn {
