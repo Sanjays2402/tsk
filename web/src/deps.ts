@@ -92,6 +92,40 @@ export function needsBlockedConfirm(task: DepTask, done: Map<number, boolean>): 
 }
 
 /**
+ * F42: the ids of tasks that just became UNBLOCKED across a change in the
+ * done-set. Given the task list BEFORE and AFTER a toggle, returns the ids of
+ * tasks that were blocked before and are no longer blocked after AND are
+ * themselves still undone (so an "#N is now unblocked — start it?" prompt is
+ * actionable). Matching is by id across the two snapshots; a task missing from
+ * either side (added/deleted) is ignored, and the task you just completed is
+ * excluded because it's now done. Pure so the before/after diff is unit-tested.
+ */
+export function newlyUnblocked(before: DepTask[], after: DepTask[]): number[] {
+  const beforeDone = doneIndex(before);
+  const afterDone = doneIndex(after);
+  const beforeById = new Map<number, DepTask>();
+  for (const t of before) beforeById.set(t.id, t);
+  const out: number[] = [];
+  for (const t of after) {
+    if (t.done) continue; // a now-done task isn't something to "start"
+    const prev = beforeById.get(t.id);
+    if (!prev) continue; // newly added — no "before" to compare against
+    if (isBlocked(prev, beforeDone) && !isBlocked(t, afterDone)) out.push(t.id);
+  }
+  return out;
+}
+
+/**
+ * F42: the message for the "just unblocked" toast. One id reads as an
+ * invitation to start it; several are listed plainly. Returns "" for none.
+ */
+export function unblockedMessage(ids: number[]): string {
+  if (ids.length === 0) return "";
+  if (ids.length === 1) return `#${ids[0]} is now unblocked — start it?`;
+  return `${ids.map((id) => `#${id}`).join(", ")} are now unblocked`;
+}
+
+/**
  * Render the "blocked by #N" badge for a row. Returns "" when the task has no
  * open blockers so the badge collapses. The badge is a button so a future
  * slice can wire a click to jump to / highlight the blocker; for now it carries

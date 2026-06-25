@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, type DepTask, type DepStatsTask } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, type DepTask, type DepStatsTask } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -1417,12 +1417,20 @@ async function toggleTask(id: number): Promise<void> {
   currentTasks[idx] = { ...before, done: !before.done };
   inFlight.add(id);
   render();
+  // F42: snapshot the pre-toggle dep state so that, once the server confirms a
+  // COMPLETION, we can tell which OTHER tasks just lost their last open blocker
+  // and offer to jump straight to one.
+  const wasCompleting = !before.done;
+  const depBefore = wasCompleting
+    ? currentTasks.map((t) => ({ id: t.id, done: t.id === id ? false : t.done, depends_on: t.depends_on }))
+    : null;
   try {
     const confirmed = await api.toggleTask(id);
     // Server is authoritative (it knows the completed timestamp etc.).
     currentTasks[idx] = confirmed;
     render();
     refreshStats();
+    maybeAnnounceUnblocked(depBefore, confirmed.done);
   } catch (err) {
     // Roll back the optimistic flip and flash a status.
     currentTasks[idx] = before;
@@ -1432,6 +1440,30 @@ async function toggleTask(id: number): Promise<void> {
   } finally {
     inFlight.delete(id);
   }
+}
+
+/**
+ * F42: after a completion lands, see whether finishing that task cleared the
+ * last open blocker of some OTHER task. If so, surface a toast ("#N is now
+ * unblocked — start it?") with a "Start" action that jumps to it. `depBefore`
+ * is the pre-toggle dependency snapshot (null when we were re-opening, which
+ * can never unblock anything); `becameDone` guards on the toggle having
+ * actually completed the task server-side.
+ */
+function maybeAnnounceUnblocked(depBefore: DepTask[] | null, becameDone: boolean): void {
+  if (!depBefore || !becameDone) return;
+  const after: DepTask[] = currentTasks.map((t) => ({
+    id: t.id,
+    done: t.done,
+    depends_on: t.depends_on,
+  }));
+  const freed = newlyUnblocked(depBefore, after);
+  if (freed.length === 0) return;
+  const first = freed[0];
+  showInfoToast(unblockedMessage(freed), 6, {
+    label: "Start",
+    run: () => jumpToTask(first),
+  });
 }
 
 /**
@@ -1633,6 +1665,13 @@ function undoDelete(): void {
 /** Handle for the auto-dismiss timer of the info toast. */
 let infoToastTimer: number | null = null;
 
+/**
+ * F42: a one-shot action handler stashed for the info-toast's action button
+ * (e.g. "Start" on the just-unblocked notice). Cleared after it fires or the
+ * toast auto-dismisses, so a stale handler never runs on a later toast.
+ */
+let infoToastAction: (() => void) | null = null;
+
 /** Lazily build the info-toast element (separate from the undo toast). */
 function infoToastEl(): HTMLElement {
   let el = document.querySelector<HTMLElement>("[data-info-toast]");
@@ -1642,6 +1681,19 @@ function infoToastEl(): HTMLElement {
   el.setAttribute("data-info-toast", "");
   el.setAttribute("role", "status");
   el.setAttribute("aria-live", "polite");
+  // F42: the optional action button dispatches the stashed one-shot handler.
+  el.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.dataset.toastAction === undefined) return;
+    const run = infoToastAction;
+    infoToastAction = null;
+    el!.classList.remove("is-open");
+    if (infoToastTimer !== null) {
+      window.clearTimeout(infoToastTimer);
+      infoToastTimer = null;
+    }
+    if (run) run();
+  });
   document.body.appendChild(el);
   return el;
 }
@@ -1650,15 +1702,26 @@ function infoToastEl(): HTMLElement {
  * Show a brief, message-only toast that auto-dismisses. Used by the F33
  * live-reload notice. Distinct from the undo toast so a live refresh never
  * stomps a pending-delete's Undo affordance.
+ *
+ * F42: an optional action (label + handler) turns it into an actionable
+ * notice — e.g. "#N is now unblocked — start it?" with a "Start" button that
+ * jumps to the task. The action button reuses the toast's `data-toast-action`
+ * hook; a one-shot handler is stashed so the click can dispatch it.
  */
-function showInfoToast(message: string, seconds = 3): void {
+function showInfoToast(
+  message: string,
+  seconds = 3,
+  action?: { label: string; run: () => void },
+): void {
   const el = infoToastEl();
-  el.innerHTML = renderToast({ message, seconds });
+  el.innerHTML = renderToast({ message, seconds, actionLabel: action?.label });
+  infoToastAction = action?.run ?? null;
   el.classList.add("is-open");
   if (infoToastTimer !== null) window.clearTimeout(infoToastTimer);
   infoToastTimer = window.setTimeout(() => {
     el.classList.remove("is-open");
     infoToastTimer = null;
+    infoToastAction = null;
   }, seconds * 1_000);
 }
 
