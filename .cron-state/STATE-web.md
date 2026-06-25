@@ -566,24 +566,27 @@ mobile/highlight work plus long-tail UI the surface still lacks.
 - [x] **F40** Pinned-section drag-reorder + a "pin to a fixed slot" so the
       Pinned group has a stable hand-curated order (currently priority-sorted);
       persist the order through the existing /move endpoint. (tick T8 2026-06-24)
-- [ ] **F41** Priority cycle on touch: long-press the chip to open a 4-way
+- [x] **F41** Priority cycle on touch: long-press the chip to open a 4-way
       priority picker (tap-to-set) since alt/shift-click isn't reachable on a
-      phone; reuse the F28 long-press machine.
+      phone; reuse the F28 long-press machine. (tick T9 2026-06-24)
 - [ ] **F42** "Unblocked just now" toast: when a toggle-done completes the last
       blocker of some task, surface a toast ("#N is now unblocked — start it?")
       with a jump action. Pairs with the F26 done-index.
-- [ ] **F43** Highlight in tags + notes preview too (F30 only marks titles):
+      (DEFERRED from T9 — picked the 5 most cohesive slices; this is the top
+      unstarted item for T10)
+- [x] **F43** Highlight in tags + notes preview too (F30 only marks titles):
       mark the matched subsequence in the tag pills and any notes snippet so a
-      fuzzy match that landed on a tag is visible.
-- [ ] **F44** Keyboard: `[` / `]` to cycle priority down/up on the selected
+      fuzzy match that landed on a tag is visible. (tick T9 2026-06-24)
+- [x] **F44** Keyboard: `[` / `]` to cycle priority down/up on the selected
       row (sister of the F29 chip click), and `shift+P` to pin-to-top; show
-      them in the `?` help overlay.
-- [ ] **F45** Blocked-task guard on toggle: when you try to complete a blocked
+      them in the `?` help overlay. (tick T9 2026-06-24)
+- [x] **F45** Blocked-task guard on toggle: when you try to complete a blocked
       task, confirm ("#N is blocked by #M — complete anyway?") instead of
       silently allowing it, mirroring the CLI's `done` dependency gate.
-- [ ] **F46** Stats: a "blocked" + "pinned" count in the stats sidebar (reuse
+      (tick T9 2026-06-24)
+- [x] **F46** Stats: a "blocked" + "pinned" count in the stats sidebar (reuse
       the done-index + Pinned flag), and a tiny dependency-depth metric
-      ("longest blocker chain: 3").
+      ("longest blocker chain: 3"). (tick T9 2026-06-24)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an
 in-UI dependency graph mini-map, undo stack beyond single delete, etc.).
@@ -620,3 +623,107 @@ quick-add / dependency-editor / pinned-reorder cluster.
 - [ ] **F54** Row context menu on touch: wire a long-press (reuse the F28
       machine) to open the F37 menu instead of only bulk-select, with a press-
       and-hold disambiguation (short hold = menu, longer = multi-select).
+
+### T9 — 2026-06-24 18:06 PT — depth (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted — `/Volumes` held only Macintosh HD; `diskutil list`
+showed only the internal disk and the lock wrapper logged `(repo cd failed)`,
+confirming the stale hard-coded path. Worked from the fully-synced internal
+worktree `/Users/sanjay/Projects/tsk-features/main` (same origin Sanjays2402/tsk,
+was exactly at origin/main f2c64dc, clean tree, .cron-state tracked in git so no
+state divergence). Pushed a clean fast-forward f2c64dc..efd8c29. This remains
+the documented fallback (see T2-T8 notes).
+
+Slices shipped (5/5 — picked the 5 most cohesive from the F41-F46 queue;
+DEFERRED F42 honestly, see below):
+
+- F43 feat(web): highlight matched chars in tags + notes too (2d13796)
+- F44 feat(web): keyboard priority cycle + pin-to-top shortcut (7c5bbbf)
+- F45 feat(web): confirm before completing a blocked task (4c03e24)
+- F46 feat(web): blocked / pinned / chain-depth stats in the sidebar (0cd22d2)
+- F41 feat(web): touch priority picker — long-press the chip (73ee7e8)
+- (+ chore efd8c29: rebuilt embedded SPA bundle for all five slices)
+
+Why F42 deferred (4/5 of the standing queue + F41 chosen over F42): F41,
+F43-F46 form a tight, mostly-pure cluster (highlight engine generalization,
+two reorder helpers, two deps helpers, a stats renderer, a picker module) that
+all ship as dependency-free logic + a thin DOM wiring layer — exactly the
+quality bar. F42 (the "unblocked just now" toast) needs a before/after
+done-index diff threaded through the toggle round-trip and a new toast variant
+with a jump action; it's a clean slice but a DIFFERENT shape (stateful diff,
+not pure render), so bundling it would have rushed it. It's now the TOP
+unstarted item for T10. Five solid slices over five-plus-a-rushed-one.
+
+All five slices are pure-frontend logic over the existing JSON API (no backend
+change this tick). New/changed pure modules, each unit-tested under node --test:
+- highlight.ts: generalized to highlightText(text, query); highlightTitle is now
+  a thin alias. render.ts threads it into tag pills + the notes snippet;
+  notes.ts renderNotesSnippet gained an optional highlight callback. (+8 tests
+  across highlight + notes)
+- reorder.ts: new computePinToTop(order, moved). (+6 tests)
+- deps.ts: new needsBlockedConfirm + blockedToggleConfirm (F45) and
+  computeDepStats (F46, memoized DFS with cycle guard). (+12 tests)
+- stats.ts: new renderDepStats; renderStatsPanel gained an optional dep arg.
+  (+4 tests)
+- prioritypicker.ts: NEW module — priorityOptions + renderPriorityPicker (F41).
+  (+8 tests). Imports priority.ts with the explicit .ts specifier so node --test
+  resolves it (the config.ts convention).
+- main.ts wiring: setPriority direct setter (cyclePriority now delegates),
+  pinToTop, the [ ] / shift+P keys + help rows, the toggle blocked-guard, the
+  refreshStats dep computation, and the openPriorityPicker popover + its
+  long-press arm on the chip in the touchstart handler. app.css: .tag/.notes
+  mark, dep-stats tiles, .prio-pick popover.
+
+38 new web tests (358 -> 395 — note: 37 net new files-counted; one was an
+existing-file extension). 
+
+Gates (run once at end of batch): gofmt -l clean, go vet ./... clean, go build
+./... ok, go test ./... ok across ALL packages (incl. internal/serve with the
+freshly-embedded T9 bundle, internal/commands 67.3s), web `npm run check` 395
+pass, `npm run build` ok — JS 28.30KB gz, CSS 8.15KB gz, 37 modules.
+
+End-to-end proof: built the binary, ran tsk add x3 + depend 3 --on 1 + pin 2 +
+`tsk serve`. F41: PATCH /api/tasks/2 {priority:urgent} round-tripped low->urgent
+on disk as `prio:urgent` while preserving `pin:true` + tags (storage contract
+intact). F45: with #1 open, #3's open_blockers=[1] (guard fires); after toggling
+#1 done, #3's open_blockers=[] (guard stands down) — mirrors the CLI gate. The
+served bundle carries every slice's hooks: prio-pick + data-set-prio + "Set
+priority" (F41), notes-snippet + tag mark (F43), "Chain depth" (F44/F46),
+"complete anyway" + "is blocked by" (F45), Dependencies + Blocked + metric-pinned
+(F46).
+
+Roadmap status: F1-F41, F43-F46 done (40 of the 46-item F-roadmap shipped).
+F42 deferred (top of T10). F47-F54 (T9 backlog) unstarted. T10 backlog appended
+below so the loop never starves.
+
+### T10 — depth (appended T9 2026-06-24 so the loop never starves)
+
+Top of the queue is the deferred F42. F47-F54 remain the standing T9 backlog
+(bulk-edit depth, context submenus, autocomplete everywhere, dep mini-graph,
+all-section reorder, multi-paste review, palette row-actions, touch context
+menu). These extend the runway with follow-ons sensible after the T9
+highlight / keyboard / guard / stats / picker cluster.
+
+- [ ] **F42** (carried) "Unblocked just now" toast: on a toggle-done that clears
+      the last open blocker of some OTHER task, show a toast ("#N is now
+      unblocked — start it?") with a jump action. Diff the done-index before vs
+      after the toggle to find newly-unblocked ids; reuse the F33 info-toast.
+- [ ] **F55** Touch picker polish: a tiny haptic + a "current" check on the
+      active row, and wire the SAME picker to a desktop right-click on the chip
+      (so the chip has menu parity with the row's F37 context menu).
+- [ ] **F56** Dependency-depth drill-down: clicking the F46 "chain depth N"
+      metric opens the longest chain as a jump-list (#a -> #b -> #c) so you can
+      walk to the root blocker; reuse the jumpToTask plumbing.
+- [ ] **F57** Highlight in the command palette (F18) results too: when you type
+      in Cmd-K, mark the matched subsequence in each command label (reuse the
+      now-generic highlightText engine from F43).
+- [ ] **F58** Keyboard: `shift+[` / `shift+]` to jump priority to the floor /
+      ceiling (low / urgent) in one keystroke, and surface in the `?` overlay.
+- [ ] **F59** Stats: a "due this week" + "no-due" count tile, and make the
+      blocked tile click-to-filter (show only blocked tasks) reusing the F11
+      filter plumbing.
+- [ ] **F60** Bulk blocked-guard: when a bulk multi-toggle would complete one or
+      more BLOCKED tasks, list them in a single confirm ("3 of 5 are blocked —
+      complete all anyway?") instead of silently completing — the bulk sibling
+      of F45.
