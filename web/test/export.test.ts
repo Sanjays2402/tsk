@@ -7,6 +7,8 @@ import {
   exportScopeLabel,
   exportFilename,
   renderExportMenu,
+  buildExportCommands,
+  exportCommandTarget,
   type ExportFormat,
 } from "../src/export.ts";
 
@@ -86,5 +88,78 @@ test("renderExportMenu adds a scope header only when scopedCount is a number", (
   // the items still render alongside the header
   for (const o of EXPORT_OPTIONS) {
     assert.ok(scoped.includes(`data-export-format="${o.format}"`));
+  }
+});
+
+// --- F78: scoped export commands in the palette ----------------------------
+
+test("buildExportCommands: only the three whole-store commands when unscoped", () => {
+  const cmds = buildExportCommands(null);
+  assert.equal(cmds.length, 3);
+  assert.deepEqual(
+    cmds.map((c) => c.id),
+    ["export-json", "export-csv", "export-markdown"],
+  );
+  // unscoped titles read plainly ("Export tasks as JSON")
+  assert.match(cmds[0].title, /Export tasks as JSON/);
+});
+
+test("buildExportCommands: prepends the scoped trio when a count is given", () => {
+  const cmds = buildExportCommands(4);
+  assert.equal(cmds.length, 6);
+  // scoped first, then whole-store
+  assert.deepEqual(
+    cmds.map((c) => c.id),
+    [
+      "export-scoped-json",
+      "export-scoped-csv",
+      "export-scoped-markdown",
+      "export-json",
+      "export-csv",
+      "export-markdown",
+    ],
+  );
+});
+
+test("buildExportCommands: scoped titles carry the count, whole-store say 'all'", () => {
+  const cmds = buildExportCommands(4);
+  const scopedCsv = cmds.find((c) => c.id === "export-scoped-csv")!;
+  assert.match(scopedCsv.title, /Export 4 shown as CSV/);
+  const allCsv = cmds.find((c) => c.id === "export-csv")!;
+  assert.match(allCsv.title, /Export all tasks as CSV/);
+});
+
+test("buildExportCommands: every command is in the Export group", () => {
+  for (const c of buildExportCommands(2)) {
+    assert.equal(c.group, "Export");
+  }
+});
+
+test("exportCommandTarget decodes whole-store ids (not scoped)", () => {
+  assert.deepEqual(exportCommandTarget("export-json"), { format: "json", scoped: false });
+  assert.deepEqual(exportCommandTarget("export-csv"), { format: "csv", scoped: false });
+  assert.deepEqual(exportCommandTarget("export-markdown"), { format: "markdown", scoped: false });
+});
+
+test("exportCommandTarget decodes scoped ids", () => {
+  assert.deepEqual(exportCommandTarget("export-scoped-json"), { format: "json", scoped: true });
+  assert.deepEqual(exportCommandTarget("export-scoped-csv"), { format: "csv", scoped: true });
+  assert.deepEqual(exportCommandTarget("export-scoped-markdown"), { format: "markdown", scoped: true });
+});
+
+test("exportCommandTarget returns null for non-export / malformed ids", () => {
+  assert.equal(exportCommandTarget("toggle"), null);
+  assert.equal(exportCommandTarget("export-pdf"), null); // unknown format
+  assert.equal(exportCommandTarget("export-scoped-pdf"), null);
+  assert.equal(exportCommandTarget(""), null);
+  assert.equal(exportCommandTarget("view:abc"), null);
+});
+
+test("exportCommandTarget round-trips every buildExportCommands id", () => {
+  for (const c of buildExportCommands(3)) {
+    const t = exportCommandTarget(c.id);
+    assert.notEqual(t, null);
+    // scoped ids decode to scoped:true, whole-store to scoped:false
+    assert.equal(t!.scoped, c.id.startsWith("export-scoped-"));
   }
 });

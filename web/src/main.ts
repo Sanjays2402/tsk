@@ -130,6 +130,8 @@ import {
   scopedExportUrl,
   exportFilename,
   renderExportMenu,
+  buildExportCommands,
+  exportCommandTarget,
   type ExportFormat,
 } from "./export";
 import {
@@ -3015,9 +3017,14 @@ function toggleExportMenu(open: boolean): void {
  * F75: when a lens / filter / tag-route is narrowing the board, export only the
  * subset you SEE (the visible ids, in store order) rather than the whole store,
  * so "what you see is what you get". With nothing active it's the full export.
+ *
+ * F78: `forceScope` lets the palette's explicit commands override the auto
+ * behaviour — `true` always exports the visible subset, `false` always exports
+ * the whole store, `undefined` keeps the F75 auto-scope (used by the export
+ * menu + the legacy whole-store commands).
  */
-function downloadExport(format: ExportFormat): void {
-  const scoped = isExportScoped();
+function downloadExport(format: ExportFormat, forceScope?: boolean): void {
+  const scoped = forceScope ?? isExportScoped();
   const href = scoped ? scopedExportUrl(format, visibleIds) : exportUrl(format);
   const a = document.createElement("a");
   a.href = href;
@@ -3895,9 +3902,11 @@ function buildCommands(): Command[] {
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
     { id: "settings", title: "Open settings", group: "View", keywords: ["preferences", "density", "compact", "options", "config"], hint: "," },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
-    { id: "export-json", title: "Export tasks as JSON", group: "Export", keywords: ["download", "save"] },
-    { id: "export-csv", title: "Export tasks as CSV", group: "Export", keywords: ["download", "spreadsheet"] },
-    { id: "export-markdown", title: "Export tasks as Markdown", group: "Export", keywords: ["download", "md"] },
+    // F19/F78: the export group. buildExportCommands emits the three whole-store
+    // "Export tasks as <FMT>" commands always, and — when a lens/filter/tag is
+    // narrowing the board — three extra "Export N shown as <FMT>" commands so
+    // the visible subset is reachable keyboard-only, distinct from the full set.
+    ...buildExportCommands(isExportScoped() ? visibleIds.length : null),
     { id: "help", title: "Show keyboard shortcuts", group: "View", keywords: ["keys", "?"], hint: "?" },
     { id: "alltasks", title: "Go to all tasks", group: "View", keywords: ["home", "clear tag"], disabled: route.kind !== "tag" },
     {
@@ -3987,15 +3996,6 @@ function runCommand(id: string): void {
     case "refresh":
       refresh();
       break;
-    case "export-json":
-      downloadExport("json");
-      break;
-    case "export-csv":
-      downloadExport("csv");
-      break;
-    case "export-markdown":
-      downloadExport("markdown");
-      break;
     case "help":
       toggleHelp(true);
       break;
@@ -4016,6 +4016,14 @@ function runCommand(id: string): void {
   if (id.startsWith("due-set-") && id !== "due-set-clear") {
     const token = id.slice("due-set-".length);
     if (sel !== null && token !== "") commitDue(sel, token);
+  }
+  // F19/F78: dynamic export commands. exportCommandTarget decodes both the
+  // whole-store ids ("export-csv") and the scoped ids ("export-scoped-csv"),
+  // forcing the scope so the explicit palette commands always do exactly what
+  // they say regardless of the live lens/filter auto-scope.
+  const exportTarget = exportCommandTarget(id);
+  if (exportTarget) {
+    downloadExport(exportTarget.format, exportTarget.scoped);
   }
 }
 

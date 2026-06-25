@@ -8,6 +8,8 @@
  * building + rendering are unit-tested with zero DOM.
  */
 
+import type { Command } from "./palette.ts";
+
 export type ExportFormat = "json" | "csv" | "markdown";
 
 export interface ExportOption {
@@ -92,4 +94,62 @@ export function renderExportMenu(scopedCount: number | null = null): string {
       </button>`,
   ).join("");
   return header + items;
+}
+
+/**
+ * F78: build the palette's export command group. Pure → unit-tested.
+ *
+ * The three base "Export tasks as <FMT>" commands always export the WHOLE store
+ * (id `export-<fmt>`). When a lens/filter/tag is narrowing the board
+ * (`scopedCount` is a number), three extra "Export N shown as <FMT>" commands
+ * (id `export-scoped-<fmt>`) are prepended so the visible subset is reachable
+ * keyboard-only — distinct from the whole-store commands, and only offered when
+ * scoping is actually active so they never duplicate the base set on a plain
+ * board. The `scopedCount` is woven into each scoped title via exportScopeLabel
+ * so it reads "Export 4 shown as CSV".
+ */
+export function buildExportCommands(scopedCount: number | null = null): Command[] {
+  const scoped: Command[] =
+    scopedCount === null
+      ? []
+      : EXPORT_OPTIONS.map((o) => ({
+          id: `export-scoped-${o.format}`,
+          title: `${exportScopeLabel(scopedCount)} as ${o.label}`,
+          group: "Export",
+          keywords: ["download", "visible", "subset", "lens", "filter", "scoped", o.ext.replace(".", "")],
+        }));
+  const all: Command[] = EXPORT_OPTIONS.map((o) => ({
+    id: `export-${o.format}`,
+    title: scopedCount === null ? `Export tasks as ${o.label}` : `Export all tasks as ${o.label}`,
+    group: "Export",
+    keywords: ["download", "save", "all", "everything", o.ext.replace(".", "")],
+  }));
+  return [...scoped, ...all];
+}
+
+/**
+ * F78: decode an export command id into its format + whether it's the scoped
+ * ("export what you see") variant. Pure → unit-tested. Returns null for any
+ * non-export command. Lets runCommand dispatch one switch over both the
+ * whole-store (`export-csv`) and scoped (`export-scoped-csv`) ids.
+ */
+export function exportCommandTarget(
+  id: string,
+): { format: ExportFormat; scoped: boolean } | null {
+  const scopedPrefix = "export-scoped-";
+  const allPrefix = "export-";
+  let scoped = false;
+  let fmt = "";
+  if (id.startsWith(scopedPrefix)) {
+    scoped = true;
+    fmt = id.slice(scopedPrefix.length);
+  } else if (id.startsWith(allPrefix)) {
+    fmt = id.slice(allPrefix.length);
+  } else {
+    return null;
+  }
+  if (fmt === "json" || fmt === "csv" || fmt === "markdown") {
+    return { format: fmt, scoped };
+  }
+  return null;
 }
