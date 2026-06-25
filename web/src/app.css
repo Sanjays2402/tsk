@@ -2055,6 +2055,36 @@ kbd {
   border-radius: var(--radius-md);
   background: var(--color-bg);
 }
+/* F76: the keyboard-shortcut badge on a lens tile. Tucked into the top-right
+   corner so it's discoverable without crowding the number; faint until the
+   tile is hovered/focused, when it brightens to the accent so the "press this
+   digit" affordance reads clearly. Buttons need position:relative to anchor
+   it; only interactive (drill) tiles ever carry one. */
+button.stat-metric {
+  position: relative;
+}
+.lens-key {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 13px;
+  padding: 0 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+  color: var(--color-text-faint);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+button.stat-metric:hover .lens-key,
+button.stat-metric:focus-visible .lens-key {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
 .stat-num {
   font-family: var(--font-mono);
   font-size: var(--fs-lg);

@@ -163,6 +163,20 @@ export function activeLensSummary(kind: LensKind | null): string {
   return `${meta.glyph} ${meta.label}`;
 }
 
+/**
+ * F76: the 1-based digit shortcut for a lens (the inverse of lensForDigit), as
+ * a string ready to drop into a kbd badge — "1".."5" for a known lens, "" for
+ * anything not in LENS_ORDER (e.g. the stats "open" tile, which maps to the
+ * hideDone facet rather than a numbered lens). Accepting a plain string lets
+ * the stats tiles — which carry their lens as a `data-lens-drill` string — ask
+ * for a badge without a cast. Reusing LENS_ORDER keeps the hint in lock-step
+ * with lensForDigit so a tile's badge can never point at the wrong key.
+ */
+export function lensDigit(kind: string): string {
+  const idx = (LENS_ORDER as ReadonlyArray<string>).indexOf(kind);
+  return idx >= 0 ? String(idx + 1) : "";
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

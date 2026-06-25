@@ -11,12 +11,27 @@
 import type { Stats } from "./api";
 import type { DepStats } from "./deps";
 import type { ScheduleStats } from "./schedule";
+import { lensDigit } from "./lens.ts";
 
 /** Escape strings before injecting into innerHTML. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
+}
+
+/**
+ * F76: a small keyboard-shortcut badge for a lens tile, rendered inside the
+ * tile button so the digit shortcut (the F71 number keys) is discoverable at
+ * the point of use, not just buried in the `?` overlay. Returns "" for a tile
+ * with no numbered lens (the "open" tile maps to the hideDone facet, not a
+ * digit), so only the five real lenses wear a badge. The digit comes from
+ * lensDigit(LENS_ORDER) so it can't drift from lensForDigit.
+ */
+function lensKeyBadge(lens: string): string {
+  const digit = lensDigit(lens);
+  if (digit === "") return "";
+  return `<kbd class="lens-key" aria-hidden="true">${digit}</kbd>`;
 }
 
 /** Round a completion percentage to a whole number for display. */
@@ -96,9 +111,10 @@ export function renderLensMetric(
     </div>`;
   }
   return `
-    <button type="button" class="stat-metric${cls}${alert}" data-lens-drill="${escapeHTML(lens)}" title="Show only ${escapeHTML(label.toLowerCase())} tasks">
+    <button type="button" class="stat-metric${cls}${alert}" data-lens-drill="${escapeHTML(lens)}" title="Show only ${escapeHTML(label.toLowerCase())} tasks (key ${lensDigit(lens) || "-"})">
       <span class="stat-num">${value}</span>
       <span class="stat-label">${escapeHTML(label)}</span>
+      ${lensKeyBadge(lens)}
     </button>`;
 }
 
@@ -142,9 +158,10 @@ export function renderDepStats(dep: DepStats): string {
   // (no point filtering to an empty set).
   const blockedTile =
     dep.blocked > 0
-      ? `<button type="button" class="stat-metric metric-blocked${blockedAlert}" data-lens-drill="blocked" title="Show only blocked tasks">
+      ? `<button type="button" class="stat-metric metric-blocked${blockedAlert}" data-lens-drill="blocked" title="Show only blocked tasks (key ${lensDigit("blocked")})">
         <span class="stat-num">${dep.blocked}</span>
         <span class="stat-label">Blocked</span>
+        ${lensKeyBadge("blocked")}
       </button>`
       : `<div class="stat-metric metric-blocked">
         <span class="stat-num">${dep.blocked}</span>
@@ -184,9 +201,10 @@ export function renderScheduleStats(sched: ScheduleStats): string {
   // blocked tile and F69's time metrics. A zero count stays a static tile.
   const weekTile =
     sched.dueThisWeek > 0
-      ? `<button type="button" class="stat-metric metric-week" data-lens-drill="week" title="Show only tasks due this week">
+      ? `<button type="button" class="stat-metric metric-week" data-lens-drill="week" title="Show only tasks due this week (key ${lensDigit("week")})">
         <span class="stat-num">${sched.dueThisWeek}</span>
         <span class="stat-label">Due this week</span>
+        ${lensKeyBadge("week")}
       </button>`
       : `<div class="stat-metric metric-week">
         <span class="stat-num">${sched.dueThisWeek}</span>
@@ -194,9 +212,10 @@ export function renderScheduleStats(sched: ScheduleStats): string {
       </div>`;
   const noDueTile =
     sched.noDue > 0
-      ? `<button type="button" class="stat-metric metric-nodue" data-lens-drill="nodue" title="Show only tasks with no due date">
+      ? `<button type="button" class="stat-metric metric-nodue" data-lens-drill="nodue" title="Show only tasks with no due date (key ${lensDigit("nodue")})">
         <span class="stat-num">${sched.noDue}</span>
         <span class="stat-label">No due</span>
+        ${lensKeyBadge("nodue")}
       </button>`
       : `<div class="stat-metric metric-nodue">
         <span class="stat-num">${sched.noDue}</span>

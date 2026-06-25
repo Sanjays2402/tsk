@@ -203,3 +203,43 @@ test("renderScheduleStats: a zero tile stays static while the other drills", () 
 test("renderScheduleStats collapses to empty when both are zero", () => {
   assert.equal(renderScheduleStats({ dueThisWeek: 0, noDue: 0 }), "");
 });
+
+// --- F76: lens digit-key badges on the tiles -------------------------------
+
+test("renderLensMetric carries the digit-key badge for a real lens", () => {
+  // overdue is lens #2 -> badge shows "2"
+  const html = renderLensMetric(3, "Overdue", "overdue", "overdue");
+  assert.match(html, /class="lens-key"[^>]*>2</);
+  assert.match(html, /key 2\)/); // also in the title tooltip
+});
+
+test("renderLensMetric badge digit matches the lens slot", () => {
+  assert.match(renderLensMetric(1, "Due today", "today", "today"), /lens-key"[^>]*>3</);
+});
+
+test("renderLensMetric: the open tile has no digit badge (it's a facet, not a lens)", () => {
+  // "open" maps to hideDone, not a numbered lens -> no badge, title shows "-"
+  const html = renderLensMetric(6, "Open", "open");
+  assert.doesNotMatch(html, /lens-key/);
+  assert.match(html, /key -\)/);
+});
+
+test("renderLensMetric: a zero (static) tile carries no badge", () => {
+  assert.doesNotMatch(renderLensMetric(0, "Overdue", "overdue", "overdue"), /lens-key/);
+});
+
+test("renderDepStats: the blocked drill tile shows the '1' key badge", () => {
+  const html = renderDepStats({ blocked: 2, pinned: 0, longestChain: 0 });
+  assert.match(html, /lens-key"[^>]*>1</);
+});
+
+test("renderDepStats: a static (zero) blocked tile has no badge", () => {
+  const html = renderDepStats({ blocked: 0, pinned: 2, longestChain: 0 });
+  assert.doesNotMatch(html, /lens-key/);
+});
+
+test("renderScheduleStats: week + nodue drill tiles show keys 4 and 5", () => {
+  const html = renderScheduleStats({ dueThisWeek: 2, noDue: 3 });
+  assert.match(html, /lens-key"[^>]*>4</);
+  assert.match(html, /lens-key"[^>]*>5</);
+});

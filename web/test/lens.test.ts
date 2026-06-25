@@ -6,6 +6,7 @@ import {
   lensMeta,
   renderLensChipBody,
   lensForDigit,
+  lensDigit,
   activeLensSummary,
   LENS_ORDER,
   type LensKind,
@@ -174,4 +175,35 @@ test("activeLensSummary names the active lens with its glyph", () => {
 
 test("activeLensSummary is empty when no lens is active", () => {
   assert.equal(activeLensSummary(null), "");
+});
+
+// --- F76: lens digit hints (inverse of lensForDigit) -----------------------
+
+test("lensDigit returns the 1-based key for each lens", () => {
+  assert.equal(lensDigit("blocked"), "1");
+  assert.equal(lensDigit("overdue"), "2");
+  assert.equal(lensDigit("today"), "3");
+  assert.equal(lensDigit("week"), "4");
+  assert.equal(lensDigit("nodue"), "5");
+});
+
+test("lensDigit returns '' for non-lens keys (e.g. the open tile)", () => {
+  assert.equal(lensDigit("open"), "");
+  assert.equal(lensDigit(""), "");
+  assert.equal(lensDigit("nonsense"), "");
+});
+
+test("lensDigit is the exact inverse of lensForDigit", () => {
+  // Round-trip: every lens -> its digit -> back to the same lens.
+  LENS_ORDER.forEach((kind) => {
+    const d = lensDigit(kind);
+    assert.notEqual(d, "");
+    assert.equal(lensForDigit(d), kind);
+  });
+});
+
+test("lensDigit stays in sync with LENS_ORDER positions", () => {
+  LENS_ORDER.forEach((kind, i) => {
+    assert.equal(lensDigit(kind), String(i + 1));
+  });
 });
