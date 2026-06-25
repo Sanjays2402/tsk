@@ -723,13 +723,14 @@ highlight / keyboard / guard / stats / picker cluster.
 - [x] **F58** Keyboard: `shift+[` / `shift+]` to jump priority to the floor /
       ceiling (low / urgent) in one keystroke, and surface in the `?` overlay.
       (tick T10 2026-06-24)
-- [ ] **F59** Stats: a "due this week" + "no-due" count tile, and make the
+- [x] **F59** Stats: a "due this week" + "no-due" count tile, and make the
       blocked tile click-to-filter (show only blocked tasks) reusing the F11
-      filter plumbing.
-- [ ] **F60** Bulk blocked-guard: when a bulk multi-toggle would complete one or
+      filter plumbing. (tick T11 2026-06-24 — split: tiles here, click-to-filter
+      shipped as F64)
+- [x] **F60** Bulk blocked-guard: when a bulk multi-toggle would complete one or
       more BLOCKED tasks, list them in a single confirm ("3 of 5 are blocked —
       complete all anyway?") instead of silently completing — the bulk sibling
-      of F45.
+      of F45. (tick T11 2026-06-24)
 
 ### T10 — 2026-06-24 19:06 PT — depth cluster (5/5)
 
@@ -780,14 +781,115 @@ unblock-toast / picker / chain-drill / palette-highlight / priority-jump cluster
 - [ ] **F61** Chain-drill from the row badge too: the "blocked by #N" dep badge
       (F26) gets a secondary affordance to open the F56 chain popover for THAT
       task's deepest blocker path, not just the global longest chain.
-- [ ] **F62** Unblock-toast depth: when several tasks unblock at once (F42 plural
+- [x] **F62** Unblock-toast depth: when several tasks unblock at once (F42 plural
       case), make the toast action a tiny picker ("3 unblocked — jump to which?")
-      instead of always jumping to the first.
-- [ ] **F63** Priority keyboard parity in the palette: a "Set priority ▸" command
+      instead of always jumping to the first. (tick T11 2026-06-24)
+- [x] **F63** Priority keyboard parity in the palette: a "Set priority ▸" command
       group in Cmd-K (urgent/high/medium/low) acting on the selected task, reusing
       setPriority — keyboard-only priority without leaving the palette.
-- [ ] **F64** Stats "blocked" tile click-to-filter (the F59 idea, split out):
+      (tick T11 2026-06-24)
+- [x] **F64** Stats "blocked" tile click-to-filter (the F59 idea, split out):
       clicking the F46 Blocked count filters the list to only blocked tasks via
-      the F11 filter plumbing; a clear chip resets it.
+      the F11 filter plumbing; a clear chip resets it. (tick T11 2026-06-24)
 - [ ] **F65** Notes-snippet highlight in the chain drill + dep badge titles, so a
       search that matched on a blocker's text is visible when you walk the chain.
+
+### T11 — 2026-06-24 20:06 PT — dependency depth + stats lenses (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+was again NOT mounted this tick — the lock wrapper logged `(repo cd failed)` and
+`/Volumes` held only Macintosh HD + Recovery. Worked from the fully-synced
+internal worktree `/Users/sanjay/Projects/tsk-features/main` (same origin
+Sanjays2402/tsk, was exactly at origin/main 8b0e598, clean tree, .cron-state
+tracked in git so no state divergence). `npm --prefix web install` was needed
+this tick (node_modules absent). Pushed a clean fast-forward 8b0e598..95b4515,
+verified HEAD == origin/main, 0/0. This remains the documented fallback (T2-T10).
+
+Slices shipped (5/5 — a tight dependency-UX + stats cluster, all pure-frontend
+over the existing JSON API; no backend change this tick):
+
+- F59 feat(web): stats schedule lens — due-this-week + no-due tiles (cdfef5f)
+- F64 feat(web): blocked-tile click-to-filter, blocked-only lens (c4fdb42)
+- F63 feat(web): "Set priority" command group in the palette (a67b521)
+- F60 feat(web): bulk blocked-guard before completing blocked tasks (bf5e52c)
+- F62 feat(web): multi-unblock picker when several tasks free at once (2fbf743)
+- (+ chore 95b4515: rebuilt embedded SPA bundle for all five slices)
+
+Design notes worth keeping:
+- F59 ships a NEW pure module schedule.ts (computeScheduleStats): the server
+  stats DTO doesn't model "due this week" / "no due", so the client derives them
+  from the live list relative to its own `today`. renderScheduleStats collapses
+  to "" on an empty board.
+- F64's blocked-only lens lives OUTSIDE FilterState on purpose — "blocked" is a
+  cross-task property, so it must NOT serialize into saved views / settings. It's
+  a render-pipeline step (filterBlocked) after the text/facet filter, done-index
+  over the whole live list. The Blocked tile renders as a button only when
+  blocked > 0; clear chip / clear-all / jump-to-hidden all reset it.
+- F63 factors the four palette commands into a pure buildPriorityCommands helper
+  (urgent-first, letter-mnemonic keywords, current level disabled) so the shape
+  is tested without the app; runCommand dispatches prio-set-<level> via the
+  existing setPriority.
+- F60 is the bulk sibling of F45: blockedInBulkToggle (selection-order, only
+  COMPLETING-while-blocked, never re-opens) + bulkBlockedConfirm (singular/plural
+  message); bulkToggleDone gates before the parallel fan-out.
+- F62 is depth on F42: single unblock keeps the direct "Start"; plural opens a
+  renderUnblockedPicker popover (reuses chain-jump chrome + the F56 popover
+  lifecycle).
+
+Tests: +29 net new web tests (422 -> 451). New/extended pure modules each
+unit-tested under node --test: schedule.ts (11), deps.ts (+filterBlocked 3,
++blockedInBulkToggle/bulkBlockedConfirm 7, +renderUnblockedPicker 3), stats.ts
+(+blocked-tile-button 2), palette.ts (+buildPriorityCommands 5). No backend Go
+test change (no backend change), but internal/serve re-ran uncached (1.9s)
+against the freshly-embedded T11 bundle.
+
+Gates (run once at end of batch) — all green:
+- gofmt -l clean, go vet clean, go build ok
+- go test ./... ok all packages (internal/commands 55.2s; internal/serve
+  uncached 1.9s against the new embed)
+- web: npm run check 451 pass, npm run build ok (38 modules, JS 30.43KB gz,
+  CSS 8.50KB gz)
+
+Live end-to-end proof: built the binary, init + 5 tasks with a #3->#2->#1
+blocker chain plus a `due:in 2d` task and a no-due backlog, `tsk serve`. F63:
+PATCH /api/tasks/4 {priority:urgent} round-tripped medium->urgent on disk as
+`prio:urgent` while preserving `due:2026-06-26` (hand-editable contract intact).
+F42/F62: completing #1 cleared #2's open_blockers (now []) while #3 stays
+blocked by #2 — exactly the newlyUnblocked condition. F59: the live list yields
+due-this-week=1 (#4) / no-due=3 (#2,#3,#5), matching computeScheduleStats. The
+served bundle carries every slice's hooks (Due this week, data-blocked-drill,
+prio-set-urgent, "complete all anyway", unblock-jump, "Newly unblocked").
+
+Roadmap status: F1-F64 done (57 of the 65-item F-roadmap shipped). Unstarted:
+F47-F54 (T9 backlog: bulk due/pin depth, context submenus, autocomplete in edit/
+filter, dep mini-graph, all-section reorder, multi-paste review, palette
+row-actions, touch context menu), F61 (chain-drill from the row badge), F65
+(notes highlight in the chain/badge). T12 backlog appended below so the loop
+never starves.
+
+### T12 — depth (appended T11 2026-06-24 so the loop never starves)
+
+Standing unstarted: F47, F48, F49, F50, F51, F52, F53, F54 (the T9 backlog),
+F61 (chain-drill from the "blocked by #N" row badge), F65 (notes-snippet
+highlight in the chain drill + dep badge titles). Fresh follow-ons after the
+T11 schedule-lens / blocked-filter / palette-priority / bulk-guard / unblock-
+picker cluster:
+
+- [ ] **F66** Schedule-tile click-to-filter: clicking the F59 "Due this week"
+      tile narrows the list to that 7-day window (a new render-pipeline lens like
+      F64's blocked-only), and the "No due" tile filters to undated tasks; chips
+      clear them. Reuse the F64 lens plumbing rather than FilterState.
+- [ ] **F67** Palette "Set due ▸" group: mirror F63 for due dates — a Cmd-K group
+      with the NL presets (today / tomorrow / this weekend / next week / clear)
+      acting on the selection via the existing parse-date + PATCH, keyboard-only.
+- [ ] **F68** Bulk priority/pin guard parity: when a bulk action touches blocked
+      tasks (e.g. bulk-complete via the F36 menu), route it through the same F60
+      confirm so every multi-task completion path is guarded, not just the bar's
+      toggle button.
+- [ ] **F69** Stats "Open" + "Overdue" tiles click-to-filter: extend the F64
+      pattern so the time-based metric tiles also drive the list (Overdue ->
+      overdue-only, Open -> hide-done), giving the whole sidebar a consistent
+      "click a number to see those tasks" affordance.
+- [ ] **F70** Unblock picker keyboard nav: arrow-key + Enter selection inside the
+      F62 picker popover (and the F56 chain drill), so the just-unblocked jump is
+      reachable without the mouse — matching the palette's keyboard model.
