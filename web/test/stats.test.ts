@@ -6,8 +6,10 @@ import {
   ringDash,
   renderDonut,
   renderMetric,
+  renderLensMetric,
   renderTopTags,
   renderDepStats,
+  renderScheduleStats,
   renderStatsPanel,
 } from "../src/stats.ts";
 import type { Stats } from "../src/api.ts";
@@ -122,13 +124,13 @@ test("renderDepStats shows blocked, pinned, and chain depth", () => {
 
 test("renderDepStats: the Blocked tile is a drill button when anything is blocked", () => {
   const html = renderDepStats({ blocked: 2, pinned: 0, longestChain: 0 });
-  assert.match(html, /data-blocked-drill/);
+  assert.match(html, /data-lens-drill="blocked"/);
   assert.match(html, /button[^>]*metric-blocked/);
 });
 
 test("renderDepStats: the Blocked tile is static (no drill) when nothing is blocked", () => {
   const html = renderDepStats({ blocked: 0, pinned: 2, longestChain: 0 });
-  assert.doesNotMatch(html, /data-blocked-drill/);
+  assert.doesNotMatch(html, /data-lens-drill/);
   // still shows the (zero) Blocked tile as a plain div
   assert.match(html, /Blocked/);
 });
@@ -149,4 +151,55 @@ test("renderStatsPanel includes the dep row only when dep stats are passed", () 
   assert.match(withDep, /Dependencies/);
   // Without the dep arg, the panel renders exactly as before (back-compat).
   assert.doesNotMatch(renderStatsPanel(stats()), /Dependencies/);
+});
+
+// --- F69: time-metric tiles click-to-filter --------------------------------
+
+test("renderLensMetric is a drill button when it has tasks", () => {
+  const html = renderLensMetric(3, "Overdue", "overdue", "overdue");
+  assert.match(html, /data-lens-drill="overdue"/);
+  assert.match(html, /button[^>]*metric-overdue/);
+  assert.match(html, /is-alert/); // overdue + count keeps the alert hue
+  assert.match(html, /stat-num">3</);
+});
+
+test("renderLensMetric is a static tile at zero (nothing to filter to)", () => {
+  const html = renderLensMetric(0, "Overdue", "overdue", "overdue");
+  assert.doesNotMatch(html, /data-lens-drill/);
+  assert.doesNotMatch(html, /<button/);
+  assert.match(html, /stat-num">0</);
+});
+
+test("renderLensMetric escapes the lens + label", () => {
+  const html = renderLensMetric(1, "Due today", "today", "today");
+  assert.match(html, /data-lens-drill="today"/);
+  assert.match(html, /Show only due today tasks/);
+});
+
+test("renderStatsPanel wires the Open / today / overdue tiles to lenses", () => {
+  const html = renderStatsPanel(stats({ undone: 6, today: 1, overdue: 2 }));
+  assert.match(html, /data-lens-drill="open"/);
+  assert.match(html, /data-lens-drill="today"/);
+  assert.match(html, /data-lens-drill="overdue"/);
+});
+
+// --- F66: schedule tiles click-to-filter -----------------------------------
+
+test("renderScheduleStats: tiles are drill buttons when they have tasks", () => {
+  const html = renderScheduleStats({ dueThisWeek: 2, noDue: 3 });
+  assert.match(html, /data-lens-drill="week"/);
+  assert.match(html, /data-lens-drill="nodue"/);
+  assert.match(html, /Due this week/);
+  assert.match(html, /No due/);
+});
+
+test("renderScheduleStats: a zero tile stays static while the other drills", () => {
+  const html = renderScheduleStats({ dueThisWeek: 0, noDue: 4 });
+  // week is zero -> static div; nodue has tasks -> button
+  assert.doesNotMatch(html, /data-lens-drill="week"/);
+  assert.match(html, /data-lens-drill="nodue"/);
+});
+
+test("renderScheduleStats collapses to empty when both are zero", () => {
+  assert.equal(renderScheduleStats({ dueThisWeek: 0, noDue: 0 }), "");
 });

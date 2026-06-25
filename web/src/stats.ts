@@ -72,6 +72,37 @@ export function renderMetric(value: number, label: string, kind = ""): string {
 }
 
 /**
+ * F69: render a time-metric tile that, when it has any tasks, becomes a button
+ * driving a render-pipeline lens (Open -> hide-done, Due today -> today-only,
+ * Overdue -> overdue-only). Mirrors F64's blocked-tile pattern so the WHOLE
+ * sidebar reads as "click a number to see those tasks". `lens` is the
+ * `data-lens-drill` value main.ts dispatches on; a zero count stays a static
+ * tile (no point filtering to an empty set). `kind` keeps the existing hue
+ * classes (today / overdue alert). Pure → unit-tested.
+ */
+export function renderLensMetric(
+  value: number,
+  label: string,
+  lens: string,
+  kind = "",
+): string {
+  const cls = kind ? ` metric-${kind}` : "";
+  const alert = kind === "overdue" && value > 0 ? " is-alert" : "";
+  if (value <= 0) {
+    return `
+    <div class="stat-metric${cls}${alert}">
+      <span class="stat-num">${value}</span>
+      <span class="stat-label">${escapeHTML(label)}</span>
+    </div>`;
+  }
+  return `
+    <button type="button" class="stat-metric${cls}${alert}" data-lens-drill="${escapeHTML(lens)}" title="Show only ${escapeHTML(label.toLowerCase())} tasks">
+      <span class="stat-num">${value}</span>
+      <span class="stat-label">${escapeHTML(label)}</span>
+    </button>`;
+}
+
+/**
  * Render the top-tags list with proportional bars. Each row carries
  * data-stat-tag so a click can drive the F11 filter. Returns a small
  * empty-state when there are no tags.
@@ -105,12 +136,13 @@ export function renderTopTags(stats: Stats): string {
 export function renderDepStats(dep: DepStats): string {
   if (dep.blocked === 0 && dep.pinned === 0 && dep.longestChain === 0) return "";
   const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
-  // F64: when anything is blocked, the Blocked tile becomes a button that
-  // filters the list to just those tasks; when nothing is blocked it stays a
-  // static tile (no point filtering to an empty set).
+  // F64/F66: when anything is blocked, the Blocked tile becomes a button that
+  // filters the list to just those tasks via the unified lens dispatch
+  // (data-lens-drill="blocked"); when nothing is blocked it stays a static tile
+  // (no point filtering to an empty set).
   const blockedTile =
     dep.blocked > 0
-      ? `<button type="button" class="stat-metric metric-blocked${blockedAlert}" data-blocked-drill title="Show only blocked tasks">
+      ? `<button type="button" class="stat-metric metric-blocked${blockedAlert}" data-lens-drill="blocked" title="Show only blocked tasks">
         <span class="stat-num">${dep.blocked}</span>
         <span class="stat-label">Blocked</span>
       </button>`
@@ -147,17 +179,34 @@ export function renderDepStats(dep: DepStats): string {
  */
 export function renderScheduleStats(sched: ScheduleStats): string {
   if (sched.dueThisWeek === 0 && sched.noDue === 0) return "";
+  // F66: each tile becomes a click-to-filter lens when it has tasks (Due this
+  // week -> the 7-day window, No due -> undated backlog), mirroring F64's
+  // blocked tile and F69's time metrics. A zero count stays a static tile.
+  const weekTile =
+    sched.dueThisWeek > 0
+      ? `<button type="button" class="stat-metric metric-week" data-lens-drill="week" title="Show only tasks due this week">
+        <span class="stat-num">${sched.dueThisWeek}</span>
+        <span class="stat-label">Due this week</span>
+      </button>`
+      : `<div class="stat-metric metric-week">
+        <span class="stat-num">${sched.dueThisWeek}</span>
+        <span class="stat-label">Due this week</span>
+      </div>`;
+  const noDueTile =
+    sched.noDue > 0
+      ? `<button type="button" class="stat-metric metric-nodue" data-lens-drill="nodue" title="Show only tasks with no due date">
+        <span class="stat-num">${sched.noDue}</span>
+        <span class="stat-label">No due</span>
+      </button>`
+      : `<div class="stat-metric metric-nodue">
+        <span class="stat-num">${sched.noDue}</span>
+        <span class="stat-label">No due</span>
+      </div>`;
   return `
     <div class="stats-section-label">Schedule</div>
     <div class="stats-grid stats-grid-sched">
-      <div class="stat-metric metric-week">
-        <span class="stat-num">${sched.dueThisWeek}</span>
-        <span class="stat-label">Due this week</span>
-      </div>
-      <div class="stat-metric metric-nodue">
-        <span class="stat-num">${sched.noDue}</span>
-        <span class="stat-label">No due</span>
-      </div>
+      ${weekTile}
+      ${noDueTile}
     </div>`;
 }
 
@@ -174,9 +223,9 @@ export function renderStatsPanel(stats: Stats, dep?: DepStats, sched?: ScheduleS
       </div>
     </div>
     <div class="stats-grid">
-      ${renderMetric(stats.undone, "Open")}
-      ${renderMetric(stats.today, "Due today", "today")}
-      ${renderMetric(stats.overdue, "Overdue", "overdue")}
+      ${renderLensMetric(stats.undone, "Open", "open")}
+      ${renderLensMetric(stats.today, "Due today", "today", "today")}
+      ${renderLensMetric(stats.overdue, "Overdue", "overdue", "overdue")}
     </div>
     ${sched ? renderScheduleStats(sched) : ""}
     ${dep ? renderDepStats(dep) : ""}

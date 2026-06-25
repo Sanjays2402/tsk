@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, renderUnblockedPicker, filterBlocked, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -54,6 +54,12 @@ import {
 } from "./duepicker";
 import { renderStatsPanel } from "./stats";
 import { computeScheduleStats } from "./schedule";
+import {
+  applyLens,
+  renderLensChipBody,
+  lensMeta,
+  type LensKind,
+} from "./lens";
 import {
   normalizeMode,
   nextMode,
@@ -360,13 +366,17 @@ try {
 let recalledViewId: string | null = null;
 
 /**
- * F64: a render-pipeline lens that narrows the list to only BLOCKED tasks. It
- * lives OUTSIDE FilterState on purpose: "blocked" is a cross-task property
- * (it depends on other tasks' done state), not a per-task facet, so it must
- * not be serialized into saved views / settings. Toggled by clicking the
- * stats "Blocked" tile; a chip in the filter bar clears it.
+ * F66: the single active render-pipeline LENS, or null. A lens narrows the
+ * visible list to a derived subset the stats sidebar drives — `blocked`
+ * (cross-task: depends on other tasks' done state) or one of the time-relative
+ * schedule lenses (`overdue` / `today` / `week` / `nodue`). It lives OUTSIDE
+ * FilterState on purpose: these subsets are cross-task or clock-relative, so
+ * they must NOT serialize into saved views / settings. Exactly one is active at
+ * a time (the subsets are mutually exclusive); clicking a stats tile sets it, a
+ * chip in the filter bar clears it. The "Open" tile is the exception — it maps
+ * to the real `hideDone` facet (which DOES serialize), so it routes there.
  */
-let blockedOnly = false;
+let activeLens: LensKind | null = null;
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -378,11 +388,11 @@ function render(): void {
     ? notDeleted.filter((t) => t.tags.includes(r.tag))
     : notDeleted;
   let shown = applyFilter(routed, filter);
-  // F64: the blocked-only lens runs after the text/facet filter. The done-index
-  // is built over ALL live tasks so a blocker hidden by the active filter still
-  // counts as blocking.
-  if (blockedOnly) {
-    shown = filterBlocked(shown, doneIndex(notDeleted));
+  // F66: the active lens runs after the text/facet filter. The done-index is
+  // built over ALL live tasks so a blocker hidden by the active filter still
+  // counts as blocking, and so the schedule windows see the whole board.
+  if (activeLens) {
+    shown = applyLens(shown, activeLens, now, doneIndex(notDeleted));
   }
   const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
@@ -427,14 +437,28 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
   if (!hasTasks) return;
   els.filterPrios.innerHTML = renderPriorityPills(filter);
   els.filterTags.innerHTML = renderTagChips(collectTags(allTasks), filter);
-  const active = isFilterActive(filter) || blockedOnly;
+  const active = isFilterActive(filter) || activeLens !== null;
   els.filterClear.hidden = !active;
   els.filterHideDone.classList.toggle("is-active", filter.hideDone);
   els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
-  // F64: reflect the blocked-only lens chip (hidden unless the lens is on).
-  els.filterBlocked.hidden = !blockedOnly;
-  els.filterBlocked.classList.toggle("is-active", blockedOnly);
-  els.filterBlocked.setAttribute("aria-pressed", String(blockedOnly));
+  // F66: reflect the single active-lens chip (hidden unless a lens is on). The
+  // chip's body names the lens + a clear affordance; its hue echoes the source
+  // stat tile (alert / today / neutral) so it reads as "I clicked that number".
+  if (activeLens) {
+    els.filterBlocked.hidden = false;
+    els.filterBlocked.innerHTML = renderLensChipBody(activeLens);
+    const hue = lensMeta(activeLens).hue;
+    els.filterBlocked.classList.toggle("is-active", true);
+    els.filterBlocked.classList.toggle("lens-hue-alert", hue === "alert");
+    els.filterBlocked.classList.toggle("lens-hue-today", hue === "today");
+    els.filterBlocked.classList.toggle("lens-hue-neutral", hue === "neutral");
+    els.filterBlocked.setAttribute("aria-pressed", "true");
+    els.filterBlocked.title = `Showing only ${lensMeta(activeLens).label} tasks — click to clear`;
+  } else {
+    els.filterBlocked.hidden = true;
+    els.filterBlocked.classList.remove("is-active", "lens-hue-alert", "lens-hue-today", "lens-hue-neutral");
+    els.filterBlocked.setAttribute("aria-pressed", "false");
+  }
   els.filterbar.classList.toggle("is-active", active);
   renderViewsRow();
   if (active) {
@@ -2533,14 +2557,14 @@ function setFilter(next: Partial<FilterState>): void {
 }
 
 /**
- * F64: toggle the blocked-only lens. Driven by clicking the stats "Blocked"
- * tile (sets it on) and the filter-bar blocked chip / clear-all (sets it off).
- * When turning it ON we also make sure the filter bar is reachable so the
- * clear chip is visible. Re-renders through the normal pipeline.
+ * F66: set (or clear, with null) the single active render-pipeline lens. Driven
+ * by clicking a stats tile (Blocked / Overdue / Due today / Due this week / No
+ * due → sets it) and the filter-bar lens chip / clear-all (clears it). Exactly
+ * one lens is active at a time. Re-renders through the normal pipeline.
  */
-function setBlockedOnly(on: boolean): void {
-  if (blockedOnly === on) return;
-  blockedOnly = on;
+function setLens(kind: LensKind | null): void {
+  if (activeLens === kind) return;
+  activeLens = kind;
   render();
 }
 
@@ -2700,16 +2724,16 @@ els.filterHideDone.addEventListener("click", () => {
   setFilter({ hideDone: !filter.hideDone });
 });
 
-// F64: the blocked-lens chip clears the lens when clicked.
+// F66: the active-lens chip clears the lens when clicked.
 els.filterBlocked.addEventListener("click", () => {
-  setBlockedOnly(false);
+  setLens(null);
 });
 
 // Clear-all affordance resets every facet.
 els.filterClear.addEventListener("click", () => {
   els.filterInput.value = "";
   filter = emptyFilter();
-  blockedOnly = false; // F64: clear the blocked lens too
+  activeLens = null; // F66: clear the active lens too
   recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
   els.filterInput.focus();
@@ -2796,9 +2820,20 @@ els.statsPanel.addEventListener("click", (e) => {
     openChainDrill();
     return;
   }
-  // F64: clicking the "Blocked" tile filters the list to only blocked tasks.
-  if (target?.closest("[data-blocked-drill]")) {
-    setBlockedOnly(true);
+  // F66/F69: clicking a metric tile drives a render-pipeline lens. The "open"
+  // tile is special — it maps to the real hide-done FACET (which serializes into
+  // views), so it routes through setFilter; every other tile sets the matching
+  // cross-task / time lens. Clicking the same lens's tile again is a no-op (the
+  // chip clears it); the page already shows that subset.
+  const lensTile = target?.closest<HTMLElement>("[data-lens-drill]");
+  if (lensTile) {
+    const lens = lensTile.dataset.lensDrill ?? "";
+    if (lens === "open") {
+      setLens(null); // the hide-done facet and a lens are mutually exclusive views
+      setFilter({ hideDone: true });
+    } else if (lens === "blocked" || lens === "overdue" || lens === "today" || lens === "week" || lens === "nodue") {
+      setLens(lens as LensKind);
+    }
     return;
   }
   const row = target?.closest<HTMLElement>("[data-stat-tag]");
@@ -3232,12 +3267,12 @@ function openChainDrill(): void {
  */
 function jumpToTask(id: number): void {
   if (!visibleIds.includes(id)) {
-    // The blocker is hidden by the active filter, the blocked lens, or a tag
+    // The blocker is hidden by the active filter, an active lens, or a tag
     // route — reset whichever is in play so the jump can land, then re-render.
     if (route.kind === "tag") navigateToAll();
     let needsRender = false;
-    if (blockedOnly) {
-      blockedOnly = false; // F64: clear the blocked lens too
+    if (activeLens) {
+      activeLens = null; // F66: clear the active lens too
       needsRender = true;
     }
     if (isFilterActive(filter)) {

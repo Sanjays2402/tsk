@@ -1331,9 +1331,12 @@ kbd {
   letter-spacing: 0.03em;
   text-transform: lowercase;
 }
-/* F64: the blocked-only lens chip — same shape as the hide-done pill, with a
+/* F64/F66: the active-lens chip — same shape as the hide-done pill, with a
    tiny trailing x to signal it clears. Always renders "active" (it only shows
-   while the lens is on) using the overdue hue to echo the blocked tile. */
+   while a lens is on). F66 generalized the single blocked lens into five
+   (blocked / overdue / today / week / nodue); the chip wears a hue class that
+   echoes its source stat tile: alert (blocked/overdue), today (due-today /
+   due-this-week), or neutral (no-due). */
 .fpill.lens-blocked {
   width: auto;
   padding: 0 var(--sp-2) 0 var(--sp-3);
@@ -1343,10 +1346,25 @@ kbd {
   align-items: center;
   gap: var(--sp-1);
 }
-.fpill.lens-blocked.is-active {
+/* Default + alert hue (blocked / overdue): the overdue red, echoing those
+   tiles. is-active alone keeps back-compat for any chip without a hue class. */
+.fpill.lens-blocked.is-active,
+.fpill.lens-blocked.is-active.lens-hue-alert {
   border-color: var(--color-overdue);
   background: var(--color-overdue);
   color: #fff;
+}
+/* today hue (due today / due this week): the calm planning accent. */
+.fpill.lens-blocked.is-active.lens-hue-today {
+  border-color: var(--color-today);
+  background: var(--color-today);
+  color: #fff;
+}
+/* neutral hue (no due date): a quiet surface so it reads as "backlog". */
+.fpill.lens-blocked.is-active.lens-hue-neutral {
+  border-color: var(--color-text-dim);
+  background: var(--color-text-dim);
+  color: var(--color-bg);
 }
 .fpill.lens-blocked .lens-x {
   font-size: var(--fs-sm);
