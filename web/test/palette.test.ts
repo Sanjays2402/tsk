@@ -10,6 +10,9 @@ import {
   buildPriorityCommands,
   buildDueCommands,
   dueTokenForCommandId,
+  priorityForCommandId,
+  priorityPreviewVM,
+  renderPriorityPreview,
   type Command,
 } from "../src/palette.ts";
 
@@ -268,4 +271,61 @@ test("dueTokenForCommandId round-trips every buildDueCommands id to its token", 
   for (const c of buildDueCommands(true)) {
     assert.equal(dueTokenForCommandId(c.id), c.token);
   }
+});
+
+// --- F77: priority-preview decoding + view-model ---------------------------
+
+test("priorityForCommandId decodes the level a prio command carries", () => {
+  assert.equal(priorityForCommandId("prio-set-urgent"), "urgent");
+  assert.equal(priorityForCommandId("prio-set-high"), "high");
+  assert.equal(priorityForCommandId("prio-set-medium"), "medium");
+  assert.equal(priorityForCommandId("prio-set-low"), "low");
+});
+
+test("priorityForCommandId returns null for non-priority / malformed commands", () => {
+  assert.equal(priorityForCommandId("due-set-today"), null);
+  assert.equal(priorityForCommandId("prio-up"), null); // the cycle command, not a set
+  assert.equal(priorityForCommandId("prio-set-bogus"), null);
+  assert.equal(priorityForCommandId("toggle"), null);
+  assert.equal(priorityForCommandId(""), null);
+});
+
+test("priorityForCommandId round-trips every buildPriorityCommands id", () => {
+  for (const c of buildPriorityCommands(true, undefined)) {
+    const lvl = priorityForCommandId(c.id);
+    assert.notEqual(lvl, null);
+    assert.equal(`prio-set-${lvl}`, c.id);
+  }
+});
+
+test("priorityPreviewVM shows a current -> new transition with an arrow", () => {
+  const vm = priorityPreviewVM("medium", "urgent");
+  assert.equal(vm.state, "valid");
+  assert.match(vm.text, /Medium/);
+  assert.match(vm.text, /Urgent/);
+  assert.match(vm.text, /\u2192/); // the arrow
+});
+
+test("priorityPreviewVM reads 'Already X' when the level is unchanged", () => {
+  const vm = priorityPreviewVM("high", "high");
+  assert.equal(vm.state, "empty");
+  assert.equal(vm.text, "Already High");
+});
+
+test("priorityPreviewVM renders an em dash when there's no current priority", () => {
+  const vm = priorityPreviewVM(undefined, "low");
+  assert.equal(vm.state, "valid");
+  assert.match(vm.text, /\u2014/); // em dash on the left
+  assert.match(vm.text, /Low/);
+});
+
+test("renderPriorityPreview reuses the .due-preview state classes", () => {
+  assert.match(renderPriorityPreview({ state: "valid", text: "Medium \u2192 Urgent" }), /due-preview is-valid/);
+  assert.match(renderPriorityPreview({ state: "empty", text: "Already Urgent" }), /due-preview is-empty/);
+});
+
+test("renderPriorityPreview escapes its text", () => {
+  const html = renderPriorityPreview({ state: "valid", text: "<x> & y" });
+  assert.match(html, /&lt;x&gt; &amp; y/);
+  assert.doesNotMatch(html, /<x>/);
 });

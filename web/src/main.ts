@@ -120,6 +120,9 @@ import {
   buildPriorityCommands,
   buildDueCommands,
   dueTokenForCommandId,
+  priorityForCommandId,
+  priorityPreviewVM,
+  renderPriorityPreview,
   type Command,
 } from "./palette";
 import {
@@ -4106,17 +4109,31 @@ function paintPalette(): void {
 }
 
 /**
- * F73: drive the palette's due-preview line from the highlighted command. If
- * it's a "Set due: <preset>" command, resolve its NL token via the same
- * /api/parse-date endpoint the picker uses and render the date; the "clear"
- * command shows "Clears the due date"; any other command hides the line. A seq
- * guard drops out-of-order responses as the highlight moves.
+ * F73/F77: drive the palette's preview line from the highlighted command.
+ *   - "Set due: <preset>"  -> resolve its NL token via /api/parse-date (async,
+ *     seq-guarded) and render the date; "clear" shows "Clears the due date".
+ *   - "Set priority: <X>"  -> render the selected task's "current -> new"
+ *     transition synchronously (no parse needed; F77).
+ *   - anything else        -> hide the line.
+ * Both kinds share the one `[data-cmdk-due-preview]` slot + the `.due-preview`
+ * state classes so they read identically.
  */
 function paintPaletteDuePreview(): void {
   const el = document.querySelector<HTMLElement>("[data-cmdk]");
   const line = el?.querySelector<HTMLElement>("[data-cmdk-due-preview]");
   if (!line) return;
   const cmd = paletteResults[paletteIndex];
+  // F77: a highlighted "Set priority" command previews the level change
+  // synchronously from the selected task's current priority.
+  const prio = cmd ? priorityForCommandId(cmd.id) : null;
+  if (prio !== null) {
+    paletteDueParseSeq++; // invalidate any in-flight due parse — priority wins the slot
+    const sel = nav.selectedId;
+    const selTask = sel !== null ? currentTasks.find((t) => t.id === sel) : undefined;
+    line.hidden = false;
+    line.innerHTML = renderPriorityPreview(priorityPreviewVM(selTask?.priority, prio));
+    return;
+  }
   const token = cmd ? dueTokenForCommandId(cmd.id) : null;
   if (token === null) {
     line.hidden = true;

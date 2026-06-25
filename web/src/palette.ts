@@ -219,3 +219,59 @@ export function dueTokenForCommandId(id: string): string | null {
   if (id.startsWith("due-set-")) return id.slice("due-set-".length);
   return null;
 }
+
+/**
+ * F77: decode the priority level a `prio-set-<level>` command id carries, so
+ * the palette can live-preview the "current -> new" transition when the command
+ * is highlighted (the sync sibling of F73's due preview, which needs a server
+ * parse). Pure → unit-tested. Returns null for any non-priority command (no
+ * preview line).
+ */
+export function priorityForCommandId(id: string): PriorityLevel | null {
+  if (!id.startsWith("prio-set-")) return null;
+  const level = id.slice("prio-set-".length);
+  if (level === "urgent" || level === "high" || level === "medium" || level === "low") {
+    return level;
+  }
+  return null;
+}
+
+/** F77: the preview view-model for a highlighted "Set priority" command. */
+export interface PriorityPreview {
+  /** "valid" when the level would change; "empty" when it's already in effect. */
+  state: "valid" | "empty";
+  /** Human text, e.g. "Medium \u2192 Urgent" or "Already Urgent". */
+  text: string;
+}
+
+/** Title-case a priority level for display ("urgent" -> "Urgent"). */
+function capLevel(level: string): string {
+  return level.charAt(0).toUpperCase() + level.slice(1);
+}
+
+/**
+ * F77: shape the "current -> new" priority preview for the palette. Pure →
+ * unit-tested. When the selected task is already at the target level the
+ * command is disabled (buildPriorityCommands handles that), so the preview
+ * reads "Already <Level>"; otherwise it shows the transition with an arrow. A
+ * task with no explicit priority renders the left side as an em dash.
+ */
+export function priorityPreviewVM(
+  current: PriorityLevel | undefined,
+  target: PriorityLevel,
+): PriorityPreview {
+  if (current === target) {
+    return { state: "empty", text: `Already ${capLevel(target)}` };
+  }
+  const from = current ? capLevel(current) : "\u2014";
+  return { state: "valid", text: `${from} \u2192 ${capLevel(target)}` };
+}
+
+/**
+ * F77: render the priority preview line. Reuses the F12/F47/F73 `.due-preview`
+ * state classes (is-valid -> accent, is-empty -> faint) so it reads identically
+ * to the due preview that shares the same palette slot. Pure → unit-tested.
+ */
+export function renderPriorityPreview(vm: PriorityPreview): string {
+  return `<span class="due-preview is-${vm.state}">${escapeHTML(vm.text)}</span>`;
+}
