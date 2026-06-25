@@ -9,6 +9,7 @@
  */
 
 import type { Stats } from "./api";
+import type { DepStats } from "./deps";
 
 /** Escape strings before injecting into innerHTML. */
 function escapeHTML(s: string): string {
@@ -93,8 +94,40 @@ export function renderTopTags(stats: Stats): string {
   return `<div class="stat-tags">${rows}</div>`;
 }
 
+/**
+ * F46: render the dependency-health row — blocked + pinned counts and the
+ * longest open-blocker chain (dependency depth). Pure → unit-tested. Returns
+ * "" when there's nothing dependency-related to show (no blocked, no pinned,
+ * flat graph) so the section collapses on simple boards. The blocked tile
+ * lights up as an alert when anything is blocked.
+ */
+export function renderDepStats(dep: DepStats): string {
+  if (dep.blocked === 0 && dep.pinned === 0 && dep.longestChain === 0) return "";
+  const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
+  const chainTile =
+    dep.longestChain > 0
+      ? `<div class="stat-metric metric-chain" title="Longest chain of open blockers">
+      <span class="stat-num">${dep.longestChain}</span>
+      <span class="stat-label">Chain depth</span>
+    </div>`
+      : "";
+  return `
+    <div class="stats-section-label">Dependencies</div>
+    <div class="stats-grid stats-grid-dep">
+      <div class="stat-metric metric-blocked${blockedAlert}">
+        <span class="stat-num">${dep.blocked}</span>
+        <span class="stat-label">Blocked</span>
+      </div>
+      <div class="stat-metric metric-pinned">
+        <span class="stat-num">${dep.pinned}</span>
+        <span class="stat-label">Pinned</span>
+      </div>
+      ${chainTile}
+    </div>`;
+}
+
 /** Render the whole stats panel body. Pure → unit-tested. */
-export function renderStatsPanel(stats: Stats): string {
+export function renderStatsPanel(stats: Stats, dep?: DepStats): string {
   return `
     <div class="stats-top">
       ${renderDonut(stats)}
@@ -110,6 +143,7 @@ export function renderStatsPanel(stats: Stats): string {
       ${renderMetric(stats.today, "Due today", "today")}
       ${renderMetric(stats.overdue, "Overdue", "overdue")}
     </div>
+    ${dep ? renderDepStats(dep) : ""}
     <div class="stats-section-label">Top tags</div>
     ${renderTopTags(stats)}`;
 }

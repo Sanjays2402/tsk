@@ -1803,6 +1803,22 @@ kbd {
 .stat-metric.metric-overdue.is-alert .stat-num {
   color: var(--color-overdue);
 }
+/* F46: dependency-health row. The blocked tile alerts when anything is
+   blocked; pinned + chain-depth use the accent so the cluster reads as a
+   group distinct from the time-based metrics above it. */
+.stats-grid-dep {
+  margin-top: var(--sp-2);
+}
+.stat-metric.metric-blocked.is-alert {
+  border-color: var(--color-overdue);
+}
+.stat-metric.metric-blocked.is-alert .stat-num {
+  color: var(--color-overdue);
+}
+.stat-metric.metric-pinned .stat-num,
+.stat-metric.metric-chain .stat-num {
+  color: var(--color-accent);
+}
 .stats-section-label {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);

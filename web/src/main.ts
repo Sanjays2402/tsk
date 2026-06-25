@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, type DepTask } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, type DepTask, type DepStatsTask } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
 import {
   LONG_PRESS_MS,
@@ -938,7 +938,11 @@ async function refreshStats(): Promise<void> {
   if (!statsOpen) return;
   try {
     const stats = await api.stats();
-    els.statsPanel.innerHTML = renderStatsPanel(stats);
+    // F46: the blocked / pinned / chain-depth metrics come from the live task
+    // list the client already holds (the server stats DTO doesn't model deps),
+    // so we compute them here and pass them alongside the server stats.
+    const dep = computeDepStats(currentTasks as DepStatsTask[]);
+    els.statsPanel.innerHTML = renderStatsPanel(stats, dep);
   } catch {
     els.statsPanel.innerHTML = `<div class="stats-empty">Stats unavailable</div>`;
   }

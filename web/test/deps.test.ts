@@ -7,9 +7,11 @@ import {
   blockerLabel,
   blockedToggleConfirm,
   needsBlockedConfirm,
+  computeDepStats,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
+  type DepStatsTask,
 } from "../src/deps.ts";
 
 const tasks: DepTask[] = [
@@ -133,4 +135,67 @@ test("blockedClass returns the css flag only when blocked", () => {
   const idx = doneIndex(tasks);
   assert.equal(blockedClass(tasks[3], idx), "is-blocked");
   assert.equal(blockedClass(tasks[2], idx), "");
+});
+
+// --- F46: dependency stats aggregate ---------------------------------------
+
+test("computeDepStats counts blocked + pinned", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1], pinned: true },
+    { id: 3, done: false, depends_on: [2] },
+    { id: 4, done: true, pinned: true }, // done -> not blocked, still pinned
+  ];
+  const s = computeDepStats(list);
+  assert.equal(s.blocked, 2); // #2 (open #1) and #3 (open #2)
+  assert.equal(s.pinned, 2); // #2 and #4
+});
+
+test("computeDepStats measures the longest open-blocker chain", () => {
+  // 4 -> 3 -> 2 -> 1, all open -> depth at #4 is 3
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+    { id: 4, done: false, depends_on: [3] },
+  ];
+  assert.equal(computeDepStats(list).longestChain, 3);
+});
+
+test("computeDepStats: a done blocker truncates the chain", () => {
+  // #2 depends on done #1 -> #2 not blocked; #3 -> open #2 -> depth 1.
+  const list: DepStatsTask[] = [
+    { id: 1, done: true },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+  ];
+  const s = computeDepStats(list);
+  assert.equal(s.blocked, 1); // only #3
+  assert.equal(s.longestChain, 1);
+});
+
+test("computeDepStats: flat board has zero everything", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false },
+  ];
+  assert.deepEqual(computeDepStats(list), { blocked: 0, pinned: 0, longestChain: 0 });
+});
+
+test("computeDepStats: a dependency cycle is bounded, not infinite", () => {
+  // 1 -> 2 -> 1 cycle. Both are blocked; the depth DFS must terminate.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false, depends_on: [2] },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const s = computeDepStats(list);
+  assert.equal(s.blocked, 2);
+  assert.ok(Number.isFinite(s.longestChain));
+});
+
+test("computeDepStats: deleted blocker ids don't extend depth", () => {
+  const list: DepStatsTask[] = [{ id: 5, done: false, depends_on: [99] }];
+  const s = computeDepStats(list);
+  assert.equal(s.blocked, 0); // dep #99 doesn't exist
+  assert.equal(s.longestChain, 0);
 });

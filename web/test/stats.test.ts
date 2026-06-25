@@ -7,6 +7,7 @@ import {
   renderDonut,
   renderMetric,
   renderTopTags,
+  renderDepStats,
   renderStatsPanel,
 } from "../src/stats.ts";
 import type { Stats } from "../src/api.ts";
@@ -104,4 +105,33 @@ test("renderStatsPanel includes donut, metrics, streak, and tags", () => {
   assert.match(html, /Due today/);
   assert.match(html, /Top tags/);
   assert.match(html, /4 of 10 done/);
+});
+
+// --- F46: dependency-health row --------------------------------------------
+
+test("renderDepStats shows blocked, pinned, and chain depth", () => {
+  const html = renderDepStats({ blocked: 2, pinned: 3, longestChain: 4 });
+  assert.match(html, /Dependencies/);
+  assert.match(html, /Blocked/);
+  assert.match(html, /Pinned/);
+  assert.match(html, /Chain depth/);
+  assert.match(html, /metric-blocked is-alert/); // alert since blocked > 0
+});
+
+test("renderDepStats omits the chain tile when the graph is flat", () => {
+  const html = renderDepStats({ blocked: 0, pinned: 2, longestChain: 0 });
+  assert.doesNotMatch(html, /Chain depth/);
+  assert.match(html, /Pinned/);
+  assert.doesNotMatch(html, /is-alert/); // nothing blocked
+});
+
+test("renderDepStats collapses to empty when there's nothing to show", () => {
+  assert.equal(renderDepStats({ blocked: 0, pinned: 0, longestChain: 0 }), "");
+});
+
+test("renderStatsPanel includes the dep row only when dep stats are passed", () => {
+  const withDep = renderStatsPanel(stats(), { blocked: 1, pinned: 0, longestChain: 0 });
+  assert.match(withDep, /Dependencies/);
+  // Without the dep arg, the panel renders exactly as before (back-compat).
+  assert.doesNotMatch(renderStatsPanel(stats()), /Dependencies/);
 });

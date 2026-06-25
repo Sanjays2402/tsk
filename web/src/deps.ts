@@ -112,3 +112,77 @@ export function renderBlockedBadge(task: DepTask, done: Map<number, boolean>): s
 export function blockedClass(task: DepTask, done: Map<number, boolean>): string {
   return isBlocked(task, done) ? "is-blocked" : "";
 }
+
+/** F46: aggregate dependency stats for the sidebar. */
+export interface DepStats {
+  /** How many undone tasks are currently blocked by an open prereq. */
+  blocked: number;
+  /** How many tasks carry the sticky Pinned flag. */
+  pinned: number;
+  /**
+   * The longest chain of blocker links among UNDONE tasks (the dependency
+   * depth). A task with no open blockers has depth 0; one blocked by a task
+   * that is itself blocked has depth 2, and so on. Cycles are bounded so a
+   * malformed file can't spin forever.
+   */
+  longestChain: number;
+}
+
+/** Minimal shape for dep-stats: needs id, done, deps, and the pinned flag. */
+export interface DepStatsTask extends DepTask {
+  pinned?: boolean;
+}
+
+/**
+ * F46: compute the blocked + pinned counts and the longest open-blocker chain
+ * across the task list. Pure so the aggregation (including the depth DFS with
+ * memo + cycle guard) is unit-tested with zero browser. The chain only follows
+ * OPEN blockers (done/deleted prereqs don't extend depth), matching what the
+ * "blocked" badge shows the user.
+ */
+export function computeDepStats(tasks: DepStatsTask[]): DepStats {
+  const done = doneIndex(tasks);
+  const byId = new Map<number, DepStatsTask>();
+  for (const t of tasks) byId.set(t.id, t);
+
+  let blocked = 0;
+  let pinned = 0;
+  for (const t of tasks) {
+    if (t.pinned) pinned++;
+    if (isBlocked(t, done)) blocked++;
+  }
+
+  // Longest open-blocker chain via memoized DFS with an on-stack cycle guard.
+  const depth = new Map<number, number>();
+  const onStack = new Set<number>();
+  const visit = (id: number): number => {
+    const cached = depth.get(id);
+    if (cached !== undefined) return cached;
+    if (onStack.has(id)) return 0; // cycle — stop counting here
+    const task = byId.get(id);
+    if (!task) return 0;
+    const open = openBlockers(task, done);
+    if (open.length === 0) {
+      depth.set(id, 0);
+      return 0;
+    }
+    onStack.add(id);
+    let best = 0;
+    for (const dep of open) {
+      const d = visit(dep) + 1;
+      if (d > best) best = d;
+    }
+    onStack.delete(id);
+    depth.set(id, best);
+    return best;
+  };
+
+  let longestChain = 0;
+  for (const t of tasks) {
+    if (t.done) continue; // depth is about what's still gating undone work
+    const d = visit(t.id);
+    if (d > longestChain) longestChain = d;
+  }
+
+  return { blocked, pinned, longestChain };
+}
