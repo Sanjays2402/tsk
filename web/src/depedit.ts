@@ -175,15 +175,32 @@ export function renderDepEditor(tasks: DepGraphTask[], taskId: number): string {
     <div class="depedit-hint">Enter the top match &middot; click &times; to remove &middot; cycles are refused</div>`;
 }
 
-/** Render the candidate dropdown for the add-blocker input. */
-export function renderDepCandidates(candidates: DepGraphTask[], activeIndex: number): string {
+/**
+ * Render the candidate dropdown for the add-blocker input.
+ *
+ * F74: when `walkable` reports a candidate id has its own open-blocker chain, a
+ * tiny "walk chain" button (data-dep-walk) is appended so you can preview what
+ * a prospective blocker would chain into BEFORE adding it. The set is computed
+ * by the caller (via deps.hasWalkableChain) and passed in, keeping this render
+ * pure. Candidates with no further chain carry no button.
+ */
+export function renderDepCandidates(
+  candidates: DepGraphTask[],
+  activeIndex: number,
+  walkable?: ReadonlySet<number>,
+): string {
   if (candidates.length === 0) return "";
   return candidates
     .map((t, i) => {
       const active = i === activeIndex ? " is-active" : "";
       const doneCls = t.done ? " is-done" : "";
+      const walk =
+        walkable && walkable.has(t.id)
+          ? `<button type="button" class="depedit-ac-walk" data-dep-walk="${t.id}" title="Preview this blocker's chain" aria-label="Preview chain from #${t.id}">&#8627;</button>`
+          : "";
       return `<li class="depedit-ac-item${active}${doneCls}" role="option" aria-selected="${i === activeIndex}" data-dep-cand="${t.id}">
         <span class="depedit-ac-label">${escapeHTML(depChipLabel(t))}</span>
+        ${walk}
       </li>`;
     })
     .join("");

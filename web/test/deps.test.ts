@@ -12,6 +12,7 @@ import {
   computeDepStats,
   filterBlocked,
   deepestChainFrom,
+  hasWalkableChain,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -344,4 +345,35 @@ test("deepestChainFrom terminates on a cycle", () => {
   assert.ok(path.length <= 2);
   assert.equal(new Set(path).size, path.length); // no id repeats
   assert.equal(path[0], 1); // starts where asked
+});
+
+// --- F74: hasWalkableChain (dep-editor chain preview gating) ----------------
+
+test("hasWalkableChain is true when a task chains into >= 1 open blocker", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+  ];
+  assert.equal(hasWalkableChain(list, 3), true); // 3 -> 2 -> 1
+  assert.equal(hasWalkableChain(list, 2), true); // 2 -> 1
+});
+
+test("hasWalkableChain is false for a leaf / done / missing task", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: true, depends_on: [1] },
+  ];
+  assert.equal(hasWalkableChain(list, 1), false); // #1 has no blockers (leaf)
+  assert.equal(hasWalkableChain(list, 3), false); // #3 is done
+  assert.equal(hasWalkableChain(list, 99), false); // not in the list
+});
+
+test("hasWalkableChain is false when the only blocker is already done", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: true },
+    { id: 2, done: false, depends_on: [1] }, // blocked only by a DONE task
+  ];
+  assert.equal(hasWalkableChain(list, 2), false);
 });

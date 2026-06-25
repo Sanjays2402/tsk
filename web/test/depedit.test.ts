@@ -154,3 +154,28 @@ test("renderDepCandidates marks the active row + carries ids", () => {
 test("renderDepCandidates is empty for no candidates", () => {
   assert.equal(renderDepCandidates([], 0), "");
 });
+
+// --- F74: "walk chain" affordance on candidates that chain further ----------
+
+test("renderDepCandidates adds a walk button only for ids in the walkable set", () => {
+  const cands: DepGraphTask[] = [
+    { id: 2, title: "mid", done: false, depends_on: [1] },
+    { id: 4, title: "free", done: false },
+  ];
+  const html = renderDepCandidates(cands, 0, new Set([2]));
+  // #2 chains further -> gets a walk button; #4 doesn't.
+  assert.match(html, /data-dep-walk="2"/);
+  assert.doesNotMatch(html, /data-dep-walk="4"/);
+});
+
+test("renderDepCandidates omits all walk buttons when no set is passed", () => {
+  const cands: DepGraphTask[] = [{ id: 2, title: "mid", done: false, depends_on: [1] }];
+  const html = renderDepCandidates(cands, 0);
+  assert.doesNotMatch(html, /data-dep-walk/);
+});
+
+test("renderDepCandidates omits walk buttons for an empty walkable set", () => {
+  const cands: DepGraphTask[] = [{ id: 2, title: "mid", done: false, depends_on: [1] }];
+  const html = renderDepCandidates(cands, 0, new Set());
+  assert.doesNotMatch(html, /data-dep-walk/);
+});

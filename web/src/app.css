@@ -1754,6 +1754,9 @@ kbd {
   font-size: var(--fs-sm);
   color: var(--color-text-dim);
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 .depedit-ac-item.is-active,
 .depedit-ac-item:hover {
@@ -1766,6 +1769,28 @@ kbd {
 }
 .depedit-ac-label {
   font-family: var(--font-mono);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* F74: the "walk chain" affordance on candidates that chain into more blockers. */
+.depedit-ac-walk {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+}
+.depedit-ac-walk:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-surface);
 }
 .depedit-hint {
   font-size: var(--fs-xs);

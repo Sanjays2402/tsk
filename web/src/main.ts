@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -2370,8 +2370,22 @@ function openDepEditor(id: number): void {
 
   const paintCandidates = (): void => {
     const ac = pop.querySelector<HTMLElement>("[data-dep-ac]")!;
-    ac.innerHTML = renderDepCandidates(candidates, candIndex);
+    ac.innerHTML = renderDepCandidates(candidates, candIndex, walkableCandidates());
     ac.hidden = candidates.length === 0;
+  };
+
+  /**
+   * F74: which of the current candidates have their own open-blocker chain
+   * worth previewing, so renderDepCandidates can show a "walk chain" button only
+   * on those. Computed over the live graph each paint.
+   */
+  const walkableCandidates = (): Set<number> => {
+    const graph = currentTasks as DepStatsTask[];
+    const set = new Set<number>();
+    for (const c of candidates) {
+      if (hasWalkableChain(graph, c.id)) set.add(c.id);
+    }
+    return set;
   };
 
   const refreshCandidates = (): void => {
@@ -2443,6 +2457,15 @@ function openDepEditor(id: number): void {
     });
     const ac = pop.querySelector<HTMLElement>("[data-dep-ac]")!;
     ac.addEventListener("mousedown", (e) => {
+      // F74: the "walk chain" button previews a candidate's blocker chain
+      // without adding it; handle it first so it doesn't fall through to add.
+      const walk = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-dep-walk]");
+      if (walk) {
+        e.preventDefault();
+        const wid = Number(walk.dataset.depWalk);
+        if (Number.isFinite(wid) && wid > 0) openChainDrill(wid);
+        return;
+      }
       const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-dep-cand]");
       if (!item) return;
       e.preventDefault();

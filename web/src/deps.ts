@@ -428,6 +428,18 @@ export interface ChainNode {
   title: string;
 }
 
+/**
+ * F74: does a task have a walkable open-blocker chain — i.e. is it worth
+ * offering a "walk chain" affordance? True when deepestChainFrom yields at
+ * least one STEP beyond the task itself (length >= 2), meaning there's a real
+ * blocker path to preview. Pure → unit-tested. Used by the dep editor to show
+ * the chain-preview button only on candidates that actually chain into
+ * something, so a leaf blocker doesn't carry a dead button.
+ */
+export function hasWalkableChain(tasks: DepStatsTask[], start: number): boolean {
+  return deepestChainFrom(tasks, start).length >= 2;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
 function escapeChainHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
