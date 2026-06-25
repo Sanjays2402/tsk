@@ -705,21 +705,24 @@ all-section reorder, multi-paste review, palette row-actions, touch context
 menu). These extend the runway with follow-ons sensible after the T9
 highlight / keyboard / guard / stats / picker cluster.
 
-- [ ] **F42** (carried) "Unblocked just now" toast: on a toggle-done that clears
+- [x] **F42** (carried) "Unblocked just now" toast: on a toggle-done that clears
       the last open blocker of some OTHER task, show a toast ("#N is now
       unblocked — start it?") with a jump action. Diff the done-index before vs
       after the toggle to find newly-unblocked ids; reuse the F33 info-toast.
-- [ ] **F55** Touch picker polish: a tiny haptic + a "current" check on the
+      (tick T10 2026-06-24)
+- [x] **F55** Touch picker polish: a tiny haptic + a "current" check on the
       active row, and wire the SAME picker to a desktop right-click on the chip
       (so the chip has menu parity with the row's F37 context menu).
-- [ ] **F56** Dependency-depth drill-down: clicking the F46 "chain depth N"
+      (tick T10 2026-06-24)
+- [x] **F56** Dependency-depth drill-down: clicking the F46 "chain depth N"
       metric opens the longest chain as a jump-list (#a -> #b -> #c) so you can
-      walk to the root blocker; reuse the jumpToTask plumbing.
-- [ ] **F57** Highlight in the command palette (F18) results too: when you type
+      walk to the root blocker; reuse the jumpToTask plumbing. (tick T10 2026-06-24)
+- [x] **F57** Highlight in the command palette (F18) results too: when you type
       in Cmd-K, mark the matched subsequence in each command label (reuse the
-      now-generic highlightText engine from F43).
-- [ ] **F58** Keyboard: `shift+[` / `shift+]` to jump priority to the floor /
+      now-generic highlightText engine from F43). (tick T10 2026-06-24)
+- [x] **F58** Keyboard: `shift+[` / `shift+]` to jump priority to the floor /
       ceiling (low / urgent) in one keystroke, and surface in the `?` overlay.
+      (tick T10 2026-06-24)
 - [ ] **F59** Stats: a "due this week" + "no-due" count tile, and make the
       blocked tile click-to-filter (show only blocked tasks) reusing the F11
       filter plumbing.
@@ -727,3 +730,64 @@ highlight / keyboard / guard / stats / picker cluster.
       more BLOCKED tasks, list them in a single confirm ("3 of 5 are blocked —
       complete all anyway?") instead of silently completing — the bulk sibling
       of F45.
+
+### T10 — 2026-06-24 19:06 PT — depth cluster (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` was NOT mounted this tick
+(the external SSD was physically absent — `diskutil list` shows no Projects
+volume, `/Volumes` had only Macintosh HD + Recovery, `hdiutil info` empty).
+Worked from the fully-synced internal worktree
+`/Users/sanjay/Projects/tsk-features/main`, which shares the same origin and was
+at origin/main (2848c9e) with a clean tree — the same fallback blessed in the T2
+log. Pushed from there; a clean fast-forward (2848c9e..0041d18), verified 0/0.
+
+- F42 feat(web): "unblocked just now" toast with a jump-to action — 11a058e
+- F55 feat(web): priority-picker polish (desktop right-click + current check) — b433e29
+- F56 feat(web): dependency-depth drill-down jump-list — 3067ecc
+- F57 feat(web): highlight the matched subsequence in Cmd-K results — 4048b3a
+- F58 feat(web): shift+[ / shift+] jump priority to floor / ceiling — ad66c6a
+- chore rebuild embedded SPA bundle — 0041d18
+
+Gates (once, end of batch) — all green:
+- gofmt -l clean, go vet clean, go build ok
+- go test ./... ok all packages (internal/commands 56.3s; internal/serve
+  re-run uncached at 1.9s against the freshly-embedded T10 bundle)
+- web: npm run check 422 pass (was 395; +27 net new), npm run build ok
+  (37 modules, JS 29.48KB gz, CSS 8.38KB gz)
+
+Live end-to-end proof: built the binary, set up 3 tasks chained #1->#2->#3
+(depend --on), `tsk serve`. F55/F58: PATCH /api/tasks/3 {priority:urgent}
+round-tripped medium->urgent on disk as `prio:urgent` while preserving the
+`depends`/`created` meta (hand-editable contract intact) — the same setPriority
+path the picker tap and the shift+] ceiling jump drive. F42: before completing
+#3, #2's open_blockers=[3]; after, open_blockers=[] while #2 stays undone —
+exactly the newlyUnblocked condition (would fire "#2 is now unblocked"), and #1
+correctly stays blocked by #2 (not announced).
+
+Roadmap status: F1-F58 done (52 of the 58-item F-roadmap shipped). F47-F54
+(T9 backlog) + F59-F60 remain unstarted; T11 backlog appended below so the loop
+never starves.
+
+### T11 — depth (appended T10 2026-06-24 so the loop never starves)
+
+Standing unstarted: F47 (bulk due/pin/blocker depth), F48 (context-menu
+submenus), F49 (autocomplete in edit + filter), F50 (dep mini-graph), F51
+(all-section reorder), F52 (multi-paste review), F53 (palette row-actions),
+F54 (touch context menu), F59 (due-this-week / no-due tiles + blocked
+click-to-filter), F60 (bulk blocked-guard). Fresh follow-ons after the T10
+unblock-toast / picker / chain-drill / palette-highlight / priority-jump cluster:
+
+- [ ] **F61** Chain-drill from the row badge too: the "blocked by #N" dep badge
+      (F26) gets a secondary affordance to open the F56 chain popover for THAT
+      task's deepest blocker path, not just the global longest chain.
+- [ ] **F62** Unblock-toast depth: when several tasks unblock at once (F42 plural
+      case), make the toast action a tiny picker ("3 unblocked — jump to which?")
+      instead of always jumping to the first.
+- [ ] **F63** Priority keyboard parity in the palette: a "Set priority ▸" command
+      group in Cmd-K (urgent/high/medium/low) acting on the selected task, reusing
+      setPriority — keyboard-only priority without leaving the palette.
+- [ ] **F64** Stats "blocked" tile click-to-filter (the F59 idea, split out):
+      clicking the F46 Blocked count filters the list to only blocked tasks via
+      the F11 filter plumbing; a clear chip resets it.
+- [ ] **F65** Notes-snippet highlight in the chain drill + dep badge titles, so a
+      search that matched on a blocker's text is visible when you walk the chain.
