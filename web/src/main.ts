@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, type DepTask } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
 import {
   LONG_PRESS_MS,
@@ -1319,6 +1319,17 @@ async function toggleTask(id: number): Promise<void> {
   const idx = currentTasks.findIndex((t) => t.id === id);
   if (idx < 0) return;
   const before = currentTasks[idx];
+  // F45: completing a BLOCKED task asks for confirmation first, mirroring the
+  // CLI's `done` dependency gate. The done-index is computed over the live list
+  // so done/deleted blockers don't trip the guard. Re-opening never prompts.
+  const doneIdx = doneIndex(currentTasks as DepTask[]);
+  if (needsBlockedConfirm(before as DepTask, doneIdx)) {
+    const ok =
+      typeof confirm === "function"
+        ? confirm(blockedToggleConfirm(before as DepTask, doneIdx))
+        : true; // non-browser/test context: don't block
+    if (!ok) return;
+  }
   // Optimistic update
   currentTasks[idx] = { ...before, done: !before.done };
   inFlight.add(id);

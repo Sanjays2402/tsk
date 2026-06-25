@@ -69,6 +69,29 @@ export function blockerLabel(blockers: number[]): string {
 }
 
 /**
+ * F45: build the confirmation message shown before completing a BLOCKED task,
+ * mirroring the CLI's `done` dependency gate. Returns "" when no confirmation
+ * is needed (the task isn't blocked). The message names the open blockers so
+ * the user knows exactly what's still outstanding before they override it.
+ */
+export function blockedToggleConfirm(task: DepTask, done: Map<number, boolean>): string {
+  const blockers = openBlockers(task, done);
+  if (blockers.length === 0) return "";
+  const list = blockers.map((id) => `#${id}`).join(", ");
+  return `#${task.id} is blocked by ${list} — complete anyway?`;
+}
+
+/**
+ * F45: should toggling this task require a blocked-confirm? Only when we are
+ * COMPLETING it (it's currently not done) AND it has at least one open blocker.
+ * Re-opening a done task, or completing an unblocked one, never prompts.
+ */
+export function needsBlockedConfirm(task: DepTask, done: Map<number, boolean>): boolean {
+  if (task.done) return false; // re-opening is always fine
+  return openBlockers(task, done).length > 0;
+}
+
+/**
  * Render the "blocked by #N" badge for a row. Returns "" when the task has no
  * open blockers so the badge collapses. The badge is a button so a future
  * slice can wire a click to jump to / highlight the blocker; for now it carries

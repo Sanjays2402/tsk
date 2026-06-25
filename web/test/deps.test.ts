@@ -5,6 +5,8 @@ import {
   openBlockers,
   isBlocked,
   blockerLabel,
+  blockedToggleConfirm,
+  needsBlockedConfirm,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -71,6 +73,47 @@ test("blockerLabel reads naturally", () => {
   assert.equal(blockerLabel([]), "");
   assert.equal(blockerLabel([3]), "blocked by #3");
   assert.equal(blockerLabel([3, 7]), "blocked by #3, #7");
+});
+
+// --- F45: blocked-toggle confirm guard -------------------------------------
+
+test("needsBlockedConfirm: true only when completing a blocked, undone task", () => {
+  const idx = doneIndex(tasks);
+  assert.equal(needsBlockedConfirm(tasks[3], idx), true); // #4 -> open #2, undone
+  assert.equal(needsBlockedConfirm(tasks[2], idx), false); // #3 -> only done #1
+});
+
+test("needsBlockedConfirm: re-opening a done task never prompts", () => {
+  const idx = doneIndex(tasks);
+  // #6 is done and depends on open #2; toggling it re-opens, no confirm.
+  assert.equal(needsBlockedConfirm(tasks[5], idx), false);
+});
+
+test("needsBlockedConfirm: an unblocked task never prompts", () => {
+  const idx = doneIndex(tasks);
+  assert.equal(needsBlockedConfirm(tasks[1], idx), false); // #2 has no deps
+});
+
+test("blockedToggleConfirm names the open blockers", () => {
+  const idx = doneIndex(tasks);
+  assert.equal(blockedToggleConfirm(tasks[3], idx), "#4 is blocked by #2 — complete anyway?");
+});
+
+test("blockedToggleConfirm lists multiple blockers", () => {
+  const idx = doneIndex([
+    { id: 1, done: false },
+    { id: 2, done: false },
+    { id: 3, done: false, depends_on: [1, 2] },
+  ]);
+  assert.equal(
+    blockedToggleConfirm({ id: 3, done: false, depends_on: [1, 2] }, idx),
+    "#3 is blocked by #1, #2 — complete anyway?",
+  );
+});
+
+test("blockedToggleConfirm is empty when nothing blocks", () => {
+  const idx = doneIndex(tasks);
+  assert.equal(blockedToggleConfirm(tasks[2], idx), ""); // #3 only deps on done #1
 });
 
 test("renderBlockedBadge is empty when nothing blocks", () => {
