@@ -114,3 +114,40 @@ test("renderPaletteList escapes HTML in titles", () => {
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /&lt;script&gt;/);
 });
+
+// --- F57: highlight the matched subsequence in palette titles ---------------
+
+test("renderPaletteList highlights the matched chars when a query is passed", () => {
+  const html = renderPaletteList([cmd({ id: "theme", title: "Cycle theme" })], 0, "theme");
+  // the contiguous "theme" run is wrapped in a single <mark>
+  assert.match(html, /<mark>theme<\/mark>/i);
+});
+
+test("renderPaletteList highlights a subsequence, not just substrings", () => {
+  const html = renderPaletteList([cmd({ id: "td", title: "Toggle done" })], 0, "td");
+  // T...d each marked (subsequence across the title)
+  assert.match(html, /<mark>T<\/mark>/);
+  assert.match(html, /<mark>d<\/mark>/);
+});
+
+test("renderPaletteList marks nothing in the title when the query missed it", () => {
+  // "metrics" matches this command via keywords, not the visible title.
+  const html = renderPaletteList(
+    [cmd({ id: "stats", title: "Toggle stats", keywords: ["metrics"] })],
+    0,
+    "metrics",
+  );
+  assert.doesNotMatch(html, /<mark>/);
+});
+
+test("renderPaletteList without a query has no marks (back-compat)", () => {
+  const html = renderPaletteList(COMMANDS.slice(0, 3), 0);
+  assert.doesNotMatch(html, /<mark>/);
+});
+
+test("renderPaletteList still escapes while highlighting", () => {
+  const html = renderPaletteList([cmd({ id: "x", title: "<b> tag" })], 0, "tag");
+  assert.doesNotMatch(html, /<b>/);
+  assert.match(html, /&lt;b&gt;/);
+  assert.match(html, /<mark>tag<\/mark>/);
+});

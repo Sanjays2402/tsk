@@ -3358,6 +3358,8 @@ must<HTMLElement>("[data-cmdk-open]").addEventListener("click", () => openPalett
 let paletteOpen = false;
 let paletteIndex = 0;
 let paletteResults: Command[] = [];
+/** F57: the live palette query, so the result list can highlight the match. */
+let paletteQuery = "";
 
 /**
  * Build the command registry from the live app state. Rebuilt each open so
@@ -3617,6 +3619,7 @@ const allCommands = (): Command[] => buildCommands();
 
 /** Recompute results for the query and repaint, resetting the highlight. */
 function updatePalette(query: string): void {
+  paletteQuery = query;
   paletteResults = filterCommands(allCommands(), query);
   paletteIndex = clampIndex(paletteIndex, paletteResults.length);
   paintPalette();
@@ -3626,7 +3629,7 @@ function updatePalette(query: string): void {
 function paintPalette(): void {
   const el = ensurePaletteEl();
   const list = el.querySelector<HTMLElement>("[data-cmdk-list]")!;
-  list.innerHTML = renderPaletteList(paletteResults, paletteIndex);
+  list.innerHTML = renderPaletteList(paletteResults, paletteIndex, paletteQuery);
   const active = list.querySelector<HTMLElement>(".is-active");
   active?.scrollIntoView({ block: "nearest" });
 }

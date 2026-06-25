@@ -16,6 +16,8 @@
  * Ties break by the command's declared order, so the list is stable.
  */
 
+import { highlightText } from "./highlight.ts";
+
 export interface Command {
   /** Stable id used as the action key. */
   id: string;
@@ -104,8 +106,18 @@ function escapeHTML(s: string): string {
  * Render the results list. Pure -> unit-tested. The highlighted row carries
  * `is-active` + aria-selected; each row carries data-cmd-id for dispatch.
  * Renders an empty-state row when nothing matches.
+ *
+ * F57: when a `query` is passed, the matched subsequence in each command title
+ * is wrapped in <mark> (reusing the generic highlightText engine that powers
+ * the row title / tag / notes highlight), so it's obvious why a fuzzy match
+ * surfaced. The title is HTML-escaped by highlightText; without a query it
+ * falls back to plain escaping.
  */
-export function renderPaletteList(commands: Command[], activeIndex: number): string {
+export function renderPaletteList(
+  commands: Command[],
+  activeIndex: number,
+  query = "",
+): string {
   if (commands.length === 0) {
     return `<li class="cmdk-empty" role="option" aria-disabled="true">No matching commands</li>`;
   }
@@ -119,8 +131,9 @@ export function renderPaletteList(commands: Command[], activeIndex: number): str
       const hint = cmd.hint
         ? `<kbd class="cmdk-hint">${escapeHTML(cmd.hint)}</kbd>`
         : "";
+      const title = highlightText(cmd.title, query);
       return `<li class="cmdk-item${active}${disabled}" role="option" aria-selected="${i === activeIndex}" data-cmd-id="${escapeHTML(cmd.id)}">
-        <span class="cmdk-title">${escapeHTML(cmd.title)}</span>
+        <span class="cmdk-title">${title}</span>
         ${group}${hint}
       </li>`;
     })
