@@ -672,6 +672,18 @@ button.priority:focus-visible {
   letter-spacing: 0.04em;
   color: var(--color-text-faint);
   padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+/* F70: a faint keyboard-nav hint in the popover header (up/down + return). */
+.chain-pop-keys {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 .chain-list {
   list-style: none;
@@ -705,6 +717,12 @@ button.priority:focus-visible {
 }
 .chain-jump:hover {
   background: var(--color-accent-soft);
+}
+/* F70: the keyboard-highlighted row (arrow / Home-End nav). Mirrors the hover
+   affordance plus a ring so it's distinguishable when driven from the keys. */
+.chain-jump.is-active {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
 }
 .chain-step.is-root .chain-jump {
   border-color: var(--color-border);

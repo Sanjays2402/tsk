@@ -60,6 +60,7 @@ import {
   lensMeta,
   type LensKind,
 } from "./lens";
+import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
 import {
   normalizeMode,
   nextMode,
@@ -1549,6 +1550,8 @@ function closeUnblockedPicker(): void {
   document.querySelector("[data-unblock-pop]")?.remove();
   document.removeEventListener("click", onUnblockAway, true);
   document.removeEventListener("keydown", onUnblockKey, true);
+  unblockNavIds = [];
+  unblockNavIndex = 0;
 }
 
 function onUnblockAway(e: MouseEvent): void {
@@ -1557,11 +1560,42 @@ function onUnblockAway(e: MouseEvent): void {
   closeUnblockedPicker();
 }
 
+/**
+ * F70: the unblock-picker popover's row list + the highlighted index, so
+ * arrow/Home/End/Enter selection works without the mouse — the just-unblocked
+ * jump is reachable straight from the keyboard, matching the palette model.
+ */
+let unblockNavIds: number[] = [];
+let unblockNavIndex = 0;
+
+/** Paint the highlighted unblock row + scroll it into view. */
+function paintUnblockNav(): void {
+  const pop = document.querySelector<HTMLElement>("[data-unblock-pop]");
+  if (!pop) return;
+  const btns = pop.querySelectorAll<HTMLElement>("[data-unblock-jump]");
+  btns.forEach((btn, i) => {
+    const on = i === unblockNavIndex;
+    btn.classList.toggle("is-active", on);
+    if (on) btn.scrollIntoView({ block: "nearest" });
+  });
+}
+
 function onUnblockKey(e: KeyboardEvent): void {
-  if (e.key === "Escape") {
-    e.preventDefault();
+  const action = keyToPopNavAction(e.key);
+  if (action === "none") return;
+  e.preventDefault();
+  if (action === "close") {
     closeUnblockedPicker();
+    return;
   }
+  if (action === "activate") {
+    const id = unblockNavIds[unblockNavIndex];
+    closeUnblockedPicker();
+    if (Number.isFinite(id) && id > 0) jumpToTask(id);
+    return;
+  }
+  unblockNavIndex = nextPopNavIndex(unblockNavIndex, unblockNavIds.length, action);
+  paintUnblockNav();
 }
 
 function openUnblockedPicker(ids: number[]): void {
@@ -1572,7 +1606,7 @@ function openUnblockedPicker(ids: number[]): void {
   const pop = document.createElement("div");
   pop.className = "chain-pop unblock-pop";
   pop.setAttribute("data-unblock-pop", "");
-  pop.innerHTML = `<div class="chain-pop-head">Newly unblocked — jump to</div>${renderUnblockedPicker(nodes)}`;
+  pop.innerHTML = `<div class="chain-pop-head">Newly unblocked — jump to<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderUnblockedPicker(nodes)}`;
   pop.style.position = "fixed";
   pop.style.visibility = "hidden";
   document.body.appendChild(pop);
@@ -1589,6 +1623,11 @@ function openUnblockedPicker(ids: number[]): void {
   pop.style.left = `${left}px`;
   pop.style.top = `${top}px`;
   pop.style.visibility = "visible";
+
+  // F70: seed keyboard nav with the unblocked order, highlighting the first row.
+  unblockNavIds = nodes.map((n) => n.id);
+  unblockNavIndex = 0;
+  paintUnblockNav();
 
   pop.addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-unblock-jump]");
@@ -3202,6 +3241,8 @@ function closeChainDrill(): void {
   document.querySelector("[data-chain-pop]")?.remove();
   document.removeEventListener("click", onChainAway, true);
   document.removeEventListener("keydown", onChainKey, true);
+  chainNavIds = [];
+  chainNavIndex = 0;
 }
 
 function onChainAway(e: MouseEvent): void {
@@ -3210,11 +3251,42 @@ function onChainAway(e: MouseEvent): void {
   closeChainDrill();
 }
 
+/**
+ * F70: the chain-drill popover's row list (in render order) + the highlighted
+ * index, so arrow/Home/End/Enter selection works without the mouse — matching
+ * the palette's keyboard model.
+ */
+let chainNavIds: number[] = [];
+let chainNavIndex = 0;
+
+/** Paint the highlighted chain row + scroll it into view. */
+function paintChainNav(): void {
+  const pop = document.querySelector<HTMLElement>("[data-chain-pop]");
+  if (!pop) return;
+  const btns = pop.querySelectorAll<HTMLElement>("[data-chain-jump]");
+  btns.forEach((btn, i) => {
+    const on = i === chainNavIndex;
+    btn.classList.toggle("is-active", on);
+    if (on) btn.scrollIntoView({ block: "nearest" });
+  });
+}
+
 function onChainKey(e: KeyboardEvent): void {
-  if (e.key === "Escape") {
-    e.preventDefault();
+  const action = keyToPopNavAction(e.key);
+  if (action === "none") return;
+  e.preventDefault();
+  if (action === "close") {
     closeChainDrill();
+    return;
   }
+  if (action === "activate") {
+    const id = chainNavIds[chainNavIndex];
+    closeChainDrill();
+    if (Number.isFinite(id) && id > 0) jumpToTask(id);
+    return;
+  }
+  chainNavIndex = nextPopNavIndex(chainNavIndex, chainNavIds.length, action);
+  paintChainNav();
 }
 
 function openChainDrill(): void {
@@ -3226,7 +3298,7 @@ function openChainDrill(): void {
   const pop = document.createElement("div");
   pop.className = "chain-pop";
   pop.setAttribute("data-chain-pop", "");
-  pop.innerHTML = `<div class="chain-pop-head">Longest blocker chain</div>${renderChainDrill(nodes)}`;
+  pop.innerHTML = `<div class="chain-pop-head">Longest blocker chain<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes)}`;
   // Anchor under the chain tile if present, else the stats panel corner.
   const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");
   const anchor = (tile ?? els.statsPanel).getBoundingClientRect();
@@ -3245,6 +3317,11 @@ function openChainDrill(): void {
   pop.style.left = `${left}px`;
   pop.style.top = `${top}px`;
   pop.style.visibility = "visible";
+
+  // F70: seed keyboard nav with the chain order, highlighting the first row.
+  chainNavIds = nodes.map((n) => n.id);
+  chainNavIndex = 0;
+  paintChainNav();
 
   pop.addEventListener("click", (e) => {
     const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-chain-jump]");
