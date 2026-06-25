@@ -101,3 +101,18 @@ test("renderNotesSnippet escapes untrusted content", () => {
   assert.doesNotMatch(html, /<b>x<\/b>/);
   assert.match(html, /&lt;b&gt;x/);
 });
+
+test("renderNotesSnippet applies an optional highlight callback (F43)", () => {
+  // The callback is responsible for escaping; here we wrap the matched run.
+  const html = renderNotesSnippet("remember the milk", 72, (text) =>
+    text.replace("milk", "<mark>milk</mark>"),
+  );
+  assert.match(html, /<mark>milk<\/mark>/);
+});
+
+test("renderNotesSnippet without a highlight callback escapes the preview", () => {
+  // No callback -> the preview is HTML-escaped, never injected raw.
+  const html = renderNotesSnippet("<script>x</script>", 72);
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+});

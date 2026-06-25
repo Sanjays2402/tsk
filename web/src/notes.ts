@@ -70,13 +70,24 @@ function escapeHTML(s: string): string {
  * the editor on click. Returns "" when the task has no notes so the row stays
  * single-line. The visible preview is the first non-blank line, truncated; the
  * full first line (longer cap) goes in the title attribute for hover.
+ *
+ * F43: an optional `highlight` callback marks the matched subsequence of the
+ * preview when a search query is active, so a fuzzy match that landed in the
+ * notes is visible. The callback (highlightText from highlight.ts) is
+ * responsible for HTML-escaping its input; when absent the preview is escaped
+ * here. Either path is safe to drop into innerHTML.
  */
-export function renderNotesSnippet(notes: string | undefined, max = 72): string {
+export function renderNotesSnippet(
+  notes: string | undefined,
+  max = 72,
+  highlight?: (text: string) => string,
+): string {
   if (!hasNotes(notes)) return "";
   const preview = notesPreview(notes ?? "", max);
   const full = notesPreview(notes ?? "", 160);
   const more = notesLineCount(notes) > 1 ? ` (${notesLineCount(notes)} lines)` : "";
-  return `<span class="notes-snippet" data-notes title="${escapeHTML(full)}${more} — click to edit"><span class="notes-snippet-ico" aria-hidden="true">&#9776;</span>${escapeHTML(preview)}</span>`;
+  const inner = highlight ? highlight(preview) : escapeHTML(preview);
+  return `<span class="notes-snippet" data-notes title="${escapeHTML(full)}${more} — click to edit"><span class="notes-snippet-ico" aria-hidden="true">&#9776;</span>${inner}</span>`;
 }
 
 /**

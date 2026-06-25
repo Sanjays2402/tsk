@@ -9,7 +9,7 @@ import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
 import { renderNotesButton, renderNotesSnippet } from "./notes";
 import { blockedClass, renderBlockedBadge, type DepTask } from "./deps";
-import { highlightTitle } from "./highlight";
+import { highlightText, highlightTitle } from "./highlight";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
 export function escapeHTML(s: string): string {
@@ -69,8 +69,14 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
     .filter(Boolean)
     .join(" ");
   const dueLabel = t.due ? formatDue(t.due, now) : null;
+  // F43: when a search query is active, highlight the matched subsequence in
+  // each tag pill too (not just the title), so a fuzzy match that landed on a
+  // tag is visible. highlightText escapes the tag, so it's safe in innerHTML.
   const tagsHTML = t.tags
-    .map((tag) => `<button class="tag" type="button" data-tagnav="${escapeHTML(tag)}" title="Open #${escapeHTML(tag)} page">${escapeHTML(tag)}</button>`)
+    .map((tag) => {
+      const inner = ctx.query ? highlightText(tag, ctx.query) : escapeHTML(tag);
+      return `<button class="tag" type="button" data-tagnav="${escapeHTML(tag)}" title="Open #${escapeHTML(tag)} page">${inner}</button>`;
+    })
     .join("");
   const dueCell = dueLabel
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
@@ -81,8 +87,13 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
   // title. highlightTitle escapes the title itself, so it's safe in innerHTML.
   const titleHTML = ctx.query ? highlightTitle(t.title, ctx.query) : escapeHTML(t.title);
   // F31: a faded one-line notes preview under the title (empty when no notes)
-  // so context is recallable without opening the editor.
-  const notesSnippet = renderNotesSnippet(t.notes);
+  // so context is recallable without opening the editor. F43: when a search
+  // query is active, highlight the matched subsequence inside the snippet too.
+  const notesSnippet = renderNotesSnippet(
+    t.notes,
+    72,
+    ctx.query ? (text) => highlightText(text, ctx.query!) : undefined,
+  );
   return `
     <li class="${classes}" data-id="${t.id}" draggable="true">
       <button class="drag-handle" data-drag-handle type="button" aria-label="Drag to reorder" title="Drag to reorder" tabindex="-1">⠿</button>

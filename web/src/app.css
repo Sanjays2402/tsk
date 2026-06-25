@@ -376,6 +376,16 @@ body {
   padding: 0 1px;
   font-weight: 600;
 }
+/* F43: extend the highlight to tag pills and the notes snippet so a fuzzy
+   match that landed on a tag or in the notes is visible too. */
+.tag mark,
+.notes-snippet mark {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  border-radius: 2px;
+  padding: 0 1px;
+  font-weight: 600;
+}
 /* F7: inline title edit input replaces the .title span in place */
 .title-edit {
   flex: 1;

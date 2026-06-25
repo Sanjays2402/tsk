@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matchedIndices, highlightTitle } from "../src/highlight.ts";
+import { matchedIndices, highlightTitle, highlightText } from "../src/highlight.ts";
 
 test("matchedIndices marks a contiguous substring", () => {
   // "buy" appears at indices 0,1,2 of "buy milk"
@@ -68,4 +68,32 @@ test("highlight does not leak an unclosed mark at end of string", () => {
   // last char matches -> mark must be closed
   const out = highlightTitle("milk", "k");
   assert.equal(out, "mil<mark>k</mark>");
+});
+
+// --- F43: highlightText generalizes the engine to tags + notes -------------
+
+test("highlightText marks a matched tag (used for tag pills)", () => {
+  assert.equal(highlightText("grocery", "groc"), "<mark>groc</mark>ery");
+});
+
+test("highlightText highlights inside a notes snippet", () => {
+  // a fuzzy token that lands in the notes preview gets marked. The engine is a
+  // greedy subsequence, so pick text where the match is unambiguous.
+  assert.equal(highlightText("the milk", "milk"), "the <mark>milk</mark>");
+});
+
+test("highlightText only marks the field when the WHOLE token matches it", () => {
+  // "zzz" doesn't subsequence-match the tag -> no marks, just escaped text
+  assert.equal(highlightText("work", "zzz"), "work");
+});
+
+test("highlightText escapes untrusted field content", () => {
+  const out = highlightText("<i>x</i>", "x");
+  assert.ok(!out.includes("<i>"));
+  assert.ok(out.includes("&lt;i&gt;"));
+  assert.ok(out.includes("<mark>x</mark>"));
+});
+
+test("highlightTitle is a thin alias over highlightText", () => {
+  assert.equal(highlightTitle("buy milk", "buy"), highlightText("buy milk", "buy"));
 });
