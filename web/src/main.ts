@@ -53,6 +53,7 @@ import {
   type DuePreviewVM,
 } from "./duepicker";
 import { renderStatsPanel } from "./stats";
+import { computeScheduleStats } from "./schedule";
 import {
   normalizeMode,
   nextMode,
@@ -1023,7 +1024,10 @@ async function refreshStats(): Promise<void> {
     // list the client already holds (the server stats DTO doesn't model deps),
     // so we compute them here and pass them alongside the server stats.
     const dep = computeDepStats(currentTasks as DepStatsTask[]);
-    els.statsPanel.innerHTML = renderStatsPanel(stats, dep);
+    // F59: the schedule lens (due-this-week / no-due) is likewise derived from
+    // the live list, relative to the client's "today".
+    const sched = computeScheduleStats(currentTasks, new Date());
+    els.statsPanel.innerHTML = renderStatsPanel(stats, dep, sched);
   } catch {
     els.statsPanel.innerHTML = `<div class="stats-empty">Stats unavailable</div>`;
   }

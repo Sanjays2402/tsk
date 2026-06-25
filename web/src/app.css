@@ -1961,6 +1961,19 @@ kbd {
 .stat-metric.metric-chain .stat-num {
   color: var(--color-accent);
 }
+/* F59: schedule lens. Two tiles (due-this-week / no-due) sharing the dep row's
+   spacing. The week tile uses the calm "today" hue so it reads as planning
+   rather than the overdue alert; the no-due tile stays neutral. */
+.stats-grid-sched {
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: var(--sp-2);
+}
+.stat-metric.metric-week .stat-num {
+  color: var(--color-today);
+}
+.stat-metric.metric-nodue .stat-num {
+  color: var(--color-text-dim);
+}
 .stats-section-label {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);

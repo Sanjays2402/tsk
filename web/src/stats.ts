@@ -10,6 +10,7 @@
 
 import type { Stats } from "./api";
 import type { DepStats } from "./deps";
+import type { ScheduleStats } from "./schedule";
 
 /** Escape strings before injecting into innerHTML. */
 function escapeHTML(s: string): string {
@@ -126,8 +127,32 @@ export function renderDepStats(dep: DepStats): string {
     </div>`;
 }
 
+/**
+ * F59: render the schedule lens — a "Due this week" tile (undone work on deck
+ * in the next 7 days) and a "No due" tile (undone backlog with no date). Pure →
+ * unit-tested. Returns "" when both are zero so the row collapses on an empty /
+ * fully-scheduled board. The "due this week" tile lights up `metric-week` (a
+ * calm accent, distinct from the overdue alert) so the coming week reads as
+ * planning, not urgency.
+ */
+export function renderScheduleStats(sched: ScheduleStats): string {
+  if (sched.dueThisWeek === 0 && sched.noDue === 0) return "";
+  return `
+    <div class="stats-section-label">Schedule</div>
+    <div class="stats-grid stats-grid-sched">
+      <div class="stat-metric metric-week">
+        <span class="stat-num">${sched.dueThisWeek}</span>
+        <span class="stat-label">Due this week</span>
+      </div>
+      <div class="stat-metric metric-nodue">
+        <span class="stat-num">${sched.noDue}</span>
+        <span class="stat-label">No due</span>
+      </div>
+    </div>`;
+}
+
 /** Render the whole stats panel body. Pure → unit-tested. */
-export function renderStatsPanel(stats: Stats, dep?: DepStats): string {
+export function renderStatsPanel(stats: Stats, dep?: DepStats, sched?: ScheduleStats): string {
   return `
     <div class="stats-top">
       ${renderDonut(stats)}
@@ -143,6 +168,7 @@ export function renderStatsPanel(stats: Stats, dep?: DepStats): string {
       ${renderMetric(stats.today, "Due today", "today")}
       ${renderMetric(stats.overdue, "Overdue", "overdue")}
     </div>
+    ${sched ? renderScheduleStats(sched) : ""}
     ${dep ? renderDepStats(dep) : ""}
     <div class="stats-section-label">Top tags</div>
     ${renderTopTags(stats)}`;
