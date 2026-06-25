@@ -114,6 +114,7 @@ import {
   clampIndex,
   renderPaletteList,
   buildPriorityCommands,
+  buildDueCommands,
   type Command,
 } from "./palette";
 import {
@@ -3639,6 +3640,11 @@ function buildCommands(): Command[] {
     // selection via setPriority; the one already in effect is disabled so the
     // palette doubles as a "current priority" readout.
     ...buildPriorityCommands(hasSel, selPriority),
+    // F67: a "Set due ▸" group — pick a due date keyboard-only from the palette
+    // (today / tomorrow / this weekend / next week / end of month / clear). Each
+    // hands its natural-language token to the same commitDue PATCH the picker
+    // uses, so the dates resolve identically via the server's dateparse.
+    ...buildDueCommands(hasSel),
     {
       id: "delete",
       title: "Delete selected task",
@@ -3714,6 +3720,13 @@ function runCommand(id: string): void {
     case "prio-set-low":
       if (sel !== null) setPriority(sel, "low");
       break;
+    // F67: exact due-date set from the palette. The id encodes the natural-
+    // language token ("due-set-today" -> "today", "due-set-1w" -> "1w",
+    // "due-set-clear" -> ""), which commitDue hands to the server's PATCH due
+    // field — the same dateparse path the picker uses.
+    case "due-set-clear":
+      if (sel !== null) commitDue(sel, "");
+      break;
     case "delete":
       if (sel !== null) requestDelete(sel);
       break;
@@ -3760,6 +3773,13 @@ function runCommand(id: string): void {
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
   if (id.startsWith("view:")) {
     recallView(id.slice("view:".length));
+  }
+  // F67: dynamic "Set due: <preset>" commands (id shaped "due-set-<token>").
+  // The clear case is handled in the switch above; the rest carry their NL
+  // token in the id suffix and route through the same commitDue PATCH.
+  if (id.startsWith("due-set-") && id !== "due-set-clear") {
+    const token = id.slice("due-set-".length);
+    if (sel !== null && token !== "") commitDue(sel, token);
   }
 }
 

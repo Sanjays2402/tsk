@@ -8,6 +8,7 @@ import {
   clampIndex,
   renderPaletteList,
   buildPriorityCommands,
+  buildDueCommands,
   type Command,
 } from "../src/palette.ts";
 
@@ -194,4 +195,49 @@ test("buildPriorityCommands rows fuzzy-match via filterCommands", () => {
   const cmds = buildPriorityCommands(true, "low");
   const out = filterCommands(cmds, "urgent");
   assert.equal(out[0].id, "prio-set-urgent");
+});
+
+// --- F67: "Set due" palette command group -----------------------------------
+
+test("buildDueCommands emits the presets plus a clear, in order", () => {
+  const cmds = buildDueCommands(true);
+  assert.deepEqual(
+    cmds.map((c) => c.id),
+    ["due-set-today", "due-set-tomorrow", "due-set-eow", "due-set-1w", "due-set-eom", "due-set-clear"],
+  );
+  // all share the Due group
+  assert.ok(cmds.every((c) => c.group === "Due"));
+  // the clear command reads as "Set due: Clear"
+  assert.equal(cmds[cmds.length - 1].title, "Set due: Clear");
+});
+
+test("buildDueCommands carries the natural-language token per command", () => {
+  const cmds = buildDueCommands(true);
+  const byId = new Map(cmds.map((c) => [c.id, c]));
+  assert.equal(byId.get("due-set-today")!.token, "today");
+  assert.equal(byId.get("due-set-1w")!.token, "1w");
+  assert.equal(byId.get("due-set-eom")!.token, "eom");
+  // the clear command's token is the empty string (server treats "" as clear)
+  assert.equal(byId.get("due-set-clear")!.token, "");
+});
+
+test("buildDueCommands disables everything with no selection", () => {
+  const cmds = buildDueCommands(false);
+  assert.ok(cmds.every((c) => c.disabled === true));
+});
+
+test("buildDueCommands enables everything with a selection", () => {
+  const cmds = buildDueCommands(true);
+  assert.ok(cmds.every((c) => c.disabled === false));
+});
+
+test("buildDueCommands rows fuzzy-match via filterCommands keywords", () => {
+  const cmds = buildDueCommands(true);
+  // "weekend" reaches the eow preset via its keyword, even though the title
+  // says "This weekend" too.
+  const out = filterCommands(cmds, "weekend");
+  assert.equal(out[0].id, "due-set-eow");
+  // "tomorrow" matches the tomorrow preset
+  const out2 = filterCommands(cmds, "tomorrow");
+  assert.equal(out2[0].id, "due-set-tomorrow");
 });

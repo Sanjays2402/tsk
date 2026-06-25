@@ -168,3 +168,37 @@ export function buildPriorityCommands(
     disabled: !hasSel || current === level,
   }));
 }
+
+/**
+ * F67: the "Set due ▸" palette command group — pick a due date keyboard-only
+ * from Cmd-K without opening the date picker. Mirrors F63's priority group:
+ * pure so the id/title/keyword shape is unit-tested without the app. Each
+ * command's `token` is the natural-language string handed verbatim to the
+ * server's PATCH `due` field (the same dateparse the picker uses), so "today",
+ * "tomorrow", "fri", "1w" resolve identically; the "clear" command sends "" to
+ * drop the date. `hasSel` gates them all on a selection existing. The ids are
+ * `due-set-<token>` keys runCommand dispatches on via the existing commitDue.
+ */
+export interface DueCommand extends Command {
+  /** The natural-language string sent to the server (or "" to clear). */
+  token: string;
+}
+
+export function buildDueCommands(hasSel: boolean): DueCommand[] {
+  const presets: ReadonlyArray<{ token: string; label: string; keywords: string[] }> = [
+    { token: "today", label: "Today", keywords: ["due", "date", "deadline", "now"] },
+    { token: "tomorrow", label: "Tomorrow", keywords: ["due", "date", "deadline", "tmrw"] },
+    { token: "eow", label: "This weekend", keywords: ["due", "date", "weekend", "sat", "sun", "end of week"] },
+    { token: "1w", label: "Next week", keywords: ["due", "date", "week", "7d"] },
+    { token: "eom", label: "End of month", keywords: ["due", "date", "month", "eom"] },
+    { token: "", label: "Clear due date", keywords: ["due", "date", "remove", "none", "unset"] },
+  ];
+  return presets.map(({ token, label, keywords }) => ({
+    id: token === "" ? "due-set-clear" : `due-set-${token}`,
+    title: token === "" ? "Set due: Clear" : `Set due: ${label}`,
+    group: "Due",
+    keywords,
+    token,
+    disabled: !hasSel,
+  }));
+}
