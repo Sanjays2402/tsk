@@ -1721,6 +1721,22 @@ kbd {
 .depedit-chip-x:hover {
   color: var(--color-prio-urgent);
 }
+/* F79: the "walk chain" affordance on a current blocker chip — only present on
+   chips whose blocker chains further. Subtle until hovered, then accents, so it
+   doesn't compete with the remove (x) button beside it. */
+.depedit-chip-walk {
+  border: none;
+  background: transparent;
+  color: var(--color-text-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: var(--radius-sm);
+}
+.depedit-chip-walk:hover {
+  color: var(--color-accent);
+}
 .depedit-pop-row {
   display: flex;
 }

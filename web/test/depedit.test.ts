@@ -144,6 +144,41 @@ test("renderDepEditor shows an empty state when no blockers", () => {
   assert.match(html, /No blockers yet/);
 });
 
+// --- F79: walk-chain affordance on current blocker chips -------------------
+
+test("renderDepEditor adds a chip-walk button only for walkable blockers", () => {
+  // task 3 is blocked by #2, and #2 chains further (#2 -> #1), so #2 is walkable.
+  const html = renderDepEditor(chain, 3, new Set([2]));
+  assert.match(html, /data-dep-chip-walk="2"/);
+});
+
+test("renderDepEditor: a blocker not in the walkable set carries no walk button", () => {
+  // Same chip, but the caller reports nothing walkable -> no button.
+  const html = renderDepEditor(chain, 3, new Set());
+  assert.doesNotMatch(html, /data-dep-chip-walk/);
+  // the remove (x) button is still there
+  assert.match(html, /data-dep-remove="2"/);
+});
+
+test("renderDepEditor: omitting the walkable set yields no walk buttons (back-compat)", () => {
+  const html = renderDepEditor(chain, 3);
+  assert.doesNotMatch(html, /data-dep-chip-walk/);
+  assert.match(html, /data-dep-remove="2"/);
+});
+
+test("renderDepEditor: only the walkable blocker among several gets the button", () => {
+  // A task blocked by both a leaf (#1, no further chain) and a chaining
+  // blocker (#2 -> #1). Only #2 should carry the walk button.
+  const multi: DepGraphTask[] = [
+    { id: 1, title: "root", done: false },
+    { id: 2, title: "mid", done: false, depends_on: [1] },
+    { id: 5, title: "multi", done: false, depends_on: [1, 2] },
+  ];
+  const html = renderDepEditor(multi, 5, new Set([2]));
+  assert.match(html, /data-dep-chip-walk="2"/);
+  assert.doesNotMatch(html, /data-dep-chip-walk="1"/);
+});
+
 test("renderDepCandidates marks the active row + carries ids", () => {
   const cands = depCandidates(chain, 1); // [4]
   const html = renderDepCandidates(cands, 0);

@@ -2344,7 +2344,7 @@ function openDepEditor(id: number): void {
   pop.setAttribute("data-depedit-pop", "");
   pop.setAttribute("role", "dialog");
   pop.setAttribute("aria-label", "Edit blockers");
-  pop.innerHTML = renderDepEditor(depGraph(), id);
+  pop.innerHTML = renderDepEditor(depGraph(), id, walkableBlockers());
   row.appendChild(pop);
 
   const input = pop.querySelector<HTMLInputElement>("[data-dep-input]")!;
@@ -2366,7 +2366,7 @@ function openDepEditor(id: number): void {
 
   /** Repaint just the chips + empty-state after a working-set change. */
   const repaintChips = (): void => {
-    const fresh = renderDepEditor(depGraph(), id);
+    const fresh = renderDepEditor(depGraph(), id, walkableBlockers());
     // Replace everything above the input row by re-rendering and swapping the
     // chips region. Simplest: re-render the whole pop body, re-grab refs.
     pop.innerHTML = fresh;
@@ -2392,6 +2392,22 @@ function openDepEditor(id: number): void {
     }
     return set;
   };
+
+  /**
+   * F79: which of the task's CURRENT blockers chain further into their own open
+   * blockers, so renderDepEditor can show a "walk chain" button on those chips —
+   * the sister of F74's affordance on the candidate list. Computed over the live
+   * graph each repaint so it stays correct as blockers are added/removed. A
+   * hoisted function (not a const) so the initial render above can call it.
+   */
+  function walkableBlockers(): Set<number> {
+    const graph = currentTasks as DepStatsTask[];
+    const set = new Set<number>();
+    for (const dep of currentDeps(depGraph(), id)) {
+      if (hasWalkableChain(graph, dep)) set.add(dep);
+    }
+    return set;
+  }
 
   const refreshCandidates = (): void => {
     candidates = depCandidates(depGraph(), id, input.value);
@@ -2458,6 +2474,18 @@ function openDepEditor(id: number): void {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         removeDep(Number(btn.dataset.depRemove));
+      });
+    });
+    // F79: the "walk chain" button on a CURRENT blocker chip opens the chain
+    // drill for that blocker's deepest open-blocker path — so you can audit what
+    // an already-added blocker chains into. stopPropagation so it doesn't bubble
+    // to the away-click that closes the editor.
+    pop.querySelectorAll<HTMLElement>("[data-dep-chip-walk]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const wid = Number(btn.dataset.depChipWalk);
+        if (Number.isFinite(wid) && wid > 0) openChainDrill(wid);
       });
     });
     const ac = pop.querySelector<HTMLElement>("[data-dep-ac]")!;

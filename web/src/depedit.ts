@@ -148,16 +148,32 @@ export function depChipLabel(t: DepGraphTask): string {
 /**
  * Render the dependency editor's body: the current blockers as removable chips,
  * an add input, and a hint. `tasks` resolves each blocker id to a title.
+ *
+ * F79: when `walkable` reports a CURRENT blocker has its own open-blocker chain,
+ * a tiny "walk chain" button (data-dep-chip-walk) is added to that chip so you
+ * can audit what an already-added blocker chains into — the sister of F74's
+ * affordance on the candidate list. The set is computed by the caller (via
+ * deps.hasWalkableChain over the live graph) and passed in, keeping this render
+ * pure. A blocker that doesn't chain further carries no button.
  */
-export function renderDepEditor(tasks: DepGraphTask[], taskId: number): string {
+export function renderDepEditor(
+  tasks: DepGraphTask[],
+  taskId: number,
+  walkable?: ReadonlySet<number>,
+): string {
   const deps = currentDeps(tasks, taskId);
   const chips = deps
     .map((id) => {
       const t = tasks.find((x) => x.id === id);
       const label = t ? depChipLabel(t) : `#${id}`;
       const doneCls = t?.done ? " is-done" : "";
+      const walk =
+        walkable && walkable.has(id)
+          ? `<button type="button" class="depedit-chip-walk" data-dep-chip-walk="${id}" title="Walk this blocker's chain" aria-label="Walk the chain from #${id}">&#8627;</button>`
+          : "";
       return `<span class="depedit-chip${doneCls}" data-dep-chip="${id}">
         <span class="depedit-chip-label">${escapeHTML(label)}</span>
+        ${walk}
         <button type="button" class="depedit-chip-x" data-dep-remove="${id}" aria-label="Remove blocker #${id}" title="Remove">&times;</button>
       </span>`;
     })
