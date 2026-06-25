@@ -1142,24 +1142,145 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T13 lens-keyboard / palette-preview / chain-walk / scoped-export / chain-
 highlight cluster:
 
-- [ ] **F76** Lens digit hints in the stats sidebar: render the "1".."5" shortcut
+- [x] **F76** Lens digit hints in the stats sidebar: render the "1".."5" shortcut
       key on each stats tile (a small kbd badge) so the keyboard shortcut is
       discoverable at the point of use, not just in the `?` overlay. Reuse LENS_ORDER
-      so the badge can't drift from lensForDigit.
-- [ ] **F77** Palette "Set priority ▸" live-preview parity: mirror F73 for the F63
+      so the badge can't drift from lensForDigit. (tick T14 2026-06-25)
+- [x] **F77** Palette "Set priority ▸" live-preview parity: mirror F73 for the F63
       priority group — when a "Set priority: X" command is highlighted, show the
       target task's current -> new level inline so the change is previewed before
-      Enter (no parse needed; pure from selTask.priority).
-- [ ] **F78** Scoped export in the command palette: add explicit "Export N shown
+      Enter (no parse needed; pure from selTask.priority). (tick T14 2026-06-25)
+- [x] **F78** Scoped export in the command palette: add explicit "Export N shown
       (JSON/CSV/MD)" commands to Cmd-K when a lens/filter is active, distinct from
       the whole-store export commands, so the scoped download is reachable
-      keyboard-only (reuse isExportScoped + scopedExportUrl).
-- [ ] **F79** Chain-walk from the dep editor's CURRENT blockers too (F74 only wired
+      keyboard-only (reuse isExportScoped + scopedExportUrl). (tick T14 2026-06-25)
+- [x] **F79** Chain-walk from the dep editor's CURRENT blockers too (F74 only wired
       the candidate list): a walk affordance on each existing blocker chip so you can
       audit what an already-added blocker chains into, not just prospective ones.
-- [ ] **F80** Lens-aware stats: when a lens is active, show the lensed subset's
+      (tick T14 2026-06-25)
+- [x] **F80** Lens-aware stats: when a lens is active, show the lensed subset's
       mini-counts (e.g. "of 12 blocked: 3 urgent, 5 overdue") in the sidebar so the
       numbers reflect what you're looking at, not just the whole board.
+      (tick T14 2026-06-25)
+- [ ] **F48** (carried) Context-menu submenus: nest the priority levels + a "due
+      presets" flyout inside the F37 row menu, keyboard-navigable (reuse popnav.ts
+      for submenu arrow-nav).
+- [ ] **F49** (carried) Autocomplete depth: extend the F38 composer dropdown to the
+      inline EDIT field (F7) and the filter box (F11); add a `!priority` completion.
+- [ ] **F50** (carried) Dependency mini-graph in the dep editor (F39): a tiny
+      ASCII/SVG "what blocks what" preview of the selected task's neighborhood.
+- [ ] **F54** (carried) Row context menu on touch: long-press (reuse the F28 machine)
+      to open the F37 menu, with a press-and-hold disambiguation.
+
+### T14 — 2026-06-25 13:08 PT — lens/palette/dep/export consistency cluster (5/5)
+
+Workdir note: the canonical `/Volumes/Projects/tsk` (external SSD sparseimage)
+WAS mounted this tick — the lock wrapper resolved the repo cleanly, HEAD was at
+origin/main d374fdc with a clean tree and node_modules present. Pushed a clean
+fast-forward (d374fdc..7088dbd). The SSD-absent fallback was not needed.
+
+Slices shipped (5/5 — a cohesive "every lens/palette/dep/export surface gets the
+same discoverable, consistent treatment" cluster; led the standing T14 queue
+exactly as written, no drops this tick):
+
+- F76 feat(web): show lens digit-key badges on the stats tiles (a131e06)
+- F77 feat(web): live "current -> new" preview for palette priority commands (c8f4746)
+- F78 feat(web): explicit scoped + whole-store export commands in Cmd-K (d03fbb9)
+- F79 feat(web): walk a current blocker's chain from the dep editor (51061f9)
+- F80 feat(web): lens-aware stats breakdown in the sidebar (bf7fdf8)
+- (+ chore 7088dbd: rebuilt embedded SPA bundle for all five slices)
+
+Design notes worth keeping:
+- F76 adds lens.lensDigit(kind) — the exact INVERSE of lensForDigit, derived from
+  the same LENS_ORDER, returning "1".."5" for a real lens or "" for the "open"
+  tile (which maps to the hideDone facet, not a numbered lens). stats.ts renders
+  a `.lens-key` kbd badge in the top-right corner of every drill tile; faint,
+  brightening to accent on hover/focus. A unit test asserts lensDigit/lensForDigit
+  round-trip so a badge can never point at the wrong key.
+- F77 adds palette.priorityForCommandId (id -> level | null) + priorityPreviewVM
+  (current,target -> {state, text}) + renderPriorityPreview. Unlike F73's due
+  preview (needs a server parse), this is pure + synchronous from the selected
+  task's current level, so paintPaletteDuePreview resolves it FIRST and bumps the
+  due-parse seq so a priority highlight can't be clobbered by a stale in-flight
+  date parse. Reuses the .due-preview is-valid/is-empty classes — both previews
+  share the one palette slot and read identically. Reads "Medium -> Urgent",
+  "Already Urgent", or an em dash on the left when there's no current priority.
+- F78 adds export.buildExportCommands(scopedCount) + exportCommandTarget(id). The
+  three whole-store "Export tasks as <FMT>" commands always ship; when a
+  lens/filter/tag narrows the board, three "Export N shown as <FMT>" commands
+  (count via exportScopeLabel) are PREPENDED, distinct ids (export-scoped-csv).
+  On a plain board only the whole-store trio shows (nothing duplicated).
+  downloadExport gained a forceScope override so the explicit commands always do
+  exactly what their title says, ignoring the F75 auto-scope; the menu button
+  keeps its auto behaviour. exportCommandTarget decodes both id families to
+  {format, scoped} for a single dispatch.
+- F79 threads an optional `walkable` set into renderDepEditor; CURRENT blocker
+  chips whose own chain runs deeper (deps.hasWalkableChain) get a corner-arrow
+  button (data-dep-chip-walk) beside the remove x — the sister of F74's affordance
+  on the CANDIDATE list. main.ts computes the set over the live graph (hoisted as
+  a `function` so the initial render can call it before its position), recomputing
+  each repaint so it tracks adds/removes; the click routes through openChainDrill
+  (inherits F70 keyboard nav). A leaf blocker carries no button.
+- F80 adds lens.computeLensBreakdown (applyLens + per-priority tally + overdue /
+  blocked cross-cuts, each cross-cut suppressed when redundant with the active
+  lens) + renderLensBreakdown (an "In view" section: headline count + non-zero
+  priority/cross-cut pills). refreshStats appends it only when a lens is active,
+  computed over the same not-deleted pool + whole-list done-index the render
+  pipeline lenses, so blocked (cross-task) + time windows see the real graph.
+
+Tests: +38 net new web tests (519 -> 557). lens.ts (+15: F76 lensDigit round-trip
++ F80 breakdown compute/render), stats.ts (+8 F76 badges), palette.ts (+10 F77),
+export.ts (+11 F78 command build/decode), depedit.ts (+4 F79 chip walk button).
+
+Gates (run once at end of batch) — all green:
+- gofmt -l clean, go vet clean, go build ok
+- go test ./... ok all packages (internal/commands 57.9s; internal/serve cached
+  against the freshly-embedded T14 bundle)
+- web: npm run check 557 pass (was 519; +38 net new), npm run build ok
+  (40 modules, JS 33.58KB gz, CSS 9.04KB gz)
+
+Live end-to-end proof: built the binary, init + 4 tasks (#1 overdue+urgent, #2
+due-this-week+high, #3 medium no-due, #4 low blocked by #1); `tsk serve`. F78:
+/api/export?format=csv&ids=1,4 returned exactly #1+#4 in store order; no-ids
+markdown returned all four — both whole-store and scoped export resolve through
+the one endpoint. The served bundle carries every slice's hooks (lens-key x1,
+data-cmdk-due-preview + "Already" x1, export-scoped- x1, data-dep-chip-walk x2,
+lens-bd x3 + "In view"). Storage contract intact: the raw .tsk.md is clean plain
+markdown with the depends:1 chain, and `tsk show 4` reads #1 back.
+
+Roadmap status: F1-F80 done (71 of the 80-item F-roadmap shipped; F68 + F72
+dropped as no-ops in earlier ticks). Unstarted: F48 (context-menu submenus), F49
+(autocomplete in edit/filter), F50 (dep mini-graph), F54 (touch context menu).
+T15 backlog appended below so the loop never starves.
+
+### T15 — depth (appended T14 2026-06-25 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T14 lens-digit / palette-priority-preview / scoped-export-commands /
+chip-chain-walk / lens-breakdown cluster:
+
+- [ ] **F81** Lens-breakdown pills are clickable: clicking the "3 urgent" pill in
+      the F80 breakdown layers the priority facet on top of the active lens (lens
+      AND urgent), so the sidebar's mini-counts become a drill-down, not just a
+      readout. Reuse setFilter's priorities facet — lenses already coexist with
+      facets in the render pipeline.
+- [ ] **F82** Digit-key hint in the lens chip + help overlay row: now that F76 put
+      the "1".."5" badges on the tiles, echo the active lens's digit in the
+      filter-bar lens chip ("2 overdue x") and bold that row in the `?` overlay's
+      lens list, so the active shortcut is visible everywhere the lens is.
+- [ ] **F83** Palette "Set due ▸" + "Set priority ▸" disabled-reason hints: when a
+      set command is disabled (no selection, or already in effect), show WHY in the
+      preview slot ("select a task first" / "already urgent") instead of just
+      greying it — reuse the F77/F73 preview line for the message.
+- [ ] **F84** Scoped export parity for the export MENU button: the F78 palette
+      commands can force whole-store vs scoped, but the menu button only auto-scopes
+      — add a small "all / shown" toggle to the export dropdown header so the menu
+      reaches both too (mirror the palette's two-command split).
+- [ ] **F85** Chain-walk reachability from the row badge's UPSTREAM too: F61/F79
+      walk a task's blocker chain (downstream to root); add a "what waits on this?"
+      walk that follows dependents (upstream), reusing the graph the dep stats
+      already build, so you can audit impact both directions from one popover.
 - [ ] **F48** (carried) Context-menu submenus: nest the priority levels + a "due
       presets" flyout inside the F37 row menu, keyboard-navigable (reuse popnav.ts
       for submenu arrow-nav).
