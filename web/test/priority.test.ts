@@ -6,6 +6,8 @@ import {
   nextPriority,
   prevPriority,
   priorityGlyph,
+  floorPriority,
+  ceilPriority,
 } from "../src/priority.ts";
 
 test("ladder is low -> medium -> high -> urgent", () => {
@@ -56,4 +58,21 @@ test("glyphs match the chip letters", () => {
   assert.equal(priorityGlyph("high"), "H");
   assert.equal(priorityGlyph("urgent"), "U");
   assert.equal(priorityGlyph("???"), "M");
+});
+
+test("floorPriority is the least-urgent rung (F58)", () => {
+  assert.equal(floorPriority(), "low");
+  assert.equal(priorityRank(floorPriority()), 0);
+});
+
+test("ceilPriority is the most-urgent rung (F58)", () => {
+  assert.equal(ceilPriority(), "urgent");
+  assert.equal(priorityRank(ceilPriority()), PRIORITY_LADDER.length - 1);
+});
+
+test("floor and ceil bracket the whole ladder (F58)", () => {
+  for (const p of PRIORITY_LADDER) {
+    assert.ok(priorityRank(floorPriority()) <= priorityRank(p));
+    assert.ok(priorityRank(ceilPriority()) >= priorityRank(p));
+  }
 });

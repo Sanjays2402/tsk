@@ -41,3 +41,19 @@ export function prevPriority(p: string): Priority {
 export function priorityGlyph(p: string): string {
   return { low: "L", medium: "M", high: "H", urgent: "U" }[p as Priority] ?? "M";
 }
+
+/**
+ * F58: the floor of the ladder (least urgent) — `low`. A constant helper so the
+ * "jump to floor" keystroke and any UI never hard-code the value.
+ */
+export function floorPriority(): Priority {
+  return PRIORITY_LADDER[0];
+}
+
+/**
+ * F58: the ceiling of the ladder (most urgent) — `urgent`. Sister of
+ * floorPriority for the "jump to ceiling" keystroke.
+ */
+export function ceilPriority(): Priority {
+  return PRIORITY_LADDER[PRIORITY_LADDER.length - 1];
+}

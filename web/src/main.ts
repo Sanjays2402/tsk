@@ -13,7 +13,7 @@
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
 import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
-import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
+import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
   LONG_PRESS_MS,
@@ -3230,6 +3230,21 @@ document.addEventListener("keydown", (e) => {
         cyclePriority(nav.selectedId, true);
       }
       break;
+    case "}":
+      // F58: shift+] jumps the selected task's priority to the ceiling (urgent)
+      // in one keystroke (shift turns "]" into "}").
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        setPriority(nav.selectedId, ceilPriority());
+      }
+      break;
+    case "{":
+      // F58: shift+[ jumps the selected task's priority to the floor (low).
+      if (nav.selectedId !== null) {
+        e.preventDefault();
+        setPriority(nav.selectedId, floorPriority());
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -3300,6 +3315,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["p", "Pin / unpin the selected task"],
   ["shift P", "Pin the selected task and float it to the top"],
   ["[ / ]", "Lower / raise the selected task's priority"],
+  ["shift [ / ]", "Jump priority to the floor (low) / ceiling (urgent)"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
