@@ -1671,7 +1671,7 @@ function openUnblockedPicker(ids: number[]): void {
   const pop = document.createElement("div");
   pop.className = "chain-pop unblock-pop";
   pop.setAttribute("data-unblock-pop", "");
-  pop.innerHTML = `<div class="chain-pop-head">Newly unblocked — jump to<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderUnblockedPicker(nodes)}`;
+  pop.innerHTML = `<div class="chain-pop-head">Newly unblocked — jump to<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderUnblockedPicker(nodes, filter.query.trim())}`;
   pop.style.position = "fixed";
   pop.style.visibility = "hidden";
   document.body.appendChild(pop);
@@ -3427,7 +3427,7 @@ function openChainDrill(fromId?: number): void {
   pop.className = "chain-pop";
   pop.setAttribute("data-chain-pop", "");
   const head = fromId !== undefined ? `Blocker chain from #${fromId}` : "Longest blocker chain";
-  pop.innerHTML = `<div class="chain-pop-head">${head}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes)}`;
+  pop.innerHTML = `<div class="chain-pop-head">${head}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
   // Anchor under the chain tile if present (F56), else the badge that opened it
   // (F61), else the stats panel corner.
   const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");

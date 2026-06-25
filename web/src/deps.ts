@@ -13,6 +13,8 @@
  * unit-tested with zero browser.
  */
 
+import { highlightText } from "./highlight.ts";
+
 /** The minimal shape a task needs for dependency reasoning. */
 export interface DepTask {
   id: number;
@@ -440,13 +442,6 @@ export function hasWalkableChain(tasks: DepStatsTask[], start: number): boolean 
   return deepestChainFrom(tasks, start).length >= 2;
 }
 
-/** Escape strings before injecting into innerHTML. Local copy keeps this pure. */
-function escapeChainHTML(s: string): string {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
-  );
-}
-
 /**
  * F56: render the longest-chain drill-down as an ordered jump-list. Each step
  * is a button carrying `data-chain-jump="<id>"` so a delegated click selects +
@@ -454,8 +449,13 @@ function escapeChainHTML(s: string): string {
  * direction (downstream blocked task first, deepest root blocker last). The
  * last node is tagged `is-root` so the UI can label "root blocker". Returns ""
  * for an empty chain so the caller can skip opening an empty popover.
+ *
+ * F65: when a `query` is passed (the live search), the matched subsequence in
+ * each node title is wrapped in <mark> via the generic highlightText engine, so
+ * a search that landed on a blocker's text is visible as you walk the chain.
+ * Without a query the title is plain-escaped (highlightText's empty-query path).
  */
-export function renderChainDrill(nodes: ChainNode[]): string {
+export function renderChainDrill(nodes: ChainNode[], query = ""): string {
   if (nodes.length === 0) return "";
   const items = nodes
     .map((n, i) => {
@@ -467,7 +467,7 @@ export function renderChainDrill(nodes: ChainNode[]): string {
       return `<li class="chain-step${root}">
         <button type="button" class="chain-jump" data-chain-jump="${n.id}" title="Jump to #${n.id}">
           <span class="chain-id">#${n.id}</span>
-          <span class="chain-title">${escapeChainHTML(n.title)}</span>
+          <span class="chain-title">${highlightText(n.title, query)}</span>
         </button>
         ${arrow}
       </li>`;
@@ -482,15 +482,18 @@ export function renderChainDrill(nodes: ChainNode[]): string {
  * so a delegated click jumps to that task — reusing the same chain-jump chrome
  * so it reads consistently. Returns "" for an empty list so the caller skips
  * opening an empty popover. Pure → unit-tested.
+ *
+ * F65: an optional `query` highlights the matched subsequence in each title via
+ * the generic highlightText engine, consistent with the chain drill.
  */
-export function renderUnblockedPicker(nodes: ChainNode[]): string {
+export function renderUnblockedPicker(nodes: ChainNode[], query = ""): string {
   if (nodes.length === 0) return "";
   const items = nodes
     .map(
       (n) => `<li class="chain-step">
         <button type="button" class="chain-jump" data-unblock-jump="${n.id}" title="Jump to #${n.id}">
           <span class="chain-id">#${n.id}</span>
-          <span class="chain-title">${escapeChainHTML(n.title)}</span>
+          <span class="chain-title">${highlightText(n.title, query)}</span>
         </button>
       </li>`,
     )

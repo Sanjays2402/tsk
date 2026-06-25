@@ -88,6 +88,34 @@ test("renderChainDrill is empty for no nodes", () => {
   assert.equal(renderChainDrill([]), "");
 });
 
+// --- F65: search highlight in the chain drill ------------------------------
+
+test("renderChainDrill marks the matched query in node titles", () => {
+  const nodes: ChainNode[] = [
+    { id: 4, title: "ship release" },
+    { id: 1, title: "fix the bug" },
+  ];
+  const html = renderChainDrill(nodes, "bug");
+  // the matched subsequence is wrapped in <mark>
+  assert.match(html, /<mark>bug<\/mark>/);
+  // a non-matching node title carries no mark
+  assert.match(html, /ship release/);
+});
+
+test("renderChainDrill with no query leaves titles unmarked (plain escaped)", () => {
+  const html = renderChainDrill([{ id: 1, title: "fix the bug" }]);
+  assert.doesNotMatch(html, /<mark>/);
+  assert.match(html, /fix the bug/);
+});
+
+test("renderChainDrill still escapes while highlighting", () => {
+  // a query that matches inside a dangerous title must not break escaping
+  const html = renderChainDrill([{ id: 1, title: "<b>x</b>" }], "x");
+  assert.doesNotMatch(html, /<b>/);
+  assert.match(html, /&lt;b&gt;/);
+  assert.match(html, /<mark>x<\/mark>/);
+});
+
 // --- F62: newly-unblocked picker -------------------------------------------
 
 test("renderUnblockedPicker emits a jump button per unblocked task", () => {
@@ -111,4 +139,15 @@ test("renderUnblockedPicker escapes titles", () => {
 
 test("renderUnblockedPicker is empty for no nodes", () => {
   assert.equal(renderUnblockedPicker([]), "");
+});
+
+test("renderUnblockedPicker marks the matched query in titles", () => {
+  const html = renderUnblockedPicker([{ id: 2, title: "write the docs" }], "docs");
+  assert.match(html, /<mark>docs<\/mark>/);
+});
+
+test("renderUnblockedPicker with no query leaves titles unmarked", () => {
+  const html = renderUnblockedPicker([{ id: 2, title: "write the docs" }]);
+  assert.doesNotMatch(html, /<mark>/);
+  assert.match(html, /write the docs/);
 });
