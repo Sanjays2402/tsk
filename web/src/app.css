@@ -590,6 +590,55 @@ button.priority:focus-visible {
   padding: 0 4px;
 }
 
+/* F41: touch priority picker — a 4-way popover opened by long-pressing the
+   priority chip. Mirrors the context-menu chrome so the two read as siblings. */
+.prio-pick {
+  position: fixed;
+  z-index: 60;
+  min-width: 150px;
+  padding: var(--sp-1);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  animation: help-fade var(--duration-fast) var(--ease-out);
+}
+.prio-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.prio-pick-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.prio-pick-item:hover {
+  background: var(--color-accent-soft);
+}
+.prio-pick-item.is-active {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.prio-pick-glyph {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
 /* F27: pin star — sits before the title, lit gold when pinned. */
 .pin-btn {
   border: none;

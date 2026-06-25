@@ -14,6 +14,7 @@ import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
 import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, type DepTask, type DepStatsTask } from "./deps";
 import { nextPriority, prevPriority, type Priority as CyclePriority } from "./priority";
+import { renderPriorityPicker } from "./prioritypicker";
 import {
   LONG_PRESS_MS,
   trackMove,
@@ -775,6 +776,84 @@ function openContextMenu(id: number, x: number, y: number): void {
   }, 0);
 }
 
+// --- F41: touch priority picker --------------------------------------------
+// On a phone the chip's alt/shift-click "cycle down" isn't reachable, so a
+// long-press on the priority chip opens a 4-way picker (tap a level to set it).
+// The long-press itself is detected in the touch handlers below, reusing the
+// F28 slop/threshold machine; this just owns the popover lifecycle.
+
+/** Remove any open priority picker and drop its outside-interaction guards. */
+function closePriorityPicker(): void {
+  document.querySelector("[data-prio-pick]")?.remove();
+  document.removeEventListener("click", onPickerAway, true);
+  document.removeEventListener("keydown", onPickerKey, true);
+  window.removeEventListener("resize", closePriorityPicker);
+  window.removeEventListener("scroll", closePriorityPicker, true);
+}
+
+function onPickerAway(e: MouseEvent): void {
+  if ((e.target as HTMLElement | null)?.closest("[data-prio-pick]")) return;
+  closePriorityPicker();
+}
+
+function onPickerKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closePriorityPicker();
+  }
+}
+
+/**
+ * Open the 4-way priority picker for a task at viewport coords (x, y). Built
+ * from the pure renderPriorityPicker markup, positioned with clampMenuPosition
+ * so it never spills off-screen. Tapping an option sets the priority directly;
+ * outside-tap, Escape, resize, and scroll all dismiss it.
+ */
+function openPriorityPicker(id: number, x: number, y: number): void {
+  closePriorityPicker();
+  closeContextMenu();
+  const task = currentTasks.find((t) => t.id === id);
+  if (!task) return;
+  nav = select(nav, visibleIds, id);
+  applySelection();
+
+  const pick = document.createElement("div");
+  pick.className = "prio-pick";
+  pick.setAttribute("data-prio-pick", "");
+  pick.innerHTML = renderPriorityPicker(task.priority);
+  pick.style.left = "0px";
+  pick.style.top = "0px";
+  pick.style.visibility = "hidden";
+  document.body.appendChild(pick);
+  const rect = pick.getBoundingClientRect();
+  const { left, top } = clampMenuPosition(
+    x,
+    y,
+    rect.width,
+    rect.height,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  pick.style.left = `${left}px`;
+  pick.style.top = `${top}px`;
+  pick.style.visibility = "visible";
+
+  pick.addEventListener("click", (e) => {
+    const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-set-prio]");
+    if (!item) return;
+    const prio = item.dataset.setPrio as CyclePriority;
+    closePriorityPicker();
+    setPriority(id, prio);
+  });
+
+  setTimeout(() => {
+    document.addEventListener("click", onPickerAway, true);
+    document.addEventListener("keydown", onPickerKey, true);
+    window.addEventListener("resize", closePriorityPicker);
+    window.addEventListener("scroll", closePriorityPicker, true);
+  }, 0);
+}
+
 // --- F17: drag-to-reorder --------------------------------------------------
 
 /** The id of the row currently being dragged, or null. */
@@ -1417,12 +1496,25 @@ async function pinToTop(id: number): Promise<void> {
  * needed — just click the chip (raise) or alt/shift-click (lower).
  */
 async function cyclePriority(id: number, down = false): Promise<void> {
+  const idx = currentTasks.findIndex((t) => t.id === id);
+  if (idx < 0) return;
+  const before = currentTasks[idx];
+  const next = (down ? prevPriority(before.priority) : nextPriority(before.priority)) as CyclePriority;
+  await setPriority(id, next);
+}
+
+/**
+ * F41: set a task's priority to a specific value with an optimistic PATCH.
+ * Shared by the F29 chip cycle (via cyclePriority) and the F41 touch priority
+ * picker (tap a level to set it directly). A no-op when the value is unchanged.
+ */
+async function setPriority(id: number, next: CyclePriority): Promise<void> {
   const key = id + 1_000_000; // separate in-flight namespace
   if (inFlight.has(key)) return;
   const idx = currentTasks.findIndex((t) => t.id === id);
   if (idx < 0) return;
   const before = currentTasks[idx];
-  const next = (down ? prevPriority(before.priority) : nextPriority(before.priority)) as CyclePriority;
+  if (before.priority === next) return; // nothing to change
   currentTasks[idx] = { ...before, priority: next };
   inFlight.add(key);
   render();
@@ -2752,6 +2844,8 @@ els.content.addEventListener("contextmenu", (e) => {
 // Touch has no hover/right-click, so a still long-press (~500ms) on a row is
 // the mobile gesture for "select this for bulk actions". A press that moves
 // (a scroll) or lifts early (a tap) is NOT a long-press.
+// F41: a long-press that STARTS on the priority chip instead opens the 4-way
+// priority picker (the chip's desktop alt-click isn't reachable on a phone).
 let press: PressState | null = null;
 
 function cancelPress(): void {
@@ -2769,10 +2863,30 @@ els.content.addEventListener(
       return;
     }
     const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const t = e.touches[0];
+    // F41: a long-press starting on the priority chip opens the picker. Checked
+    // BEFORE the generic interactive-control bail (the chip is a <button>).
+    const chip = target.closest<HTMLElement>("[data-prio-cycle]");
+    if (chip) {
+      const row = chip.closest("[data-id]") as HTMLElement | null;
+      if (!row) return;
+      const id = Number(row.dataset.id);
+      if (!Number.isFinite(id) || id <= 0) return;
+      const rect = chip.getBoundingClientRect();
+      const ax = rect.left;
+      const ay = rect.bottom + 4;
+      const timer = window.setTimeout(() => {
+        openPriorityPicker(id, ax, ay);
+        if (navigator.vibrate) navigator.vibrate(15);
+        press = null;
+      }, LONG_PRESS_MS);
+      press = { id, start: { x: t.clientX, y: t.clientY }, moved: false, timer };
+      return;
+    }
     // Don't hijack a press that starts on an interactive control or the drag
     // handle — those have their own behaviour.
     if (
-      !target ||
       target.closest(
         "input, button, a, textarea, [data-drag-handle], [data-due], [data-notes]",
       )
@@ -2783,7 +2897,6 @@ els.content.addEventListener(
     if (!row) return;
     const id = Number(row.dataset.id);
     if (!Number.isFinite(id) || id <= 0) return;
-    const t = e.touches[0];
     const timer = window.setTimeout(() => {
       // Fire the long-press: enter bulk mode by toggling this row in.
       bulkToggleOne(id);
