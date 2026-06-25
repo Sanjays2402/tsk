@@ -7,6 +7,7 @@ import {
   priorityGlyph,
   renderBulkEditCluster,
   renderBulkPriorityMenu,
+  renderBulkPinMenu,
   renderBulkTagEditor,
   renderBulkDueEditor,
   BULK_PRIORITIES,
@@ -77,11 +78,13 @@ test("BULK_PRIORITIES is the full ascending ladder", () => {
   assert.deepEqual([...BULK_PRIORITIES], ["low", "medium", "high", "urgent"]);
 });
 
-test("renderBulkEditCluster carries the three openers", () => {
+test("renderBulkEditCluster carries the four openers", () => {
   const html = renderBulkEditCluster();
   assert.match(html, /data-bulk-edit="priority"/);
   assert.match(html, /data-bulk-edit="tag"/);
   assert.match(html, /data-bulk-edit="due"/);
+  // F47: the pin opener joins the cluster
+  assert.match(html, /data-bulk-edit="pin"/);
 });
 
 test("renderBulkPriorityMenu has a button per priority with set hooks", () => {
@@ -94,4 +97,23 @@ test("renderBulkPriorityMenu has a button per priority with set hooks", () => {
 test("tag + due editors expose their inputs", () => {
   assert.match(renderBulkTagEditor(), /data-bulk-tag-input/);
   assert.match(renderBulkDueEditor(), /data-bulk-due-input/);
+});
+
+// --- F47: bulk pin menu + live due preview ---------------------------------
+
+test("renderBulkPinMenu has pin-all (1) and unpin-all (0) actions", () => {
+  const html = renderBulkPinMenu();
+  assert.match(html, /data-bulk-set-pin="1"/);
+  assert.match(html, /data-bulk-set-pin="0"/);
+  assert.match(html, /Pin all/);
+  assert.match(html, /Unpin all/);
+});
+
+test("renderBulkDueEditor exposes a live-preview slot", () => {
+  const html = renderBulkDueEditor();
+  // F47: main.ts fills this from /api/parse-date as you type
+  assert.match(html, /data-bulk-due-preview/);
+  // the input + the hint are still present
+  assert.match(html, /data-bulk-due-input/);
+  assert.match(html, /empty \+ Enter clears/);
 });

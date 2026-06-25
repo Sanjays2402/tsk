@@ -92,6 +92,7 @@ import {
   renderBulkPriorityMenu,
   renderBulkTagEditor,
   renderBulkDueEditor,
+  renderBulkPinMenu,
   type Priority as BulkPriority,
 } from "./bulkedit";
 import {
@@ -582,10 +583,11 @@ async function bulkDelete(): Promise<void> {
   }
 }
 
-// --- F36: bulk edit (priority / tag / due) ---------------------------------
+// --- F36: bulk edit (priority / tag / due / pin) ---------------------------
 
-/** The bulk-edit popover currently open ("priority" | "tag" | "due"), or null. */
-let bulkEditOpen: "priority" | "tag" | "due" | null = null;
+/** The bulk-edit popover currently open, or null. F47 adds "pin". */
+type BulkEditKind = "priority" | "tag" | "due" | "pin";
+let bulkEditOpen: BulkEditKind | null = null;
 
 /** Remove any open bulk-edit popover and drop its outside-click guard. */
 function closeBulkEdit(): void {
@@ -602,13 +604,18 @@ function onBulkEditAway(e: MouseEvent): void {
   closeBulkEdit();
 }
 
+/** A monotonic seq so a stale bulk-due parse can't overwrite a newer preview. */
+let bulkDueParseSeq = 0;
+
 /**
- * Open the bulk-edit popover for one of the three actions, anchored above the
+ * Open the bulk-edit popover for one of the four actions, anchored above the
  * bulk bar. Re-clicking the same opener closes it (toggle). The popover content
  * is a pure render from bulkedit.ts; the inputs/buttons inside carry data hooks
- * a delegated listener dispatches on.
+ * a delegated listener dispatches on. F47: "pin" is a click-menu (pin all /
+ * unpin all) like "priority"; "due" gains a live NL preview line that resolves
+ * via /api/parse-date as you type (reusing the F12 picker's view-model).
  */
-function openBulkEdit(kind: "priority" | "tag" | "due"): void {
+function openBulkEdit(kind: BulkEditKind): void {
   if (bulkEditOpen === kind) {
     closeBulkEdit();
     return;
@@ -624,9 +631,11 @@ function openBulkEdit(kind: "priority" | "tag" | "due"): void {
   const body =
     kind === "priority"
       ? renderBulkPriorityMenu()
-      : kind === "tag"
-        ? renderBulkTagEditor()
-        : renderBulkDueEditor();
+      : kind === "pin"
+        ? renderBulkPinMenu()
+        : kind === "tag"
+          ? renderBulkTagEditor()
+          : renderBulkDueEditor();
   pop.innerHTML = body;
   els.bulkbar.appendChild(pop);
 
@@ -637,9 +646,23 @@ function openBulkEdit(kind: "priority" | "tag" | "due"): void {
       const prio = btn.dataset.bulkSetPrio as BulkPriority;
       bulkSetPriority(prio);
     });
+  } else if (kind === "pin") {
+    // F47: pin-all / unpin-all click menu.
+    pop.addEventListener("click", (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-bulk-set-pin]");
+      if (!btn) return;
+      bulkSetPinned(btn.dataset.bulkSetPin === "1");
+    });
   } else {
     const input = pop.querySelector<HTMLInputElement>("input")!;
     input.focus();
+    // F47: for the due editor, show a live preview of the resolved date below
+    // the input (the same /api/parse-date the F12 picker uses), so you confirm
+    // what every selected task will get before committing.
+    if (kind === "due") {
+      const previewLine = pop.querySelector<HTMLElement>("[data-bulk-due-preview]");
+      input.addEventListener("input", () => updateBulkDuePreview(input.value, previewLine));
+    }
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
       if (e.key === "Enter") {
@@ -654,6 +677,29 @@ function openBulkEdit(kind: "priority" | "tag" | "due"): void {
   }
   // Defer the outside-click guard so the opening click doesn't immediately close it.
   setTimeout(() => document.addEventListener("click", onBulkEditAway, true), 0);
+}
+
+/**
+ * F47: fill the bulk-due preview line from a raw NL string. Blank -> "clears
+ * the due date"; otherwise hit /api/parse-date and render the resolved date (or
+ * an "unrecognized" hint), guarding against out-of-order responses with a seq.
+ */
+async function updateBulkDuePreview(raw: string, line: HTMLElement | null): Promise<void> {
+  if (!line) return;
+  const seq = ++bulkDueParseSeq;
+  if (raw.trim() === "") {
+    line.innerHTML = renderDuePreview(previewVM("", null));
+    return;
+  }
+  line.innerHTML = renderDuePreview(previewVM(raw, null)); // "Parsing…"
+  try {
+    const res = await api.parseDate(raw);
+    if (seq !== bulkDueParseSeq) return; // a newer keystroke superseded us
+    line.innerHTML = renderDuePreview(previewVM(raw, res));
+  } catch {
+    if (seq !== bulkDueParseSeq) return;
+    line.innerHTML = renderDuePreview(previewVM(raw, { ok: false, input: raw, error: "offline" }));
+  }
 }
 
 /** Run a PATCH for every selected id in parallel, then refresh once. */
@@ -717,6 +763,21 @@ function bulkSetDue(raw: string): void {
   const due = raw.trim(); // "" clears; server validates non-empty
   const ids = selectedInOrder(bulk, visibleIds);
   bulkPatch(ids, () => ({ due }), due === "" ? "clear due on" : "set due on");
+}
+
+/**
+ * F47: pin or unpin every selected task. Uses the PATCH `pinned` setter (the
+ * same field the F27 row pin writes), skipping any task already in the target
+ * state so the round-trip only touches what changes. `pinned` round-trips to
+ * .tsk.md as `pin:true` — the CLI/TUI read the same flag.
+ */
+function bulkSetPinned(pinned: boolean): void {
+  const ids = selectedInOrder(bulk, visibleIds);
+  bulkPatch(
+    ids,
+    (t) => (Boolean(t.pinned) === pinned ? null : { pinned }),
+    pinned ? "pin" : "unpin",
+  );
 }
 
 // --- F37: row context menu -------------------------------------------------
@@ -2890,7 +2951,7 @@ els.bulkbar.addEventListener("click", (e) => {
   if (!btn) return;
   // F36: the priority/tag/due openers toggle their popover.
   if (btn.dataset.bulkEdit !== undefined) {
-    openBulkEdit(btn.dataset.bulkEdit as "priority" | "tag" | "due");
+    openBulkEdit(btn.dataset.bulkEdit as "priority" | "tag" | "due" | "pin");
     return;
   }
   if (btn.dataset.bulkToggle !== undefined) bulkToggleDone();

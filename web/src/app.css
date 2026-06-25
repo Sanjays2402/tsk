@@ -2348,6 +2348,39 @@ button.stat-metric.metric-blocked:hover {
   font-family: var(--font-mono);
   color: var(--color-text-dim);
 }
+/* F47: bulk pin/unpin menu buttons — same chip shape as the priority menu. */
+.bulkedit-pin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+  background: var(--color-surface-hi);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.bulkedit-pin:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+/* F47: live NL due preview line in the bulk-due popover. Reuses the F12
+   picker's .due-preview state classes (is-valid / is-invalid / is-empty),
+   so it renders identically; empty until you type. */
+.bulkedit-due-preview {
+  min-height: 1.2em;
+  font-size: var(--fs-xs);
+}
+.bulkedit-due-preview:empty {
+  display: none;
+}
 
 /* F28: mobile/touch polish — bottom action SHEET + bigger hit targets.
    On narrow screens the floating pill becomes a full-width sheet docked to the

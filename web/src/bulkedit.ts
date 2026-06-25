@@ -113,7 +113,8 @@ export function renderBulkEditCluster(): string {
   return `
     <button type="button" class="bulkbar-btn" data-bulk-edit="priority" title="Set priority for all selected">priority</button>
     <button type="button" class="bulkbar-btn" data-bulk-edit="tag" title="Add or remove a tag on all selected">tag</button>
-    <button type="button" class="bulkbar-btn" data-bulk-edit="due" title="Set due date for all selected">due</button>`;
+    <button type="button" class="bulkbar-btn" data-bulk-edit="due" title="Set due date for all selected">due</button>
+    <button type="button" class="bulkbar-btn" data-bulk-edit="pin" title="Pin or unpin all selected">pin</button>`;
 }
 
 /** The 4-way priority menu shown when "priority" is chosen. */
@@ -123,6 +124,18 @@ export function renderBulkPriorityMenu(): string {
       `<button type="button" class="bulkedit-prio ${escapeHTML(p)}" data-bulk-set-prio="${escapeHTML(p)}" title="Set ${escapeHTML(p)}">${priorityGlyph(p)}<span class="bulkedit-prio-word">${escapeHTML(p)}</span></button>`,
   ).join("");
   return `<div class="bulkedit-pop-row">${buttons}</div>`;
+}
+
+/**
+ * F47: the pin/unpin menu shown when "pin" is chosen — two actions over the
+ * selection (pin all to the top, or unpin all). Buttons carry data-bulk-set-pin
+ * ("1" pins, "0" unpins) a delegated listener dispatches on. Pure → unit-tested.
+ */
+export function renderBulkPinMenu(): string {
+  return `<div class="bulkedit-pop-row">
+      <button type="button" class="bulkedit-pin" data-bulk-set-pin="1" title="Pin all selected to the top">&#9733; Pin all</button>
+      <button type="button" class="bulkedit-pin" data-bulk-set-pin="0" title="Unpin all selected">&#9734; Unpin all</button>
+    </div>`;
 }
 
 /** The tag-editor popover content (an input + a hint). */
@@ -135,12 +148,18 @@ export function renderBulkTagEditor(): string {
     <div class="bulkedit-hint">Enter to apply &middot; <code>+tag</code> adds, <code>-tag</code> removes</div>`;
 }
 
-/** The due-editor popover content (a natural-language input + a hint). */
+/**
+ * The due-editor popover content (a natural-language input + a hint). F47 adds
+ * a live-preview line below the input that main.ts fills from /api/parse-date
+ * as you type (reusing the F12 picker's previewVM + renderDuePreview), so you
+ * see the resolved date before applying it to the whole selection.
+ */
 export function renderBulkDueEditor(): string {
   return `
     <div class="bulkedit-pop-row">
       <input class="bulkedit-input" data-bulk-due-input type="text" spellcheck="false"
              placeholder="today, fri, in 3d, eom, 2026-07-04…" aria-label="Bulk due date">
     </div>
+    <div class="bulkedit-due-preview" data-bulk-due-preview></div>
     <div class="bulkedit-hint">Enter to apply to all selected &middot; empty + Enter clears</div>`;
 }
