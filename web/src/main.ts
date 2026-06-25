@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, filterBlocked, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, renderChainDrill, renderUnblockedPicker, filterBlocked, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -1496,11 +1496,87 @@ function maybeAnnounceUnblocked(depBefore: DepTask[] | null, becameDone: boolean
   }));
   const freed = newlyUnblocked(depBefore, after);
   if (freed.length === 0) return;
-  const first = freed[0];
-  showInfoToast(unblockedMessage(freed), 6, {
-    label: "Start",
-    run: () => jumpToTask(first),
+  // F62: a single unblock invites you straight to it ("Start"); when several
+  // unblock at once, the action opens a little picker so you choose which to
+  // jump to instead of always landing on the first.
+  if (freed.length === 1) {
+    const first = freed[0];
+    showInfoToast(unblockedMessage(freed), 6, {
+      label: "Start",
+      run: () => jumpToTask(first),
+    });
+  } else {
+    showInfoToast(unblockedMessage(freed), 6, {
+      label: "Jump to…",
+      run: () => openUnblockedPicker(freed),
+    });
+  }
+}
+
+/**
+ * F62: open a small picker popover listing the just-unblocked tasks, each a
+ * jump target. Used when more than one task unblocks from a single completion.
+ * Anchored near the info toast (bottom of the viewport); outside-click /
+ * Escape / a pick all dismiss it. No-ops on an empty / single-id list (the
+ * single case jumps directly from the toast).
+ */
+function closeUnblockedPicker(): void {
+  document.querySelector("[data-unblock-pop]")?.remove();
+  document.removeEventListener("click", onUnblockAway, true);
+  document.removeEventListener("keydown", onUnblockKey, true);
+}
+
+function onUnblockAway(e: MouseEvent): void {
+  const t = e.target as HTMLElement | null;
+  if (t?.closest("[data-unblock-pop]")) return;
+  closeUnblockedPicker();
+}
+
+function onUnblockKey(e: KeyboardEvent): void {
+  if (e.key === "Escape") {
+    e.preventDefault();
+    closeUnblockedPicker();
+  }
+}
+
+function openUnblockedPicker(ids: number[]): void {
+  closeUnblockedPicker();
+  if (ids.length === 0) return;
+  const titleById = new Map(currentTasks.map((t) => [t.id, t.title] as const));
+  const nodes: ChainNode[] = ids.map((id) => ({ id, title: titleById.get(id) ?? `#${id}` }));
+  const pop = document.createElement("div");
+  pop.className = "chain-pop unblock-pop";
+  pop.setAttribute("data-unblock-pop", "");
+  pop.innerHTML = `<div class="chain-pop-head">Newly unblocked — jump to</div>${renderUnblockedPicker(nodes)}`;
+  pop.style.position = "fixed";
+  pop.style.visibility = "hidden";
+  document.body.appendChild(pop);
+  const rect = pop.getBoundingClientRect();
+  // Anchor above the bottom-left info toast.
+  const { left, top } = clampMenuPosition(
+    16,
+    window.innerHeight - rect.height - 72,
+    rect.width,
+    rect.height,
+    window.innerWidth,
+    window.innerHeight,
+  );
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  pop.style.visibility = "visible";
+
+  pop.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-unblock-jump]");
+    if (!btn) return;
+    const id = Number(btn.dataset.unblockJump);
+    closeUnblockedPicker();
+    if (Number.isFinite(id) && id > 0) jumpToTask(id);
   });
+
+  setTimeout(() => {
+    document.addEventListener("click", onUnblockAway, true);
+    document.addEventListener("keydown", onUnblockKey, true);
+  }, 0);
 }
 
 /**

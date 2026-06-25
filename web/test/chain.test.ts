@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   longestChainPath,
   renderChainDrill,
+  renderUnblockedPicker,
   type DepStatsTask,
   type ChainNode,
 } from "../src/deps.ts";
@@ -85,4 +86,29 @@ test("renderChainDrill escapes titles", () => {
 
 test("renderChainDrill is empty for no nodes", () => {
   assert.equal(renderChainDrill([]), "");
+});
+
+// --- F62: newly-unblocked picker -------------------------------------------
+
+test("renderUnblockedPicker emits a jump button per unblocked task", () => {
+  const nodes: ChainNode[] = [
+    { id: 2, title: "write the docs" },
+    { id: 5, title: "ship it" },
+  ];
+  const html = renderUnblockedPicker(nodes);
+  assert.match(html, /data-unblock-jump="2"/);
+  assert.match(html, /data-unblock-jump="5"/);
+  assert.match(html, /write the docs/);
+  // it's a flat list — no chain arrows between rows
+  assert.doesNotMatch(html, /chain-arrow/);
+});
+
+test("renderUnblockedPicker escapes titles", () => {
+  const html = renderUnblockedPicker([{ id: 1, title: "<img src=x>" }]);
+  assert.doesNotMatch(html, /<img/);
+  assert.match(html, /&lt;img/);
+});
+
+test("renderUnblockedPicker is empty for no nodes", () => {
+  assert.equal(renderUnblockedPicker([]), "");
 });

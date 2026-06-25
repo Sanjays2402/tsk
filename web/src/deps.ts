@@ -390,3 +390,25 @@ export function renderChainDrill(nodes: ChainNode[]): string {
     .join("");
   return `<ul class="chain-list" role="menu" aria-label="Blocker chain">${items}</ul>`;
 }
+
+/**
+ * F62: render the "which just-unblocked task do you want to start?" picker for
+ * the plural unblock case. Each row is a button carrying `data-unblock-jump`
+ * so a delegated click jumps to that task — reusing the same chain-jump chrome
+ * so it reads consistently. Returns "" for an empty list so the caller skips
+ * opening an empty popover. Pure → unit-tested.
+ */
+export function renderUnblockedPicker(nodes: ChainNode[]): string {
+  if (nodes.length === 0) return "";
+  const items = nodes
+    .map(
+      (n) => `<li class="chain-step">
+        <button type="button" class="chain-jump" data-unblock-jump="${n.id}" title="Jump to #${n.id}">
+          <span class="chain-id">#${n.id}</span>
+          <span class="chain-title">${escapeChainHTML(n.title)}</span>
+        </button>
+      </li>`,
+    )
+    .join("");
+  return `<ul class="chain-list" role="menu" aria-label="Newly unblocked tasks">${items}</ul>`;
+}

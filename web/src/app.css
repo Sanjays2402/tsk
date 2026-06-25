@@ -709,6 +709,12 @@ button.priority:focus-visible {
 .chain-step.is-root .chain-jump {
   border-color: var(--color-border);
 }
+/* F62: the newly-unblocked picker reuses the chain-pop chrome but reads as a
+   flat list (no chain arrows). A touch wider min-width keeps titles legible. */
+.unblock-pop {
+  min-width: 240px;
+  z-index: 70;
+}
 .chain-id {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
