@@ -195,6 +195,28 @@ test("renderLensDigitMap with no active lens marks none", () => {
   assert.equal((html.match(/data-lens-legend=/g) ?? []).length, LENS_ORDER.length);
 });
 
+// F91 — the legend entries are clickable <button>s (an actionable lens switcher).
+test("renderLensDigitMap entries are buttons carrying the lens kind", () => {
+  const html = renderLensDigitMap(null);
+  for (const k of LENS_ORDER) {
+    // Each entry is a <button> with the data-lens-legend hook the click handler reads.
+    assert.match(
+      html,
+      new RegExp(`<button[^>]*class="lens-legend-item"[^>]*data-lens-legend="${k}"`),
+      `${k} should be a button`,
+    );
+  }
+  // No inert spans masquerade as entries.
+  assert.doesNotMatch(html, /<span class="lens-legend-item/);
+});
+
+test("renderLensDigitMap titles read 'show' for inactive and 'clear' for the active lens", () => {
+  const html = renderLensDigitMap("today");
+  // The active entry offers to clear; an inactive one offers to show.
+  assert.match(html, /data-lens-legend="today"[^>]*title="Clear the due today lens"/);
+  assert.match(html, /data-lens-legend="blocked"[^>]*title="Show only blocked \(key 1\)"/);
+});
+
 test("renderLensChipBody is empty when no lens is active", () => {
   assert.equal(renderLensChipBody(null), "");
 });

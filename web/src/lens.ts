@@ -302,8 +302,13 @@ export function renderActiveLensHelp(kind: LensKind | null): string {
  * so the overlay teaches the WHOLE digit map at a glance AND shows where you
  * are. Pure → unit-tested. Unlike renderActiveLensHelp (which shows only the one
  * active lens), this always renders all five so the shortcuts are discoverable
- * even when no lens is active. Each entry carries `data-lens-legend="<kind>"` so
- * a future slice could make them clickable without re-deriving the order.
+ * even when no lens is active. Each entry carries `data-lens-legend="<kind>"`.
+ *
+ * F91: the entries are real `<button>`s (not inert spans), so the `?` overlay
+ * doubles as an actionable lens switcher — a delegated click toggles that lens
+ * the same way its number-key / stat tile does, then closes the overlay. The
+ * markup keeps the same classes + `data-lens-legend` hook F90 shipped, so the
+ * existing legend tests and styling carry over unchanged.
  */
 export function renderLensDigitMap(active: LensKind | null): string {
   const items = LENS_ORDER.map((kind) => {
@@ -311,7 +316,8 @@ export function renderLensDigitMap(active: LensKind | null): string {
     const digit = lensDigit(kind);
     const on = kind === active ? " is-active" : "";
     const current = kind === active ? ' aria-current="true"' : "";
-    return `<span class="lens-legend-item${on}" data-lens-legend="${kind}"${current}><kbd>${digit}</kbd> ${meta.glyph} ${escapeHTML(meta.label)}</span>`;
+    const title = kind === active ? `Clear the ${meta.label} lens` : `Show only ${meta.label} (key ${digit})`;
+    return `<button type="button" class="lens-legend-item${on}" data-lens-legend="${kind}"${current} title="${escapeHTML(title)}"><kbd>${digit}</kbd> ${meta.glyph} ${escapeHTML(meta.label)}</button>`;
   }).join('<span class="lens-legend-sep" aria-hidden="true"> &middot; </span>');
   return `<div class="lens-legend">${items}</div>`;
 }

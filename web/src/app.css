@@ -1252,6 +1252,28 @@ kbd {
   white-space: nowrap;
   color: var(--color-text-faint);
 }
+/* F91: the legend entries are now <button>s (clickable lens switchers). Strip
+   the native button chrome so they read exactly like the F90 spans did, but add
+   a pointer cursor + a gentle hover so they're discoverably interactive. */
+button.lens-legend-item {
+  font: inherit;
+  border: 0;
+  background: none;
+  padding: 1px 3px;
+  margin: 0;
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+button.lens-legend-item:hover {
+  color: var(--color-amber-600);
+  background: var(--color-accent-soft);
+}
+button.lens-legend-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+}
 .lens-legend-item kbd {
   font-size: 0.92em;
 }

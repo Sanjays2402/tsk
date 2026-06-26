@@ -3962,6 +3962,19 @@ function ensureHelpEl(): HTMLElement {
     </div>`;
   // Click the backdrop (not the card) to dismiss.
   el.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    // F91: the F90 digit-map legend entries are now actionable — clicking one
+    // toggles that lens (same path as its number key / stat tile) and closes the
+    // overlay, so the `?` panel doubles as a lens switcher, not just a readout.
+    const legend = target?.closest<HTMLElement>("[data-lens-legend]");
+    if (legend) {
+      const kind = legend.dataset.lensLegend ?? "";
+      if (kind === "blocked" || kind === "overdue" || kind === "today" || kind === "week" || kind === "nodue") {
+        setLens(activeLens === kind ? null : (kind as LensKind));
+        toggleHelp(false);
+      }
+      return;
+    }
     if (e.target === el) toggleHelp(false);
   });
   document.body.appendChild(el);
