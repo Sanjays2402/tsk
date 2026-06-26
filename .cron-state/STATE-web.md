@@ -1642,33 +1642,144 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T18 cohort-focus / lens-facet-persist / clear-lens / scope-clear /
 bulk-reason-parity cluster:
 
-- [ ] **F101** Persist the cohort focus across a live-reload refresh: F96's
+- [x] **F101** Persist the cohort focus across a live-reload refresh: F96's
       focusCohort is dropped on every render-from-server today (it's re-derived
       only when you click focus). When an SSE change lands (F21) or you hit refresh,
       re-derive the cohort for the same sourceId against the fresh graph and keep the
       focus if it still has waiters (else clear it with a quiet toast), so a chokepoint
-      cohort survives an external .tsk.md edit instead of silently vanishing.
-- [ ] **F102** Cohort focus from the per-row "N waiting" badge too: F87's row badge
+      cohort survives an external .tsk.md edit instead of silently vanishing. (tick T19 2026-06-26)
+- [x] **F102** Cohort focus from the per-row "N waiting" badge too: F87's row badge
       (data-waiting-walk) opens the dependent chain-drill; add a secondary focus
       affordance (or a drill-popover "focus these" action) so you can drop into the
       cohort from ANY chokepoint row, not just the single biggest one F92 surfaces.
-      Reuse setCohort(id); keyboard-reachable from the drill.
-- [ ] **F103** "Clear cohort" + "Focus chokepoint cohort" Cmd-K commands (sisters of
+      Reuse setCohort(id); keyboard-reachable from the drill. (tick T19 2026-06-26)
+- [x] **F103** "Clear cohort" + "Focus chokepoint cohort" Cmd-K commands (sisters of
       F98): a context-aware "Clear cohort focus (N waiting on #M)" shown only while a
       cohort is active (routes setCohort->clear), plus a "Focus biggest chokepoint"
       command that runs setCohort(biggestChokepoint.id) keyboard-only. Pair both with
-      disabled-reasons ("no cohort active" / "no chokepoint") per F89/F95.
-- [ ] **F104** Lens+facet saved-view bridge: a cohort/lens is non-serializing by
+      disabled-reasons ("no cohort active" / "no chokepoint") per F89/F95. (tick T19 2026-06-26)
+- [x] **F104** Lens+facet saved-view bridge: a cohort/lens is non-serializing by
       design, but the lens+facet COMBO (F97) is a recurring drill — offer a "save this
       lens+facet as a view" that captures the facet (the serializable half) and notes
       the lens kind in the view name (e.g. "Urgent (overdue)"), recalling it re-applies
-      the facet and re-sets the lens. Bridges the F25 saved views to the F66/F81 lenses.
-- [ ] **F105** Bulk-bar reason parity for the priority/pin menus' EMPTY-selection edge
-      + a "nothing selected" guard surfaced consistently: F95/F100 cover no-op reasons
-      for a live selection; round out the family so opening any bulk editor with the
-      bar somehow empty (race) reads a single quiet "select tasks first" instead of an
-      inert menu. Small, but closes the last gap in the bulk disabled-reason cluster.
+      the facet and re-sets the lens. Bridges the F25 saved views to the F66/F81 lenses. (tick T19 2026-06-26)
+- [~] **F105** Bulk-bar reason parity for the priority/pin menus' EMPTY-selection edge
+      + a "nothing selected" guard. DEFERRED as filler in T19: openBulkEdit early-returns
+      at `bulk.ids.size === 0` and the bar is `hidden` at count 0, so the inert-menu state
+      this guards is UNREACHABLE through real interaction (the spec itself only cites a
+      "race"). Per the no-padding rule, shipped F106 instead (a real triage feature).
+- [x] **F106** "Other bottlenecks" ranked chokepoint list (shipped IN PLACE OF F105):
+      F92 surfaces only the single biggest chokepoint; topChokepoints + renderOtherChokepoints
+      list the runners-up below it, each row reusing the walk + cohort-focus hooks. Real
+      triage value on complex dep boards. (tick T19 2026-06-26)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a cohort
 history / back-stack, etc.).
+
+---
+
+## TICK LOG — T19 (2026-06-26 ~14:48 PT)
+
+Shipped 5/5 web slices on `main` (F101-F104 + F106), gated once, pushed clean
+(3e524cd..6f00a44). 34 net-new web tests (666 -> 700), Go gates green
+(gofmt/vet/build/test — commands pkg ~56s, all ok), both tsc configs clean,
+bundle rebuilt + embedded (41 modules, JS 37.36KB gz, CSS 10.10KB gz), live
+`tsk serve` smoke-tested. Canonical workdir `/Volumes/Projects/tsk` WAS mounted
+(HEAD at 3e524cd, clean tree, node_modules present).
+
+This batch finishes the T19 queue with ONE honest deferral: F105 (the
+empty-selection bulk guard) was filler — openBulkEdit early-returns at
+`bulk.ids.size === 0` and the bar is `hidden` at count 0, so the inert-menu
+state it guards is unreachable through real interaction (the spec itself only
+cited a "race"). Per the no-padding rule I deferred it and shipped F106 (a real
+ranked-chokepoint triage feature) in its place, so the tick is still 5 GREAT
+slices, not 4 + filler.
+
+- **F101** `7da6470` Persist cohort focus across live-reload. cohort.ts:
+  reconcileCohort(tasks, prev) re-derives the focus for the same sourceId via
+  buildCohort (no prior -> {null,false}; still has waiters -> {fresh,false};
+  chokepoint done/gone or all waiters complete -> {null,true}) + the
+  CohortReconcile type. main.ts: refresh() reconciles focusCohort against the
+  fresh list, keeping a LIVE id set or dropping it with a quiet toast. +6 tests.
+- **F102** `5214994` Cohort focus from any chokepoint you're walking. cohort.ts:
+  renderCohortFocusButton(sourceId) emits the SAME data-cohort-focus hook the
+  sidebar uses. main.ts: openChainDrill (dependent dir) renders "focus these" in
+  the popover head when fromId has open waiters; a delegated click closes the
+  drill + setCohort. app.css: .chain-pop-focus. +2 tests.
+- **F103** `d1c2f30` Cohort Cmd-K commands. cohort.ts: cohortSummary ("N waiting
+  on #M"). palette.ts: clearCohortCommand + focusChokepointCommand (pure
+  builders); CommandReasonContext gains hasCohort+hasChokepoint;
+  commandDisabledReason explains both ("no cohort active" / "no chokepoint").
+  main.ts: currentChokepointId() helper; both added to buildCommands + runCommand;
+  ctx threads the two flags. +9 tests.
+- **F104** `4120a59` Lens+facet saved-view bridge. views.ts: SavedView gains
+  optional `lens`; addView/updateView take an optional lens (a lens makes an
+  empty filter savable); normalizeViews round-trips it (junk dropped); new
+  viewMatches + activeViewWithLens (facet AND lens must align); describeView +
+  renderViewChips lens-aware (is-lensed marker). main.ts: saveCurrentView
+  captures activeLens (suggests "urgent (overdue)"); recallView re-applies via
+  parseLens; renderViewsRow + updateViewToCurrent + the save-view palette gate
+  all lens-aware. app.css: .view-chip.is-lensed. +15 tests.
+- **F106** `40c49e8` "Other bottlenecks" ranked chokepoint list (in place of
+  F105). deps.ts: topChokepoints(tasks, done, limit=5) — ranked generalization
+  of biggestChokepoint ([0] always == biggestChokepoint). stats.ts:
+  renderOtherChokepoints(chokes) lists chokes.slice(1), each row reusing the
+  data-waiting-walk + data-cohort-focus hooks (zero new dispatch);
+  renderStatsPanel takes an optional ranked list. main.ts: refreshStats passes
+  topChokepoints (cap 6). app.css: .stat-choke-* list. +8 tests.
+- `6f00a44` bundle rebuild (41 modules, JS 37.36KB gz, CSS 10.10KB gz).
+
+Live proof: built /tmp/tsk-t19-test via the CLI, two chokepoints — #1 (Ship
+release) with 4 waiters (#3,#4,#5,#6) and #2 (Deploy infra) with 2 (#7,#8) —
+then `tsk serve --addr 127.0.0.1:7919`. The served bundle carried every hook
+(Cohort-cleared toast, chain-pop-focus + "focus these", "Clear cohort focus" +
+"Focus biggest chokepoint" + "no cohort active"/"no chokepoint", "Other
+bottlenecks" + stat-choke-walk, "lens: " + is-lensed; CSS: chain-pop-focus,
+stat-choke-list/walk/focus, view-chip.is-lensed). Toggling the #1 chokepoint
+done via POST /api/tasks/1/toggle round-tripped to .tsk.md preserving every
+depends: link + adding completed:; `tsk show 3` read depends:#1 back. Storage
+contract honoured — the raw .tsk.md stayed plain hand-editable markdown. (After
+#1 completes, F101's reconcile shifts the biggest chokepoint to #2 live — the
+exact behaviour the feature ships.)
+
+Deferred: F105 (filler, see above). F48 (context-menu submenus), F49
+(autocomplete in edit/filter), F50 (dep mini-graph), F54 (touch context menu)
+remain the standing long-carries. T20 backlog (F107-F111) appended below so the
+loop never starves.
+
+### T20 — depth (appended T19 2026-06-26 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T19 cohort-persist / cohort-focus-from-drill / cohort-commands /
+lens-view-bridge / ranked-chokepoints cluster:
+
+- [ ] **F107** "Other bottlenecks" rows are keyboard-reachable + focus from the
+      Cmd-K palette: F106 lists the runner-up chokepoints with mouse hooks; add a
+      "Focus chokepoint #N" command group (or extend F103's focus command to a
+      ranked submenu) so every bottleneck — not just the biggest — is reachable
+      keyboard-only. Reuse topChokepoints + setCohort.
+- [ ] **F108** Cohort history / back-stack: setCohort replaces the focus today;
+      keep a small stack so "focus #1's cohort" then "focus #3's cohort" can step
+      BACK to #1 with Escape or a back chip. Bridges the cohort model toward the
+      multi-step drill the dep-debugging cluster invites. Persist nothing (cohorts
+      are momentary), but keep the stack per-session.
+- [ ] **F109** Saved-view lens chip in the recalled state: F104 stores the lens on
+      a view; when such a view is active, surface the lens it re-applied as a small
+      readout beside the view chip (or in the filter bar) so "why is the overdue
+      lens on?" is answerable — it came from the recalled view. Reuse lensMeta.
+- [ ] **F110** "Save lens as quick view" one-click: F104 saves a lens+facet combo
+      via the prompt; add a one-click "pin this lens" affordance on the active-lens
+      chip that saves a pure-lens view named after the lens (no prompt) for the
+      common case, so a frequently-used lens becomes a recallable chip in one click.
+- [ ] **F111** Chokepoint trend hint: the dep-stats sidebar shows the current
+      biggest chokepoint (F92) + runners-up (F106); add a tiny "was #M last
+      refresh" delta when the biggest chokepoint CHANGES across a live-reload, so a
+      shifting bottleneck (e.g. after F101 reconciles a completed chokepoint) is
+      visible, not silent. Compare against the previous refresh's biggestChokepoint
+      id held in a module slot.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, a cohort
+back-stack, a saved-view import/export, etc.).
