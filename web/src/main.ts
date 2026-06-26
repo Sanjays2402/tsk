@@ -114,6 +114,10 @@ import {
   renderBulkTagEditor,
   renderBulkDueEditor,
   renderBulkPinMenu,
+  bulkReasonLine,
+  bulkTagCommandReason,
+  bulkDueClearDisabledReason,
+  type BulkTaskLike,
   type Priority as BulkPriority,
 } from "./bulkedit";
 import {
@@ -772,12 +776,34 @@ function openBulkEdit(kind: BulkEditKind): void {
   } else {
     const input = pop.querySelector<HTMLInputElement>("input")!;
     input.focus();
+    // F100: the live reason slot (sister of F95's priority/pin reason lines) —
+    // a quiet note when the typed command would no-op the whole selection: for
+    // tags "no change to any selected", for an empty due-clear "all already have
+    // no due". selectedTasks is the same selection the menus use above.
+    const reasonSlot = pop.querySelector<HTMLElement>("[data-bulk-reason-slot]");
+    const paintReason = (raw: string): void => {
+      if (!reasonSlot) return;
+      const reason =
+        kind === "tag"
+          ? bulkTagCommandReason(selectedTasks as BulkTaskLike[], raw)
+          : raw.trim() === ""
+            ? bulkDueClearDisabledReason(selectedTasks as BulkTaskLike[])
+            : "";
+      reasonSlot.innerHTML = bulkReasonLine(reason);
+    };
+    paintReason(input.value); // initial (empty due -> "all already have no due")
     // F47: for the due editor, show a live preview of the resolved date below
     // the input (the same /api/parse-date the F12 picker uses), so you confirm
     // what every selected task will get before committing.
     if (kind === "due") {
       const previewLine = pop.querySelector<HTMLElement>("[data-bulk-due-preview]");
-      input.addEventListener("input", () => updateBulkDuePreview(input.value, previewLine));
+      input.addEventListener("input", () => {
+        updateBulkDuePreview(input.value, previewLine);
+        paintReason(input.value); // F100: refresh the no-op note as you type
+      });
+    } else {
+      // F100: tag editor — refresh the reason note on each keystroke.
+      input.addEventListener("input", () => paintReason(input.value));
     }
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();

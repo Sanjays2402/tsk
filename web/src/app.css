@@ -2803,6 +2803,13 @@ button.lens-bd-pill.is-drill.is-on {
   font-family: var(--font-mono);
   color: var(--color-text-dim);
 }
+/* F100: the live reason slot under the tag/due editor — holds the same quiet
+   "no change to any selected" / "all already have no due" note the priority/pin
+   menus use (bulkedit-reason), filled by main.ts as you type. Empty by default
+   so it collapses; the inner .bulkedit-reason brings its own top margin. */
+.bulkedit-reason-slot:empty {
+  display: none;
+}
 /* F95: a greyed bulk-menu option (one that would change nothing) + the quiet
    reason line that explains why — the bulk-bar sister of F89's palette hints. */
 .bulkedit-prio.is-disabled,

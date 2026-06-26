@@ -109,10 +109,17 @@ export function priorityGlyph(p: Priority): string {
  * would change anything over the whole selection so a greyed option can explain
  * WHY (mirroring F89's palette disabled-reason hints, now extended to the
  * floating bulk bar).
+ *
+ * F100: extended with `tags` + `due` so the due + tag editors can detect their
+ * own no-ops too (an empty due-clear on tasks that already have no due, or a tag
+ * command that changes nothing across the whole selection) — closing the
+ * disabled-reason parity for every bulk action, not just priority/pin.
  */
 export interface BulkTaskLike {
   priority?: string;
   pinned?: boolean;
+  tags?: string[];
+  due?: string;
 }
 
 /**
@@ -138,10 +145,55 @@ export function bulkPinDisabledReason(selected: BulkTaskLike[], pin: boolean): s
   return selected.every((t) => !t.pinned) ? "none are pinned" : "";
 }
 
-/** F95: a quiet reason line for the bulk-edit popover; "" collapses it. */
-function bulkReasonLine(reason: string): string {
+/**
+ * F100: why (if at all) applying a tag command to the whole selection would be a
+ * no-op — the live, per-keystroke detector for the tag editor's reason line.
+ * Parses the command, then checks whether applyTagOps would leave EVERY selected
+ * task's tag list unchanged (set-equal, order-insensitive). Returns:
+ *   - "" for an empty/whitespace command (nothing typed yet — not worth a note);
+ *   - "no tags to change" when the command parses to no ops (e.g. bare sigils);
+ *   - "no change to any selected" when every task already matches the result;
+ *   - "" when at least one task would change (the apply is meaningful).
+ * Pure → unit-tested. An empty selection returns "" (the bar is hidden anyway).
+ */
+export function bulkTagCommandReason(selected: BulkTaskLike[], command: string): string {
+  if (selected.length === 0) return "";
+  if (command.trim() === "") return "";
+  const ops = parseTagOps(command);
+  if (isNoopTagOps(ops)) return "no tags to change";
+  const changesSomething = selected.some((t) => {
+    const before = (t.tags ?? []).map((x) => x.toLowerCase());
+    const after = applyTagOps(before, ops);
+    if (after.length !== before.length) return true;
+    const beforeSet = new Set(before);
+    return after.some((tag) => !beforeSet.has(tag));
+  });
+  return changesSomething ? "" : "no change to any selected";
+}
+
+/**
+ * F100: why (if at all) a bulk "clear due" would be a no-op — when EVERY
+ * selected task already has no due date, clearing does nothing. Returns "all
+ * already have no due" in that case, else "". An empty selection returns "".
+ * The non-clear set-due case can't be a static no-op (any date might change a
+ * task), so only the clear path is detectable ahead of the keystroke. Pure →
+ * unit-tested. A task's due is "absent" when the field is missing or "".
+ */
+export function bulkDueClearDisabledReason(selected: BulkTaskLike[]): string {
+  if (selected.length === 0) return "";
+  return selected.every((t) => !t.due || t.due === "") ? "all already have no due" : "";
+}
+
+/** F95: a quiet reason line for the bulk-edit popover; "" collapses it.
+ *
+ * F100: exported (was file-private) so the due + tag editors — whose reason is
+ * computed live from a free-text input in main.ts — can render the SAME quiet
+ * line as the priority/pin menus. Carries a `data-bulk-reason` hook so main.ts
+ * can find + refresh the slot on each keystroke without re-rendering the editor.
+ */
+export function bulkReasonLine(reason: string): string {
   if (reason === "") return "";
-  return `<div class="bulkedit-reason" role="note">${escapeHTML(reason)}</div>`;
+  return `<div class="bulkedit-reason" role="note" data-bulk-reason>${escapeHTML(reason)}</div>`;
 }
 
 /**
@@ -206,14 +258,21 @@ export function renderBulkPinMenu(selected: BulkTaskLike[] = []): string {
     </div>${bulkReasonLine(reason)}`;
 }
 
-/** The tag-editor popover content (an input + a hint). */
+/** The tag-editor popover content (an input + a hint).
+ *
+ * F100: a `[data-bulk-reason]` slot (empty until you type) sits below the hint
+ * so the editor can show the same quiet "no change to any selected" note the
+ * priority/pin menus use — main.ts fills it live from bulkTagCommandReason as
+ * you type, closing the disabled-reason parity across every bulk action.
+ */
 export function renderBulkTagEditor(): string {
   return `
     <div class="bulkedit-pop-row">
       <input class="bulkedit-input" data-bulk-tag-input type="text" spellcheck="false"
              placeholder="+add -remove (e.g. +urgent -someday)" aria-label="Bulk tag command">
     </div>
-    <div class="bulkedit-hint">Enter to apply &middot; <code>+tag</code> adds, <code>-tag</code> removes</div>`;
+    <div class="bulkedit-hint">Enter to apply &middot; <code>+tag</code> adds, <code>-tag</code> removes</div>
+    <div class="bulkedit-reason-slot" data-bulk-reason-slot></div>`;
 }
 
 /**
@@ -221,6 +280,10 @@ export function renderBulkTagEditor(): string {
  * a live-preview line below the input that main.ts fills from /api/parse-date
  * as you type (reusing the F12 picker's previewVM + renderDuePreview), so you
  * see the resolved date before applying it to the whole selection.
+ *
+ * F100: a `[data-bulk-reason]` slot below the hint shows the "all already have
+ * no due" note when the field is empty (a clear that would no-op the whole
+ * selection) — main.ts fills it live, matching the priority/pin reason hints.
  */
 export function renderBulkDueEditor(): string {
   return `
@@ -229,5 +292,6 @@ export function renderBulkDueEditor(): string {
              placeholder="today, fri, in 3d, eom, 2026-07-04…" aria-label="Bulk due date">
     </div>
     <div class="bulkedit-due-preview" data-bulk-due-preview></div>
-    <div class="bulkedit-hint">Enter to apply to all selected &middot; empty + Enter clears</div>`;
+    <div class="bulkedit-hint">Enter to apply to all selected &middot; empty + Enter clears</div>
+    <div class="bulkedit-reason-slot" data-bulk-reason-slot></div>`;
 }

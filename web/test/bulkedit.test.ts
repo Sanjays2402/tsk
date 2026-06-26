@@ -12,6 +12,9 @@ import {
   renderBulkDueEditor,
   bulkPriorityDisabledReason,
   bulkPinDisabledReason,
+  bulkTagCommandReason,
+  bulkDueClearDisabledReason,
+  bulkReasonLine,
   BULK_PRIORITIES,
 } from "../src/bulkedit.ts";
 
@@ -177,3 +180,51 @@ test("renderBulkPinMenu with no selection disables nothing (back-compat)", () =>
   assert.doesNotMatch(html, /aria-disabled/);
   assert.doesNotMatch(html, /bulkedit-reason/);
 });
+
+// --- F100: due + tag editor no-op reason parity ----------------------------
+
+test("bulkTagCommandReason flags a command that changes nothing across selection", () => {
+  // Both tasks already have #work; adding #work again is a no-op.
+  const sel = [{ tags: ["work", "home"] }, { tags: ["work"] }];
+  assert.equal(bulkTagCommandReason(sel, "+work"), "no change to any selected");
+  // Removing #home changes the first task -> meaningful, no reason.
+  assert.equal(bulkTagCommandReason(sel, "-home"), "");
+});
+
+test("bulkTagCommandReason: empty input + bare sigils + empty selection", () => {
+  const sel = [{ tags: ["a"] }];
+  assert.equal(bulkTagCommandReason(sel, ""), ""); // nothing typed
+  assert.equal(bulkTagCommandReason(sel, "   "), ""); // whitespace
+  assert.equal(bulkTagCommandReason(sel, "+ - #"), "no tags to change"); // parses to no ops
+  assert.equal(bulkTagCommandReason([], "+x"), ""); // empty selection
+});
+
+test("bulkTagCommandReason is case-insensitive about existing tags", () => {
+  const sel = [{ tags: ["Work"] }];
+  assert.equal(bulkTagCommandReason(sel, "+work"), "no change to any selected");
+});
+
+test("bulkTagCommandReason: a removal that hits no one is a no-op", () => {
+  const sel = [{ tags: ["a"] }, { tags: ["b"] }];
+  assert.equal(bulkTagCommandReason(sel, "-zzz"), "no change to any selected");
+});
+
+test("bulkDueClearDisabledReason: clear is a no-op only when all have no due", () => {
+  assert.equal(bulkDueClearDisabledReason([{ due: "" }, {}]), "all already have no due");
+  assert.equal(bulkDueClearDisabledReason([{ due: "2026-07-01" }, {}]), "");
+  assert.equal(bulkDueClearDisabledReason([]), "");
+});
+
+test("bulkReasonLine renders the quiet note with a data-bulk-reason hook, '' collapses", () => {
+  const html = bulkReasonLine("no change to any selected");
+  assert.match(html, /bulkedit-reason/);
+  assert.match(html, /data-bulk-reason/);
+  assert.match(html, /no change to any selected/);
+  assert.equal(bulkReasonLine(""), "");
+});
+
+test("renderBulkTagEditor + renderBulkDueEditor expose a live reason slot", () => {
+  assert.match(renderBulkTagEditor(), /data-bulk-reason-slot/);
+  assert.match(renderBulkDueEditor(), /data-bulk-reason-slot/);
+});
+
