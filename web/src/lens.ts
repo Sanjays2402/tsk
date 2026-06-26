@@ -345,6 +345,58 @@ export function parseLens(raw: string | null): LensKind | null {
 }
 
 /**
+ * F97: sessionStorage key for the priority FACET drilled on top of an active
+ * lens (the F81 breakdown-pill drill: lens AND urgent). F93 persists the lens
+ * itself per-tab; this persists the facet that rides it, so reloading restores
+ * the WHOLE lens+facet drill, not just the lens. Like the lens, it's per-tab
+ * (sessionStorage) and scoped to the lens lifecycle — written only while a lens
+ * is active, cleared when the lens clears — so a plain priority facet (no lens)
+ * keeps its existing non-persisted behaviour. Exported so the reader/writer
+ * can't drift on the key string.
+ */
+export const LENS_FACET_KEY = "tsk.lens.facet";
+
+/** The four priority levels a lens-drill facet can hold, for validation. */
+const FACET_LEVELS: ReadonlyArray<string> = ["urgent", "high", "medium", "low"];
+
+/**
+ * F97: decode a persisted lens-facet value (a JSON array of priority levels)
+ * into a clean string[] of known levels, in the stored order, de-duplicated.
+ * Any non-array, non-string entry, or unknown level is dropped — a stale or
+ * hand-poked value can never inject a bad facet. Returns [] for null/empty/
+ * garbage. Pure → unit-tested. main.ts casts the result to its Priority[] type
+ * (the level strings are identical) and only applies it when a lens restored.
+ */
+export function parseLensFacet(raw: string | null): string[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of parsed) {
+    if (typeof v !== "string") continue;
+    if (!FACET_LEVELS.includes(v) || seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * F97: serialize a lens-drill priority facet for sessionStorage — a compact
+ * JSON array of the known levels (unknown entries dropped so a round-trip is
+ * idempotent). Pure → unit-tested; pairs with parseLensFacet.
+ */
+export function serializeLensFacet(priorities: ReadonlyArray<string>): string {
+  return JSON.stringify(priorities.filter((p) => FACET_LEVELS.includes(p)));
+}
+
+/**
  * F81: the priority levels a lens-breakdown pill can drill into, in the same
  * urgent-first order the pills render. The cross-cut pills (overdue / blocked)
  * are NOT in this set — they're derived facets, not the `priorities` filter

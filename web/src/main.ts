@@ -2844,6 +2844,9 @@ els.composer.addEventListener("submit", (e) => {
 /** Update filter state and repaint. Selection is reconciled inside render(). */
 function setFilter(next: Partial<FilterState>): void {
   filter = { ...filter, ...next };
+  // F97: when a lens is active, a facet change is part of the lens+facet drill
+  // (F81), so persist it alongside the lens — a reload restores the whole combo.
+  if (activeLens) persistLens();
   render();
 }
 

@@ -15,6 +15,9 @@ import {
   lensBreakdownPriority,
   parseLens,
   LENS_KEY,
+  LENS_FACET_KEY,
+  parseLensFacet,
+  serializeLensFacet,
   LENS_BD_PRIORITIES,
   LENS_ORDER,
   type LensKind,
@@ -470,3 +473,38 @@ test("renderLensBreakdown with no active facets marks every pill off", () => {
   assert.doesNotMatch(html, /is-on/);
   assert.match(html, /aria-pressed="false"/);
 });
+
+// --- F97: persist the lens-drilled priority facet across reload ------------
+
+test("LENS_FACET_KEY is the documented sessionStorage key", () => {
+  assert.equal(LENS_FACET_KEY, "tsk.lens.facet");
+});
+
+test("serializeLensFacet -> parseLensFacet round-trips known levels in order", () => {
+  const raw = serializeLensFacet(["urgent", "high"]);
+  assert.deepEqual(parseLensFacet(raw), ["urgent", "high"]);
+});
+
+test("serializeLensFacet drops unknown levels so a round-trip is idempotent", () => {
+  const raw = serializeLensFacet(["urgent", "bogus", "low"]);
+  assert.deepEqual(parseLensFacet(raw), ["urgent", "low"]);
+});
+
+test("parseLensFacet returns [] for null / empty / non-JSON / non-array", () => {
+  assert.deepEqual(parseLensFacet(null), []);
+  assert.deepEqual(parseLensFacet(""), []);
+  assert.deepEqual(parseLensFacet("not json"), []);
+  assert.deepEqual(parseLensFacet('{"a":1}'), []); // object, not array
+  assert.deepEqual(parseLensFacet('"urgent"'), []); // string, not array
+});
+
+test("parseLensFacet drops unknown levels, non-strings, and dupes (order kept)", () => {
+  assert.deepEqual(parseLensFacet('["urgent","bogus","high"]'), ["urgent", "high"]);
+  assert.deepEqual(parseLensFacet('["low",1,"low","medium"]'), ["low", "medium"]);
+});
+
+test("serializeLensFacet on an empty facet yields an empty array string", () => {
+  assert.equal(serializeLensFacet([]), "[]");
+  assert.deepEqual(parseLensFacet("[]"), []);
+});
+
