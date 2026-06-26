@@ -189,3 +189,23 @@ export function renderPriorityScopeNote(
   if (!lensLabel || state.priorities.length === 0) return "";
   return `<span class="fprio-scope" aria-label="scoped to the ${escapeHTML(lensLabel)} lens">in ${escapeHTML(lensLabel)}</span>`;
 }
+
+/**
+ * F94: the sister of renderPriorityScopeNote for the TAG facet — a quiet
+ * "in <lens>" qualifier rendered beside the tag chips when a tag facet AND a
+ * stats lens are BOTH active. F86 added the note for the priority pills (which
+ * the F81 breakdown drill can layer onto a lens); this closes the same loop for
+ * tags, so EVERY facet layered onto a lens reads as scoped to it, not the whole
+ * board — e.g. clicking #work while the "overdue" lens is on reads "#work in
+ * overdue". Pure → unit-tested. Returns "" unless there's a non-empty lens label
+ * AND at least one tag is selected, so a plain tag facet (no lens) stays
+ * unqualified, exactly like the priority note. Wears its own `ftag-scope` class
+ * (vs `fprio-scope`) so the two notes can be styled/placed independently.
+ */
+export function renderTagScopeNote(
+  lensLabel: string | null,
+  state: FilterState,
+): string {
+  if (!lensLabel || state.tags.length === 0) return "";
+  return `<span class="ftag-scope" aria-label="scoped to the ${escapeHTML(lensLabel)} lens">in ${escapeHTML(lensLabel)}</span>`;
+}

@@ -43,6 +43,7 @@ import {
   renderTagChips,
   filterSummary,
   renderPriorityScopeNote,
+  renderTagScopeNote,
   type FilterState,
   type Priority,
 } from "./filter";
@@ -474,6 +475,13 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
     filter,
   );
   els.filterTags.innerHTML = renderTagChips(collectTags(allTasks), filter);
+  // F94: sister of F86 for the tag facet — when a tag is selected AND a lens is
+  // on, append the same "in <lens>" qualifier so a lens-scoped tag reads as
+  // scoped, not whole-board. Cleared automatically when either drops.
+  els.filterTags.innerHTML += renderTagScopeNote(
+    activeLens ? lensMeta(activeLens).label : null,
+    filter,
+  );
   const active = isFilterActive(filter) || activeLens !== null;
   els.filterClear.hidden = !active;
   els.filterHideDone.classList.toggle("is-active", filter.hideDone);

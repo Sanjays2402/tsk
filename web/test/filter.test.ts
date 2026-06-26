@@ -13,6 +13,7 @@ import {
   renderTagChips,
   filterSummary,
   renderPriorityScopeNote,
+  renderTagScopeNote,
   priorityGlyph,
   type FilterableTask,
   type FilterState,
@@ -174,6 +175,33 @@ test("renderPriorityScopeNote is empty when no priority facet is selected", () =
 test("renderPriorityScopeNote escapes the lens label", () => {
   const f = { ...emptyFilter(), priorities: ["low" as const] };
   const html = renderPriorityScopeNote("a<b", f);
+  assert.match(html, /a&lt;b/);
+  assert.doesNotMatch(html, /in a<b</);
+});
+
+// F94 — "in <lens>" qualifier beside the tag chips (sister of F86).
+test("renderTagScopeNote shows the lens label when a tag facet is active under a lens", () => {
+  const f = { ...emptyFilter(), tags: ["work"] };
+  const html = renderTagScopeNote("overdue", f);
+  assert.match(html, /in overdue/);
+  assert.match(html, /ftag-scope/);
+});
+
+test("renderTagScopeNote is empty without a lens label", () => {
+  const f = { ...emptyFilter(), tags: ["home"] };
+  assert.equal(renderTagScopeNote(null, f), "");
+  assert.equal(renderTagScopeNote("", f), "");
+});
+
+test("renderTagScopeNote is empty when no tag facet is selected", () => {
+  assert.equal(renderTagScopeNote("overdue", emptyFilter()), "");
+  // A priority facet alone (no tag) must NOT trigger the tag note.
+  assert.equal(renderTagScopeNote("overdue", { ...emptyFilter(), priorities: ["high"] }), "");
+});
+
+test("renderTagScopeNote escapes the lens label", () => {
+  const f = { ...emptyFilter(), tags: ["x"] };
+  const html = renderTagScopeNote("a<b", f);
   assert.match(html, /a&lt;b/);
   assert.doesNotMatch(html, /in a<b</);
 });

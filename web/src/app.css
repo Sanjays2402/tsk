@@ -1354,6 +1354,16 @@ kbd {
   white-space: nowrap;
   margin-left: 2px;
 }
+/* F94: the tag-facet scope note — sister of .fprio-scope for the tag chips row.
+   Same quiet italic treatment so a lens-scoped tag reads "#work in overdue". */
+.ftag-scope {
+  font-size: var(--fs-xs, 0.72rem);
+  font-style: italic;
+  color: var(--color-text-faint, var(--color-text-dim));
+  white-space: nowrap;
+  margin-left: 2px;
+  align-self: center;
+}
 .filter-tags {
   display: flex;
   flex-wrap: wrap;
