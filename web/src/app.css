@@ -677,6 +677,30 @@ button.priority:focus-visible {
   justify-content: space-between;
   gap: var(--sp-2);
 }
+/* F85: the direction-flip button in the chain popover header — swaps between the
+   downstream blocker walk and the upstream "what waits on this?" dependent walk
+   so both can be audited from one popover. */
+.chain-pop-flip {
+  margin-right: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  line-height: 1;
+  padding: 1px var(--sp-1);
+  align-self: center;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.chain-pop-flip:hover,
+.chain-pop-flip:focus-visible {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  outline: none;
+}
 /* F70: a faint keyboard-nav hint in the popover header (up/down + return). */
 .chain-pop-keys {
   font-family: var(--font-mono);

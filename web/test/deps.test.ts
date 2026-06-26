@@ -13,6 +13,9 @@ import {
   filterBlocked,
   deepestChainFrom,
   hasWalkableChain,
+  openDependents,
+  deepestDependentChainFrom,
+  hasWalkableDependents,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -376,4 +379,100 @@ test("hasWalkableChain is false when the only blocker is already done", () => {
     { id: 2, done: false, depends_on: [1] }, // blocked only by a DONE task
   ];
   assert.equal(hasWalkableChain(list, 2), false);
+});
+
+// --- F85: upstream "what waits on this?" dependent walk ---------------------
+
+test("openDependents returns the undone tasks waiting on a target", () => {
+  // #2 and #3 both depend on #1; #4 depends on #3.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [3] },
+  ];
+  const idx = doneIndex(list);
+  assert.deepEqual(openDependents(list, 1, idx), [2, 3]); // both wait on #1
+  assert.deepEqual(openDependents(list, 3, idx), [4]); // #4 waits on #3
+  assert.deepEqual(openDependents(list, 4, idx), []); // nothing waits on #4
+});
+
+test("openDependents excludes done waiters + preserves list order", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 3, done: false, depends_on: [1] }, // out-of-order id, still order #3 then #2
+    { id: 2, done: true, depends_on: [1] }, // done -> not waiting
+  ];
+  const idx = doneIndex(list);
+  assert.deepEqual(openDependents(list, 1, idx), [3]); // #2 is done, dropped; #3 kept
+});
+
+test("deepestDependentChainFrom walks the impact chain upward to the deepest waiter", () => {
+  // #1 <- #2 <- #3 <- #4 (each depends on the previous). Finishing #1 unlocks a
+  // chain all the way to #4.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+    { id: 4, done: false, depends_on: [3] },
+  ];
+  assert.deepEqual(deepestDependentChainFrom(list, 1), [1, 2, 3, 4]);
+  assert.deepEqual(deepestDependentChainFrom(list, 2), [2, 3, 4]);
+});
+
+test("deepestDependentChainFrom picks the deeper branch at a fork", () => {
+  // #1 is waited on by #2 (leaf) and #3 (which #4 then #5 wait on) -> deeper.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] }, // shallow
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [3] },
+    { id: 5, done: false, depends_on: [4] },
+  ];
+  assert.deepEqual(deepestDependentChainFrom(list, 1), [1, 3, 4, 5]);
+});
+
+test("deepestDependentChainFrom is empty for a leaf / done / missing start", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: true },
+  ];
+  assert.deepEqual(deepestDependentChainFrom(list, 2), []); // nothing waits on #2
+  assert.deepEqual(deepestDependentChainFrom(list, 3), []); // #3 is done
+  assert.deepEqual(deepestDependentChainFrom(list, 99), []); // not in the list
+});
+
+test("deepestDependentChainFrom terminates on a dependency cycle", () => {
+  // #1 -> #2 -> #1 (a 2-cycle of mutual deps). The on-path guard bounds it.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false, depends_on: [2] },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const path = deepestDependentChainFrom(list, 1);
+  // It walks at least the start + one step but never loops forever.
+  assert.ok(path.length >= 1 && path.length <= 2);
+  assert.equal(path[0], 1);
+});
+
+test("hasWalkableDependents mirrors hasWalkableChain on the reverse graph", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+  ];
+  assert.equal(hasWalkableDependents(list, 1), true); // #2, #3 wait on it
+  assert.equal(hasWalkableDependents(list, 3), false); // nothing waits on #3 (leaf)
+  assert.equal(hasWalkableDependents(list, 99), false); // missing
+});
+
+test("blocker + dependent walks are inverses on a straight chain", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [2] },
+  ];
+  // Downstream from #3: #3 -> #2 -> #1. Upstream from #1: #1 -> #2 -> #3.
+  assert.deepEqual(deepestChainFrom(list, 3), [3, 2, 1]);
+  assert.deepEqual(deepestDependentChainFrom(list, 1), [1, 2, 3]);
 });

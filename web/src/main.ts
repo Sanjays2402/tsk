@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -3510,25 +3510,55 @@ function onChainKey(e: KeyboardEvent): void {
   paintChainNav();
 }
 
-function openChainDrill(fromId?: number): void {
+/**
+ * F56/F61/F85: open the chain-drill popover. Direction:
+ *   - "blocker" (default): walk DOWNSTREAM — what blocks this (or the global
+ *     longest blocker chain when no fromId), #this -> ... -> root blocker.
+ *   - "dependent": walk UPSTREAM — what WAITS on this, #this -> ... -> the most
+ *     downstream waiter (F85). Only meaningful with a fromId.
+ * When a fromId is given, the popover header carries a flip button so you can
+ * audit impact in BOTH directions from one popover without reopening it.
+ */
+function openChainDrill(fromId?: number, dir: "blocker" | "dependent" = "blocker"): void {
   closeChainDrill();
-  // F56: no id -> the GLOBAL longest open-blocker chain (driven by the stats
-  // "chain depth" tile). F61: an id -> the deepest chain starting at THAT task
-  // (driven by the row's "blocked by" badge), so you can walk one row's path.
+  // The path depends on direction. Blocker: F56 global longest (no id) or F61
+  // deepest-from-id. Dependent: F85 deepest dependent chain from the id.
   const path =
-    fromId !== undefined
-      ? deepestChainFrom(currentTasks as DepStatsTask[], fromId)
-      : longestChainPath(currentTasks as DepStatsTask[]);
+    dir === "dependent" && fromId !== undefined
+      ? deepestDependentChainFrom(currentTasks as DepStatsTask[], fromId)
+      : fromId !== undefined
+        ? deepestChainFrom(currentTasks as DepStatsTask[], fromId)
+        : longestChainPath(currentTasks as DepStatsTask[]);
   if (path.length === 0) return;
   const titleById = new Map(currentTasks.map((t) => [t.id, t.title] as const));
   const nodes: ChainNode[] = path.map((id) => ({ id, title: titleById.get(id) ?? `#${id}` }));
   const pop = document.createElement("div");
   pop.className = "chain-pop";
   pop.setAttribute("data-chain-pop", "");
-  const head = fromId !== undefined ? `Blocker chain from #${fromId}` : "Longest blocker chain";
-  pop.innerHTML = `<div class="chain-pop-head">${head}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
+  // F85: the header names the direction; with a fromId it also offers a flip
+  // button to the OTHER direction (downstream blockers <-> upstream dependents),
+  // shown only when that other direction actually has something to walk.
+  const head =
+    fromId === undefined
+      ? "Longest blocker chain"
+      : dir === "dependent"
+        ? `Waiting on #${fromId}`
+        : `Blocker chain from #${fromId}`;
+  let flip = "";
+  if (fromId !== undefined) {
+    const other: "blocker" | "dependent" = dir === "dependent" ? "blocker" : "dependent";
+    const otherHasPath =
+      other === "dependent"
+        ? hasWalkableDependents(currentTasks as DepStatsTask[], fromId)
+        : hasWalkableChain(currentTasks as DepStatsTask[], fromId);
+    if (otherHasPath) {
+      const flipLabel = other === "dependent" ? "what waits on this?" : "what blocks this?";
+      flip = `<button type="button" class="chain-pop-flip" data-chain-flip="${other}" title="${flipLabel}" aria-label="${flipLabel}">&#8646;</button>`;
+    }
+  }
+  pop.innerHTML = `<div class="chain-pop-head">${head}${flip}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
   // Anchor under the chain tile if present (F56), else the badge that opened it
-  // (F61), else the stats panel corner.
+  // (F61/F85), else the stats panel corner.
   const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");
   const badge =
     fromId !== undefined
@@ -3557,7 +3587,15 @@ function openChainDrill(fromId?: number): void {
   paintChainNav();
 
   pop.addEventListener("click", (e) => {
-    const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-chain-jump]");
+    const target = e.target as HTMLElement | null;
+    // F85: the flip button re-opens the popover walking the other direction.
+    const flipBtn = target?.closest<HTMLElement>("[data-chain-flip]");
+    if (flipBtn && fromId !== undefined) {
+      const next = flipBtn.dataset.chainFlip === "dependent" ? "dependent" : "blocker";
+      openChainDrill(fromId, next);
+      return;
+    }
+    const btn = target?.closest<HTMLElement>("[data-chain-jump]");
     if (!btn) return;
     const id = Number(btn.dataset.chainJump);
     closeChainDrill();

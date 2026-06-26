@@ -443,6 +443,103 @@ export function hasWalkableChain(tasks: DepStatsTask[], start: number): boolean 
 }
 
 /**
+ * F85: the OPEN dependents of a task — every UNDONE task that lists `target`
+ * among its still-open blockers, i.e. the tasks currently WAITING on `target`
+ * to be done. The mirror of openBlockers (which looks "down" at what blocks a
+ * task); this looks "up" at what `target` blocks. Returns ids in task-list
+ * order for determinism. A done task is never waiting (it's finished), and a
+ * dependent whose dependency is already satisfied elsewhere still counts here
+ * only if `target` itself is one of its OPEN blockers — which it is whenever
+ * `target` is undone, since an undone blocker is always open.
+ */
+export function openDependents(
+  tasks: DepStatsTask[],
+  target: number,
+  done: Map<number, boolean>,
+): number[] {
+  const out: number[] = [];
+  for (const t of tasks) {
+    if (t.done) continue;
+    if (openBlockers(t, done).includes(target)) out.push(t.id);
+  }
+  return out;
+}
+
+/**
+ * F85: the deepest chain of OPEN DEPENDENTS starting from a SPECIFIC task —
+ * #start -> ... -> #most-downstream-waiter — so a "what waits on this?" popover
+ * can walk the IMPACT of finishing `start` (the upstream mirror of F61's
+ * downstream blocker walk). Same greedy "step into the deepest sub-chain" walk,
+ * determinism (ties pick the first dependent in list order), and on-path cycle
+ * guard as deepestChainFrom; the only difference is it follows reverse edges
+ * (dependents) instead of forward edges (blockers). Returns [] when `start`
+ * isn't in the list, is done, or nothing waits on it (nothing to walk).
+ */
+export function deepestDependentChainFrom(tasks: DepStatsTask[], start: number): number[] {
+  const done = doneIndex(tasks);
+  const byId = new Map<number, DepStatsTask>();
+  for (const t of tasks) byId.set(t.id, t);
+
+  const head = byId.get(start);
+  if (!head || head.done) return [];
+  if (openDependents(tasks, start, done).length === 0) return [];
+
+  // memoized dependent-sub-chain depth per id (mirror of deepestChainFrom).
+  const depth = new Map<number, number>();
+  const onPath = new Set<number>();
+  const subDepth = (id: number): number => {
+    const cached = depth.get(id);
+    if (cached !== undefined) return cached;
+    if (onPath.has(id)) return 0;
+    const deps = openDependents(tasks, id, done);
+    if (deps.length === 0) {
+      depth.set(id, 0);
+      return 0;
+    }
+    onPath.add(id);
+    let best = 0;
+    for (const dep of deps) {
+      const d = subDepth(dep) + 1;
+      if (d > best) best = d;
+    }
+    onPath.delete(id);
+    depth.set(id, best);
+    return best;
+  };
+
+  const path: number[] = [];
+  const seen = new Set<number>();
+  let cur: number | undefined = start;
+  while (cur !== undefined && !seen.has(cur)) {
+    path.push(cur);
+    seen.add(cur);
+    const deps = openDependents(tasks, cur, done);
+    if (deps.length === 0) break;
+    let next: number | undefined;
+    let bestD = -1;
+    for (const dep of deps) {
+      const d = subDepth(dep);
+      if (d > bestD) {
+        bestD = d;
+        next = dep;
+      }
+    }
+    cur = next;
+  }
+  return path;
+}
+
+/**
+ * F85: does a task have a walkable DEPENDENT chain — i.e. is it worth offering a
+ * "what waits on this?" affordance? True when deepestDependentChainFrom yields
+ * at least one step beyond the task itself (length >= 2), meaning something real
+ * waits on it. Pure → unit-tested. The upstream mirror of hasWalkableChain.
+ */
+export function hasWalkableDependents(tasks: DepStatsTask[], start: number): boolean {
+  return deepestDependentChainFrom(tasks, start).length >= 2;
+}
+
+/**
  * F56: render the longest-chain drill-down as an ordered jump-list. Each step
  * is a button carrying `data-chain-jump="<id>"` so a delegated click selects +
  * scrolls to that task; an arrow separates the steps to read the chain
