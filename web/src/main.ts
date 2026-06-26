@@ -61,6 +61,7 @@ import {
   lensMeta,
   lensForDigit,
   renderActiveLensHelp,
+  renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
@@ -3924,6 +3925,7 @@ function ensureHelpEl(): HTMLElement {
         }).join("")}
       </dl>
       <div class="help-foot" data-help-active></div>
+      <div class="help-foot" data-help-legend></div>
       <div class="help-foot">Press <kbd>?</kbd> or <kbd>esc</kbd> to close</div>
     </div>`;
   // Click the backdrop (not the card) to dismiss.
@@ -3945,6 +3947,13 @@ function toggleHelp(open: boolean): void {
     const html = renderActiveLensHelp(activeLens);
     activeEl.hidden = html === "";
     activeEl.innerHTML = html;
+  }
+  // F90: a live mini-legend of the WHOLE lens digit map ("1 blocked · 2
+  // overdue · …"), with the active lens marked, so the overlay teaches every
+  // number-key shortcut at a glance — not just the one currently active.
+  const legendEl = el.querySelector<HTMLElement>("[data-help-legend]");
+  if (legendEl) {
+    legendEl.innerHTML = renderLensDigitMap(activeLens);
   }
   // F82: bold the lens-shortcut row while a lens is active so the digit map is
   // visibly "live" in the overlay, matching the chip's digit badge.

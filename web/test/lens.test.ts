@@ -9,6 +9,7 @@ import {
   lensDigit,
   activeLensSummary,
   renderActiveLensHelp,
+  renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
@@ -165,6 +166,33 @@ test("renderActiveLensHelp digit agrees with lensDigit per lens", () => {
   for (const k of LENS_ORDER) {
     assert.match(renderActiveLensHelp(k), new RegExp(`<kbd>${lensDigit(k)}</kbd>`));
   }
+});
+
+// F90 — the full lens digit-map mini-legend.
+test("renderLensDigitMap lists every lens with its digit + label, in order", () => {
+  const html = renderLensDigitMap(null);
+  for (const k of LENS_ORDER) {
+    assert.match(html, new RegExp(`data-lens-legend="${k}"`), `missing ${k}`);
+    assert.match(html, new RegExp(`<kbd>${lensDigit(k)}</kbd> ${lensMeta(k).glyph} ${lensMeta(k).label}`));
+  }
+  // The entries appear in LENS_ORDER (blocked before overdue before today...).
+  const order = LENS_ORDER.map((k) => html.indexOf(`data-lens-legend="${k}"`));
+  for (let i = 1; i < order.length; i++) assert.ok(order[i] > order[i - 1]);
+});
+
+test("renderLensDigitMap marks the active lens and only it", () => {
+  const html = renderLensDigitMap("overdue");
+  assert.match(html, /data-lens-legend="overdue"[^>]*aria-current="true"/);
+  // Exactly one is-active entry.
+  assert.equal((html.match(/lens-legend-item is-active/g) ?? []).length, 1);
+});
+
+test("renderLensDigitMap with no active lens marks none", () => {
+  const html = renderLensDigitMap(null);
+  assert.doesNotMatch(html, /is-active/);
+  assert.doesNotMatch(html, /aria-current/);
+  // Still renders all five.
+  assert.equal((html.match(/data-lens-legend=/g) ?? []).length, LENS_ORDER.length);
 });
 
 test("renderLensChipBody is empty when no lens is active", () => {

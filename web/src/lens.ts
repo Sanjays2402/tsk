@@ -295,6 +295,28 @@ export function renderActiveLensHelp(kind: LensKind | null): string {
 }
 
 /**
+ * F90: render the FULL lens digit map as a live mini-legend for the help
+ * overlay — every lens with its number-key shortcut inline ("1 ⛔ blocked ·
+ * 2 ⚠ overdue · …"), in LENS_ORDER so it can't drift from the keyboard map.
+ * The currently-active lens (if any) is marked with `is-active` + aria-current
+ * so the overlay teaches the WHOLE digit map at a glance AND shows where you
+ * are. Pure → unit-tested. Unlike renderActiveLensHelp (which shows only the one
+ * active lens), this always renders all five so the shortcuts are discoverable
+ * even when no lens is active. Each entry carries `data-lens-legend="<kind>"` so
+ * a future slice could make them clickable without re-deriving the order.
+ */
+export function renderLensDigitMap(active: LensKind | null): string {
+  const items = LENS_ORDER.map((kind) => {
+    const meta = LENS_META[kind];
+    const digit = lensDigit(kind);
+    const on = kind === active ? " is-active" : "";
+    const current = kind === active ? ' aria-current="true"' : "";
+    return `<span class="lens-legend-item${on}" data-lens-legend="${kind}"${current}><kbd>${digit}</kbd> ${meta.glyph} ${escapeHTML(meta.label)}</span>`;
+  }).join('<span class="lens-legend-sep" aria-hidden="true"> &middot; </span>');
+  return `<div class="lens-legend">${items}</div>`;
+}
+
+/**
  * F81: the priority levels a lens-breakdown pill can drill into, in the same
  * urgent-first order the pills render. The cross-cut pills (overdue / blocked)
  * are NOT in this set — they're derived facets, not the `priorities` filter
