@@ -104,6 +104,47 @@ export function priorityGlyph(p: Priority): string {
 }
 
 /**
+ * F95: the minimal shape the bulk-bar no-op detectors need from a selected task
+ * — its current priority and pin flag. The bulk menus compute whether an action
+ * would change anything over the whole selection so a greyed option can explain
+ * WHY (mirroring F89's palette disabled-reason hints, now extended to the
+ * floating bulk bar).
+ */
+export interface BulkTaskLike {
+  priority?: string;
+  pinned?: boolean;
+}
+
+/**
+ * F95: why (if at all) setting the whole selection to `level` would be a no-op.
+ * Returns "all already <level>" when EVERY selected task is already at that
+ * priority (so the PATCH fan-out would touch nothing), else "". An empty
+ * selection returns "" — the bar is hidden then anyway. Pure → unit-tested.
+ */
+export function bulkPriorityDisabledReason(selected: BulkTaskLike[], level: Priority): string {
+  if (selected.length === 0) return "";
+  return selected.every((t) => t.priority === level) ? `all already ${level}` : "";
+}
+
+/**
+ * F95: why (if at all) a pin/unpin-all would be a no-op. `pin` true = "Pin all"
+ * (no-op when every selected task is ALREADY pinned -> "all already pinned");
+ * `pin` false = "Unpin all" (no-op when NONE are pinned -> "none are pinned").
+ * Returns "" when at least one task would flip. Pure → unit-tested.
+ */
+export function bulkPinDisabledReason(selected: BulkTaskLike[], pin: boolean): string {
+  if (selected.length === 0) return "";
+  if (pin) return selected.every((t) => t.pinned) ? "all already pinned" : "";
+  return selected.every((t) => !t.pinned) ? "none are pinned" : "";
+}
+
+/** F95: a quiet reason line for the bulk-edit popover; "" collapses it. */
+function bulkReasonLine(reason: string): string {
+  if (reason === "") return "";
+  return `<div class="bulkedit-reason" role="note">${escapeHTML(reason)}</div>`;
+}
+
+/**
  * The extra action buttons injected into the bulk bar (F36): openers for the
  * priority menu, the tag editor, and the due editor. Each carries a
  * data-bulk-edit hook a delegated listener in main.ts dispatches on. Rendered
@@ -117,25 +158,52 @@ export function renderBulkEditCluster(): string {
     <button type="button" class="bulkbar-btn" data-bulk-edit="pin" title="Pin or unpin all selected">pin</button>`;
 }
 
-/** The 4-way priority menu shown when "priority" is chosen. */
-export function renderBulkPriorityMenu(): string {
-  const buttons = BULK_PRIORITIES.map(
-    (p) =>
-      `<button type="button" class="bulkedit-prio ${escapeHTML(p)}" data-bulk-set-prio="${escapeHTML(p)}" title="Set ${escapeHTML(p)}">${priorityGlyph(p)}<span class="bulkedit-prio-word">${escapeHTML(p)}</span></button>`,
-  ).join("");
-  return `<div class="bulkedit-pop-row">${buttons}</div>`;
+/**
+ * The 4-way priority menu shown when "priority" is chosen.
+ *
+ * F95: when `selected` is supplied, an option that every selected task is
+ * ALREADY at is greyed (`is-disabled` + aria-disabled) and a quiet reason line
+ * ("all already high") explains why — the bulk-bar sister of F89's palette
+ * disabled-reason hints. The disabled button keeps its `data-bulk-set-prio` hook
+ * so the delegated handler in main.ts can short-circuit a no-op without a PATCH
+ * fan-out. With no `selected` (the default) nothing is disabled, so existing
+ * callers/tests render exactly as before.
+ */
+export function renderBulkPriorityMenu(selected: BulkTaskLike[] = []): string {
+  const reasons = BULK_PRIORITIES.map((p) => bulkPriorityDisabledReason(selected, p));
+  const buttons = BULK_PRIORITIES.map((p, i) => {
+    const dis = reasons[i] !== "" ? " is-disabled" : "";
+    const aria = reasons[i] !== "" ? ' aria-disabled="true"' : "";
+    return `<button type="button" class="bulkedit-prio ${escapeHTML(p)}${dis}" data-bulk-set-prio="${escapeHTML(p)}"${aria} title="Set ${escapeHTML(p)}">${priorityGlyph(p)}<span class="bulkedit-prio-word">${escapeHTML(p)}</span></button>`;
+  }).join("");
+  // Show the reason for the FIRST disabled option (they share the "all already
+  // <level>" shape; only one level can match when the whole selection is uniform).
+  const reason = reasons.find((r) => r !== "") ?? "";
+  return `<div class="bulkedit-pop-row">${buttons}</div>${bulkReasonLine(reason)}`;
 }
 
 /**
  * F47: the pin/unpin menu shown when "pin" is chosen — two actions over the
  * selection (pin all to the top, or unpin all). Buttons carry data-bulk-set-pin
  * ("1" pins, "0" unpins) a delegated listener dispatches on. Pure → unit-tested.
+ *
+ * F95: when `selected` is supplied, an action that would change nothing is
+ * greyed with a reason ("all already pinned" for Pin all when everything's
+ * pinned; "none are pinned" for Unpin all when nothing is). Default empty
+ * selection disables nothing, so existing callers/tests are unaffected.
  */
-export function renderBulkPinMenu(): string {
+export function renderBulkPinMenu(selected: BulkTaskLike[] = []): string {
+  const pinReason = bulkPinDisabledReason(selected, true);
+  const unpinReason = bulkPinDisabledReason(selected, false);
+  const pinDis = pinReason !== "" ? " is-disabled" : "";
+  const unpinDis = unpinReason !== "" ? " is-disabled" : "";
+  const pinAria = pinReason !== "" ? ' aria-disabled="true"' : "";
+  const unpinAria = unpinReason !== "" ? ' aria-disabled="true"' : "";
+  const reason = pinReason || unpinReason;
   return `<div class="bulkedit-pop-row">
-      <button type="button" class="bulkedit-pin" data-bulk-set-pin="1" title="Pin all selected to the top">&#9733; Pin all</button>
-      <button type="button" class="bulkedit-pin" data-bulk-set-pin="0" title="Unpin all selected">&#9734; Unpin all</button>
-    </div>`;
+      <button type="button" class="bulkedit-pin${pinDis}" data-bulk-set-pin="1"${pinAria} title="Pin all selected to the top">&#9733; Pin all</button>
+      <button type="button" class="bulkedit-pin${unpinDis}" data-bulk-set-pin="0"${unpinAria} title="Unpin all selected">&#9734; Unpin all</button>
+    </div>${bulkReasonLine(reason)}`;
 }
 
 /** The tag-editor popover content (an input + a hint). */

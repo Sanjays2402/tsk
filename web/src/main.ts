@@ -670,11 +670,17 @@ function openBulkEdit(kind: BulkEditKind): void {
   pop.setAttribute("data-bulkedit-pop", "");
   pop.setAttribute("role", "dialog");
   pop.setAttribute("aria-label", `Bulk set ${kind}`);
+  // F95: the selected tasks (current priority + pin flag) so the priority/pin
+  // menus can grey an option that would change nothing and say why ("all already
+  // high" / "none are pinned") — the bulk-bar sister of F89's palette hints.
+  const selectedTasks = selectedInOrder(bulk, visibleIds)
+    .map((id) => currentTasks.find((t) => t.id === id))
+    .filter((t): t is Task => t !== undefined);
   const body =
     kind === "priority"
-      ? renderBulkPriorityMenu()
+      ? renderBulkPriorityMenu(selectedTasks)
       : kind === "pin"
-        ? renderBulkPinMenu()
+        ? renderBulkPinMenu(selectedTasks)
         : kind === "tag"
           ? renderBulkTagEditor()
           : renderBulkDueEditor();
@@ -685,6 +691,11 @@ function openBulkEdit(kind: BulkEditKind): void {
     pop.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-bulk-set-prio]");
       if (!btn) return;
+      // F95: a greyed (no-op) option just closes the menu — no PATCH fan-out.
+      if (btn.getAttribute("aria-disabled") === "true") {
+        closeBulkEdit();
+        return;
+      }
       const prio = btn.dataset.bulkSetPrio as BulkPriority;
       bulkSetPriority(prio);
     });
@@ -693,6 +704,11 @@ function openBulkEdit(kind: BulkEditKind): void {
     pop.addEventListener("click", (e) => {
       const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-bulk-set-pin]");
       if (!btn) return;
+      // F95: a greyed (no-op) pin/unpin just closes the menu.
+      if (btn.getAttribute("aria-disabled") === "true") {
+        closeBulkEdit();
+        return;
+      }
       bulkSetPinned(btn.dataset.bulkSetPin === "1");
     });
   } else {

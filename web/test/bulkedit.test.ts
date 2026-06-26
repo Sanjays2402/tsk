@@ -10,6 +10,8 @@ import {
   renderBulkPinMenu,
   renderBulkTagEditor,
   renderBulkDueEditor,
+  bulkPriorityDisabledReason,
+  bulkPinDisabledReason,
   BULK_PRIORITIES,
 } from "../src/bulkedit.ts";
 
@@ -116,4 +118,62 @@ test("renderBulkDueEditor exposes a live-preview slot", () => {
   // the input + the hint are still present
   assert.match(html, /data-bulk-due-input/);
   assert.match(html, /empty \+ Enter clears/);
+});
+
+// --- F95: bulk-bar disabled-reason hints (sister of F89's palette hints) ----
+
+test("bulkPriorityDisabledReason flags a level the whole selection already has", () => {
+  const sel = [{ priority: "high" }, { priority: "high" }];
+  assert.equal(bulkPriorityDisabledReason(sel, "high"), "all already high");
+  // A level that would change at least one task is not disabled.
+  assert.equal(bulkPriorityDisabledReason(sel, "urgent"), "");
+});
+
+test("bulkPriorityDisabledReason is empty for a mixed selection and for empty", () => {
+  const mixed = [{ priority: "low" }, { priority: "high" }];
+  assert.equal(bulkPriorityDisabledReason(mixed, "high"), "");
+  assert.equal(bulkPriorityDisabledReason([], "high"), "");
+});
+
+test("bulkPinDisabledReason: Pin all is a no-op only when all are pinned", () => {
+  assert.equal(bulkPinDisabledReason([{ pinned: true }, { pinned: true }], true), "all already pinned");
+  assert.equal(bulkPinDisabledReason([{ pinned: true }, { pinned: false }], true), "");
+  assert.equal(bulkPinDisabledReason([], true), "");
+});
+
+test("bulkPinDisabledReason: Unpin all is a no-op only when none are pinned", () => {
+  assert.equal(bulkPinDisabledReason([{ pinned: false }, {}], false), "none are pinned");
+  assert.equal(bulkPinDisabledReason([{ pinned: true }, { pinned: false }], false), "");
+});
+
+test("renderBulkPriorityMenu greys the already-set level and explains why", () => {
+  const html = renderBulkPriorityMenu([{ priority: "medium" }, { priority: "medium" }]);
+  // The medium button is disabled with the reason line shown.
+  assert.match(html, /data-bulk-set-prio="medium"[^>]*aria-disabled="true"/);
+  assert.match(html, /bulkedit-reason/);
+  assert.match(html, /all already medium/);
+  // Other levels stay enabled (no aria-disabled on urgent).
+  assert.doesNotMatch(html, /data-bulk-set-prio="urgent"[^>]*aria-disabled/);
+});
+
+test("renderBulkPriorityMenu with no selection disables nothing (back-compat)", () => {
+  const html = renderBulkPriorityMenu();
+  assert.doesNotMatch(html, /aria-disabled/);
+  assert.doesNotMatch(html, /bulkedit-reason/);
+  // Still has a button per priority.
+  for (const p of BULK_PRIORITIES) assert.ok(html.includes(`data-bulk-set-prio="${p}"`));
+});
+
+test("renderBulkPinMenu greys Unpin all when nothing is pinned", () => {
+  const html = renderBulkPinMenu([{ pinned: false }, { pinned: false }]);
+  assert.match(html, /data-bulk-set-pin="0"[^>]*aria-disabled="true"/);
+  assert.match(html, /none are pinned/);
+  // Pin all stays enabled.
+  assert.doesNotMatch(html, /data-bulk-set-pin="1"[^>]*aria-disabled/);
+});
+
+test("renderBulkPinMenu with no selection disables nothing (back-compat)", () => {
+  const html = renderBulkPinMenu();
+  assert.doesNotMatch(html, /aria-disabled/);
+  assert.doesNotMatch(html, /bulkedit-reason/);
 });

@@ -2707,6 +2707,25 @@ button.lens-bd-pill.is-drill.is-on {
   font-family: var(--font-mono);
   color: var(--color-text-dim);
 }
+/* F95: a greyed bulk-menu option (one that would change nothing) + the quiet
+   reason line that explains why — the bulk-bar sister of F89's palette hints. */
+.bulkedit-prio.is-disabled,
+.bulkedit-pin.is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.bulkedit-prio.is-disabled:hover,
+.bulkedit-pin.is-disabled:hover {
+  color: var(--color-text-dim);
+  border-color: var(--color-border);
+  background: transparent;
+}
+.bulkedit-reason {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  color: var(--color-text-faint);
+}
 /* F47: bulk pin/unpin menu buttons — same chip shape as the priority menu. */
 .bulkedit-pin {
   display: inline-flex;
