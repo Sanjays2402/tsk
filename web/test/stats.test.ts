@@ -286,3 +286,24 @@ test("renderStatsPanel threads the chokepoint through to the dep row", () => {
   assert.match(html, /Biggest chokepoint/);
   assert.match(html, /data-waiting-walk="9"/);
 });
+
+// --- F96: chokepoint "focus the cohort" affordance -------------------------
+
+test("renderChokepoint adds a focus button carrying the cohort source id", () => {
+  const html = renderChokepoint({ id: 7, count: 3 });
+  // The walk button (what waits?) AND the focus button (narrow to the cohort).
+  assert.match(html, /data-waiting-walk="7"/);
+  assert.match(html, /data-cohort-focus="7"/);
+  assert.match(html, /stat-chokepoint-focus/);
+  assert.match(html, />focus</);
+});
+
+test("renderChokepoint focus button is absent when there's no chokepoint", () => {
+  assert.doesNotMatch(renderChokepoint(null) || "x", /data-cohort-focus/);
+  assert.doesNotMatch(renderChokepoint({ id: 1, count: 0 }) || "x", /data-cohort-focus/);
+});
+
+test("renderChokepoint focus title reads naturally for one vs many waiters", () => {
+  assert.match(renderChokepoint({ id: 4, count: 1 }), /waiting on #4/);
+  assert.match(renderChokepoint({ id: 4, count: 2 }), /2 tasks waiting on #4/);
+});

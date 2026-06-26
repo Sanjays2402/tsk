@@ -1586,6 +1586,14 @@ button.lens-legend-item:focus-visible {
   color: inherit;
   border: 1px solid rgba(255, 255, 255, 0.35);
 }
+/* F96: the cohort-focus chip reuses the lens-chip shape + the alert hue (a
+   chokepoint cohort is inherently a "what's stuck" view). It shows
+   "↑ N waiting on #M ×" and clears the focus on click. */
+.fpill.cohort-chip.is-active {
+  border-color: var(--color-overdue);
+  background: var(--color-overdue);
+  color: #fff;
+}
 .fchip {
   display: inline-flex;
   align-items: center;
@@ -2334,6 +2342,43 @@ button.stat-metric:focus-visible .lens-key {
 .chokepoint-n {
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
+}
+/* F96: the chokepoint line + a secondary "focus" button that narrows the board
+   to exactly the tasks waiting on #N (a cohort focus). The walk button keeps its
+   full-width feel; the focus button is a compact pill beside it. */
+.stat-chokepoint-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+}
+.stat-chokepoint-row .stat-chokepoint {
+  margin-top: 0;
+  flex: 1 1 auto;
+}
+.stat-chokepoint-focus {
+  flex: 0 0 auto;
+  align-self: stretch;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: transparent;
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.stat-chokepoint-focus:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.stat-chokepoint-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
 /* F64: the Blocked tile is a button when anything is blocked — it filters the
    list to just those tasks. Match the chain tile's interactive affordance. */

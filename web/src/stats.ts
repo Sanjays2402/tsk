@@ -196,15 +196,26 @@ export function renderDepStats(dep: DepStats, choke?: Chokepoint | null): string
  * `data-waiting-walk="<id>"` — the SAME hook the row badge uses — so clicking it
  * opens the F85 dependent chain-drill for that task, jumping straight from "what's
  * the worst bottleneck?" to "what exactly waits on it?".
+ *
+ * F96: a secondary "focus" button (`data-cohort-focus="<id>"`) sits beside the
+ * walk affordance — it narrows the WHOLE board down to exactly the K undone
+ * tasks waiting on #N (a cohort focus), so you can act on the blocked cohort
+ * (bulk-select, bulk-edit, export) rather than only walk the chain. The walk
+ * affordance answers "what waits?"; the focus affordance lets you DO something
+ * about it.
  */
 export function renderChokepoint(choke?: Chokepoint | null): string {
   if (!choke || choke.count === 0) return "";
   const noun = choke.count === 1 ? "task waits" : "tasks wait";
-  const title = `#${choke.id} is the biggest chokepoint — ${choke.count} ${noun} on it; click to see what`;
-  return `<button type="button" class="stat-chokepoint" data-waiting-walk="${choke.id}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">
-      <span class="chokepoint-label">Biggest chokepoint</span>
-      <span class="chokepoint-val">#${choke.id} <span class="chokepoint-n">&#8593; ${choke.count} waiting</span></span>
-    </button>`;
+  const walkTitle = `#${choke.id} is the biggest chokepoint — ${choke.count} ${noun} on it; click to see what`;
+  const focusTitle = `Focus the board on the ${choke.count} ${choke.count === 1 ? "task" : "tasks"} waiting on #${choke.id}`;
+  return `<div class="stat-chokepoint-row">
+      <button type="button" class="stat-chokepoint" data-waiting-walk="${choke.id}" title="${escapeHTML(walkTitle)}" aria-label="${escapeHTML(walkTitle)}">
+        <span class="chokepoint-label">Biggest chokepoint</span>
+        <span class="chokepoint-val">#${choke.id} <span class="chokepoint-n">&#8593; ${choke.count} waiting</span></span>
+      </button>
+      <button type="button" class="stat-chokepoint-focus" data-cohort-focus="${choke.id}" title="${escapeHTML(focusTitle)}" aria-label="${escapeHTML(focusTitle)}">focus</button>
+    </div>`;
 }
 
 /**

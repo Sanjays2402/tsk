@@ -68,9 +68,19 @@ import {
   lensBreakdownPriority,
   parseLens,
   LENS_KEY,
+  LENS_FACET_KEY,
+  parseLensFacet,
+  serializeLensFacet,
   type LensKind,
   type LensBreakdownTask,
 } from "./lens";
+import {
+  buildCohort,
+  applyCohort,
+  renderCohortChipBody,
+  cohortChipTitle,
+  type CohortFocus,
+} from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
 import {
   normalizeMode,
@@ -256,6 +266,7 @@ root.innerHTML = `
         <div class="filter-prios" data-filter-prios role="group" aria-label="Filter by priority"></div>
         <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
         <button class="fpill lens-blocked" data-filter-blocked type="button" aria-pressed="false" title="Showing only blocked tasks — click to clear" hidden>&#9211; blocked <span class="lens-x" aria-hidden="true">&times;</span></button>
+        <button class="fpill lens-blocked cohort-chip" data-filter-cohort type="button" aria-pressed="false" title="Showing only the tasks waiting on a chokepoint — click to clear" hidden></button>
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
       <div class="filter-views" data-views-row hidden>
@@ -305,6 +316,7 @@ const els = {
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
   filterBlocked: must<HTMLButtonElement>("[data-filter-blocked]"),
+  filterCohort: must<HTMLButtonElement>("[data-filter-cohort]"),
   viewsRow: must<HTMLElement>("[data-views-row]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
   viewsSave: must<HTMLButtonElement>("[data-views-save]"),
@@ -403,6 +415,26 @@ let recalledViewId: string | null = null;
  * to the real `hideDone` facet (which DOES serialize), so it routes there.
  */
 let activeLens: LensKind | null = parseLens(sessionStorage.getItem(LENS_KEY));
+// F97: when a lens was persisted (F93), also restore the priority facet that was
+// drilled on top of it (the F81 lens+facet combo) so a reload brings back the
+// WHOLE drill, not just the lens. Validated against the four known levels by
+// parseLensFacet so a stale/garbage stored value can't inject a bad facet. Only
+// applied when a lens actually restored — a facet with no lens isn't persisted.
+if (activeLens) {
+  const restoredFacet = parseLensFacet(sessionStorage.getItem(LENS_FACET_KEY));
+  if (restoredFacet.length > 0) {
+    filter = { ...filter, priorities: restoredFacet as Priority[] };
+  }
+}
+
+/**
+ * F96: the active cohort focus — an explicit id-set narrowing to the undone
+ * tasks waiting on one chokepoint (built from F92's biggest-chokepoint / F87's
+ * "N waiting" badge). Like a lens it's a render-pipeline narrowing that does NOT
+ * serialize into saved views, and it's mutually exclusive with a lens (both are
+ * "special" narrowings layered over the text/facet filter). null when off.
+ */
+let focusCohort: CohortFocus | null = null;
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -419,6 +451,14 @@ function render(): void {
   // counts as blocking, and so the schedule windows see the whole board.
   if (activeLens) {
     shown = applyLens(shown, activeLens, now, doneIndex(notDeleted));
+  }
+  // F96: a cohort focus (the undone tasks waiting on a chokepoint) is the
+  // explicit-id-set sibling of a lens — mutually exclusive with one, applied
+  // here as the same kind of post-filter narrowing. Re-derived against the live
+  // graph each render (re-using the snapshot ids) so a dependent that completes
+  // simply drops out of the focused set on the next paint.
+  if (focusCohort) {
+    shown = applyCohort(shown, new Set(focusCohort.ids));
   }
   const sections = groupIntoSections(shown, now);
   const prevIds = visibleIds;
@@ -484,7 +524,7 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
     activeLens ? lensMeta(activeLens).label : null,
     filter,
   );
-  const active = isFilterActive(filter) || activeLens !== null;
+  const active = isFilterActive(filter) || activeLens !== null || focusCohort !== null;
   els.filterClear.hidden = !active;
   els.filterHideDone.classList.toggle("is-active", filter.hideDone);
   els.filterHideDone.setAttribute("aria-pressed", String(filter.hideDone));
@@ -505,6 +545,21 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
     els.filterBlocked.hidden = true;
     els.filterBlocked.classList.remove("is-active", "lens-hue-alert", "lens-hue-today", "lens-hue-neutral");
     els.filterBlocked.setAttribute("aria-pressed", "false");
+  }
+  // F96: the cohort-focus chip (hidden unless a chokepoint cohort is focused).
+  // It reads "↑ N waiting on #M ×" and clears the focus on click — the
+  // explicit-id-set sibling of the lens chip, wearing the same alert hue since
+  // a chokepoint cohort is inherently a "what's stuck" view.
+  if (focusCohort) {
+    els.filterCohort.hidden = false;
+    els.filterCohort.innerHTML = renderCohortChipBody(focusCohort);
+    els.filterCohort.classList.add("is-active", "lens-hue-alert");
+    els.filterCohort.setAttribute("aria-pressed", "true");
+    els.filterCohort.title = cohortChipTitle(focusCohort);
+  } else {
+    els.filterCohort.hidden = true;
+    els.filterCohort.classList.remove("is-active", "lens-hue-alert");
+    els.filterCohort.setAttribute("aria-pressed", "false");
   }
   els.filterbar.classList.toggle("is-active", active);
   renderViewsRow();
@@ -2806,15 +2861,67 @@ function setFilter(next: Partial<FilterState>): void {
 function setLens(kind: LensKind | null): void {
   if (activeLens === kind) return;
   activeLens = kind;
+  // F96: a lens and a cohort focus are mutually exclusive narrowings — setting
+  // a lens drops any active cohort so the two never stack confusingly.
+  if (kind !== null && focusCohort !== null) focusCohort = null;
   persistLens();
   render();
 }
 
-/** F93: mirror the active lens (or its absence) into sessionStorage. */
+/**
+ * F96: focus the board on the cohort of undone tasks waiting on `sourceId` (a
+ * chokepoint). Built from the live graph via cohort.buildCohort; a no-op (with a
+ * brief status note) when nothing waits on it. Mutually exclusive with a lens
+ * (clears it) since both are "special" post-filter narrowings. Re-renders through
+ * the normal pipeline. NOT persisted — the id set is a momentary snapshot.
+ */
+function setCohort(sourceId: number): void {
+  const cohort = buildCohort(currentTasks as DepStatsTask[], sourceId);
+  if (cohort === null) {
+    setStatus(`nothing waits on #${sourceId}`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  focusCohort = cohort;
+  if (activeLens !== null) {
+    activeLens = null; // mutually exclusive with a lens
+    persistLens();
+  }
+  render();
+  setStatus(`focused ${cohort.ids.length} waiting on #${sourceId}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/** F96: clear any active cohort focus and repaint. */
+function clearCohort(): void {
+  if (focusCohort === null) return;
+  focusCohort = null;
+  render();
+}
+
+/** F93: mirror the active lens (or its absence) into sessionStorage.
+ *
+ * F97: also persist the priority FACET drilled on top of the lens (the F81
+ * breakdown-pill drill: lens AND urgent), so a reload restores the WHOLE
+ * lens+facet combo, not just the lens. Written only while a lens is active;
+ * cleared whenever the lens clears (so a plain facet with no lens keeps its
+ * existing non-persisted behaviour). Called from setLens + every clear path.
+ */
 function persistLens(): void {
   try {
-    if (activeLens) sessionStorage.setItem(LENS_KEY, activeLens);
-    else sessionStorage.removeItem(LENS_KEY);
+    if (activeLens) {
+      sessionStorage.setItem(LENS_KEY, activeLens);
+      // F97: persist the priority facet riding the lens (or drop the key when
+      // the drill is empty) so the restored board matches what you left.
+      if (filter.priorities.length > 0) {
+        sessionStorage.setItem(LENS_FACET_KEY, serializeLensFacet(filter.priorities));
+      } else {
+        sessionStorage.removeItem(LENS_FACET_KEY);
+      }
+    } else {
+      sessionStorage.removeItem(LENS_KEY);
+      sessionStorage.removeItem(LENS_FACET_KEY); // F97: no lens -> no drilled facet
+    }
   } catch {
     // ignore (private mode / storage disabled) — lens still works in-session
   }
@@ -2981,11 +3088,17 @@ els.filterBlocked.addEventListener("click", () => {
   setLens(null);
 });
 
+// F96: the cohort-focus chip clears the focus when clicked.
+els.filterCohort.addEventListener("click", () => {
+  clearCohort();
+});
+
 // Clear-all affordance resets every facet.
 els.filterClear.addEventListener("click", () => {
   els.filterInput.value = "";
   filter = emptyFilter();
   activeLens = null; // F66: clear the active lens too
+  focusCohort = null; // F96: clear any cohort focus too
   persistLens(); // F93: forget the persisted lens on a full clear
   recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
@@ -3067,6 +3180,23 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F96: the chokepoint "focus" button narrows the board to exactly the undone
+  // tasks waiting on #N (a cohort focus), so you can act on the blocked cohort.
+  const cohortBtn = target?.closest<HTMLElement>("[data-cohort-focus]");
+  if (cohortBtn) {
+    const sourceId = Number(cohortBtn.dataset.cohortFocus);
+    if (Number.isFinite(sourceId) && sourceId > 0) setCohort(sourceId);
+    return;
+  }
+  // F92/F85: the chokepoint line itself opens the dependent chain-drill popover
+  // (direction "dependent") so you can WALK what waits on #N. (The row-badge
+  // variant is handled in the content listener; the sidebar needs its own wire.)
+  const waitingWalk = target?.closest<HTMLElement>("[data-waiting-walk]");
+  if (waitingWalk) {
+    const sourceId = Number(waitingWalk.dataset.waitingWalk);
+    if (Number.isFinite(sourceId) && sourceId > 0) openChainDrill(sourceId, "dependent");
+    return;
+  }
   // F81: clicking a priority pill in the F80 lens breakdown layers that priority
   // onto the active lens (lens AND urgent), turning the sidebar readout into a
   // drill-down. Toggling the same pill again clears the facet. Routes through
@@ -3196,7 +3326,7 @@ function downloadExport(format: ExportFormat, forceScope?: boolean): void {
  * conditions that make `visibleIds` a strict subset of the store.
  */
 function isExportScoped(): boolean {
-  return activeLens !== null || isFilterActive(filter) || route.kind === "tag";
+  return activeLens !== null || focusCohort !== null || isFilterActive(filter) || route.kind === "tag";
 }
 
 els.exportToggle.addEventListener("click", (e) => {
@@ -3705,13 +3835,17 @@ function openChainDrill(fromId?: number, dir: "blocker" | "dependent" = "blocker
  */
 function jumpToTask(id: number): void {
   if (!visibleIds.includes(id)) {
-    // The blocker is hidden by the active filter, an active lens, or a tag
-    // route — reset whichever is in play so the jump can land, then re-render.
+    // The blocker is hidden by the active filter, an active lens, a cohort
+    // focus, or a tag route — reset whichever is in play so the jump can land.
     if (route.kind === "tag") navigateToAll();
     let needsRender = false;
     if (activeLens) {
       activeLens = null; // F66: clear the active lens too
       persistLens(); // F93: a jump that drops the lens forgets it from storage
+      needsRender = true;
+    }
+    if (focusCohort) {
+      focusCohort = null; // F96: a jump that drops the cohort clears the focus
       needsRender = true;
     }
     if (isFilterActive(filter)) {
