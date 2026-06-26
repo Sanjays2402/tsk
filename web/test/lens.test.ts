@@ -10,6 +10,8 @@ import {
   activeLensSummary,
   computeLensBreakdown,
   renderLensBreakdown,
+  lensBreakdownPriority,
+  LENS_BD_PRIORITIES,
   LENS_ORDER,
   type LensKind,
   type LensTask,
@@ -299,4 +301,64 @@ test("renderLensBreakdown shows the blocked cross-cut under a schedule lens", ()
   assert.equal(bd.blocked, 1);
   const html = renderLensBreakdown("today", bd);
   assert.match(html, /bd-blocked/);
+});
+
+// --- F81: clickable lens-breakdown drill-downs -----------------------------
+
+test("lensBreakdownPriority decodes the four drillable levels, rejects the rest", () => {
+  assert.equal(lensBreakdownPriority("urgent"), "urgent");
+  assert.equal(lensBreakdownPriority("high"), "high");
+  assert.equal(lensBreakdownPriority("medium"), "medium");
+  assert.equal(lensBreakdownPriority("low"), "low");
+  // cross-cut pill labels are NOT facet tokens
+  assert.equal(lensBreakdownPriority("overdue"), null);
+  assert.equal(lensBreakdownPriority("blocked"), null);
+  assert.equal(lensBreakdownPriority(""), null);
+  assert.equal(lensBreakdownPriority("URGENT"), null); // case-sensitive token
+});
+
+test("LENS_BD_PRIORITIES is the urgent-first drill order", () => {
+  assert.deepEqual([...LENS_BD_PRIORITIES], ["urgent", "high", "medium", "low"]);
+});
+
+test("renderLensBreakdown makes priority pills clickable buttons with a facet token", () => {
+  const ts = bdTasks();
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  const html = renderLensBreakdown("overdue", bd);
+  // urgent + high pills present as drill buttons carrying the facet token
+  assert.match(html, /<button[^>]*data-lens-bd-prio="urgent"[^>]*>/);
+  assert.match(html, /<button[^>]*data-lens-bd-prio="high"[^>]*>/);
+  assert.match(html, /is-drill/);
+});
+
+test("renderLensBreakdown cross-cut pills stay plain spans (no facet token)", () => {
+  // nodue lens over a board where a member is also blocked -> a blocked cross-cut.
+  const ts: LensBreakdownTask[] = [
+    { id: 1, done: false }, // open blocker
+    { id: 2, done: false, priority: "high", depends_on: [1] }, // no due + blocked
+  ];
+  const bd = computeLensBreakdown(ts, "nodue", NOW, doneIndex(ts));
+  const html = renderLensBreakdown("nodue", bd);
+  assert.match(html, /bd-blocked/);
+  // the blocked cross-cut is a span, not a drill button
+  assert.doesNotMatch(html, /data-lens-bd-prio="blocked"/);
+  assert.doesNotMatch(html, /data-lens-bd-prio="overdue"/);
+});
+
+test("renderLensBreakdown marks an already-active facet pill is-on + aria-pressed", () => {
+  const ts = bdTasks();
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  const html = renderLensBreakdown("overdue", bd, new Set(["urgent"]));
+  // the urgent pill is on; high is not
+  assert.match(html, /data-lens-bd-prio="urgent"[^>]*aria-pressed="true"/);
+  assert.match(html, /is-drill bd-urgent is-on/);
+  assert.match(html, /data-lens-bd-prio="high"[^>]*aria-pressed="false"/);
+});
+
+test("renderLensBreakdown with no active facets marks every pill off", () => {
+  const ts = bdTasks();
+  const bd = computeLensBreakdown(ts, "overdue", NOW, doneIndex(ts));
+  const html = renderLensBreakdown("overdue", bd);
+  assert.doesNotMatch(html, /is-on/);
+  assert.match(html, /aria-pressed="false"/);
 });

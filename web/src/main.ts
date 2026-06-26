@@ -62,6 +62,7 @@ import {
   activeLensSummary,
   computeLensBreakdown,
   renderLensBreakdown,
+  lensBreakdownPriority,
   type LensKind,
   type LensBreakdownTask,
 } from "./lens";
@@ -1171,7 +1172,7 @@ async function refreshStats(): Promise<void> {
         new Date(),
         doneIndex(notDeleted),
       );
-      html += renderLensBreakdown(activeLens, bd);
+      html += renderLensBreakdown(activeLens, bd, new Set(filter.priorities));
     }
     els.statsPanel.innerHTML = html;
   } catch {
@@ -2994,6 +2995,16 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F81: clicking a priority pill in the F80 lens breakdown layers that priority
+  // onto the active lens (lens AND urgent), turning the sidebar readout into a
+  // drill-down. Toggling the same pill again clears the facet. Routes through
+  // setFilter so the chip + repaint happen exactly as a filter-bar pill would.
+  const bdPill = target?.closest<HTMLElement>("[data-lens-bd-prio]");
+  if (bdPill) {
+    const prio = lensBreakdownPriority(bdPill.dataset.lensBdPrio ?? "");
+    if (prio) setFilter({ priorities: toggleMember(filter.priorities, prio) });
+    return;
+  }
   // F56: clicking the "chain depth" tile opens the longest blocker chain as a
   // jump-list so you can walk #downstream -> ... -> #root blocker.
   if (target?.closest("[data-chain-drill]")) {

@@ -271,6 +271,34 @@ export function renderLensChipBody(kind: LensKind | null): string {
 }
 
 /**
+ * F81: the priority levels a lens-breakdown pill can drill into, in the same
+ * urgent-first order the pills render. The cross-cut pills (overdue / blocked)
+ * are NOT in this set — they're derived facets, not the `priorities` filter
+ * facet, so they read as static counts while only these four are clickable
+ * drill-downs. Exported so the click handler can validate a pill's token
+ * against the same source of truth the renderer uses.
+ */
+export const LENS_BD_PRIORITIES: ReadonlyArray<"urgent" | "high" | "medium" | "low"> = [
+  "urgent",
+  "high",
+  "medium",
+  "low",
+];
+
+/**
+ * F81: decode a lens-breakdown pill's `data-lens-bd-prio` token into a priority
+ * level the `priorities` filter facet understands, or null for anything that
+ * isn't one of the four drillable levels (e.g. the overdue / blocked cross-cut
+ * pills, which carry no token). Pure → unit-tested. Keeps the click handler
+ * from trusting raw DOM strings.
+ */
+export function lensBreakdownPriority(token: string): "urgent" | "high" | "medium" | "low" | null {
+  return (LENS_BD_PRIORITIES as ReadonlyArray<string>).includes(token)
+    ? (token as "urgent" | "high" | "medium" | "low")
+    : null;
+}
+
+/**
  * F80: render the lensed-subset breakdown for the stats sidebar. Pure →
  * unit-tested. Shown only while a lens is active so the sidebar reflects "what
  * I'm looking at": a headline ("12 blocked") plus a row of small count pills for
@@ -278,27 +306,40 @@ export function renderLensChipBody(kind: LensKind | null): string {
  * and the overdue / blocked cross-cuts (suppressed when they'd be redundant with
  * the active lens, which computeLensBreakdown already zeroes). Returns "" when
  * no lens is active or the subset is empty so the section collapses cleanly.
+ *
+ * F81: the four priority pills are now interactive drill-downs — each is a
+ * <button data-lens-bd-prio> that layers the matching `priorities` filter facet
+ * on top of the active lens (lens AND urgent), turning the readout into a
+ * one-click narrowing. A pill whose priority is already in `active` wears
+ * `is-on` so the breakdown doubles as a "what facet am I drilled into?"
+ * indicator and a second click toggles it back off. The overdue / blocked
+ * cross-cuts stay plain spans (they map to other lenses, not this facet).
  */
 export function renderLensBreakdown(
   kind: LensKind | null,
   bd: LensBreakdown,
+  active: ReadonlySet<string> = new Set(),
 ): string {
   if (kind === null || bd.total === 0) return "";
   const meta = LENS_META[kind];
-  const pills: Array<{ cls: string; label: string; n: number }> = [
-    { cls: "bd-urgent", label: "urgent", n: bd.urgent },
-    { cls: "bd-high", label: "high", n: bd.high },
-    { cls: "bd-medium", label: "medium", n: bd.medium },
-    { cls: "bd-low", label: "low", n: bd.low },
+  const pills: Array<{ cls: string; label: string; n: number; prio?: string }> = [
+    { cls: "bd-urgent", label: "urgent", n: bd.urgent, prio: "urgent" },
+    { cls: "bd-high", label: "high", n: bd.high, prio: "high" },
+    { cls: "bd-medium", label: "medium", n: bd.medium, prio: "medium" },
+    { cls: "bd-low", label: "low", n: bd.low, prio: "low" },
     { cls: "bd-overdue", label: "overdue", n: bd.overdue },
     { cls: "bd-blocked", label: "blocked", n: bd.blocked },
   ];
   const body = pills
     .filter((p) => p.n > 0)
-    .map(
-      (p) =>
-        `<span class="lens-bd-pill ${p.cls}"><span class="lens-bd-n">${p.n}</span> ${escapeHTML(p.label)}</span>`,
-    )
+    .map((p) => {
+      const inner = `<span class="lens-bd-n">${p.n}</span> ${escapeHTML(p.label)}`;
+      if (p.prio) {
+        const on = active.has(p.prio) ? " is-on" : "";
+        return `<button type="button" class="lens-bd-pill is-drill ${p.cls}${on}" data-lens-bd-prio="${p.prio}" aria-pressed="${active.has(p.prio)}" title="Filter the ${escapeHTML(meta.label)} view to ${escapeHTML(p.label)}">${inner}</button>`;
+      }
+      return `<span class="lens-bd-pill ${p.cls}">${inner}</span>`;
+    })
     .join("");
   const pillRow = body ? `<div class="lens-bd-pills">${body}</div>` : "";
   return `

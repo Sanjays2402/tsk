@@ -2221,6 +2221,26 @@ button.stat-metric.metric-blocked:hover {
 .lens-bd-pill.bd-blocked .lens-bd-n {
   color: var(--color-overdue);
 }
+/* F81: the priority pills are interactive drill-downs that layer a priority
+   facet onto the active lens. They read as pills but afford a click + toggle. */
+button.lens-bd-pill.is-drill {
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+button.lens-bd-pill.is-drill:hover,
+button.lens-bd-pill.is-drill:focus-visible {
+  border-color: var(--color-amber-500);
+  background: var(--color-surface);
+  outline: none;
+}
+button.lens-bd-pill.is-drill.is-on {
+  border-color: var(--color-amber-500);
+  background: var(--color-amber-50, var(--color-surface-hi));
+  color: var(--color-text);
+}
 .stat-tags {
   display: flex;
   flex-direction: column;
