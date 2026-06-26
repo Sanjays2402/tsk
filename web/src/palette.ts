@@ -336,6 +336,10 @@ export interface CommandReasonContext {
   onTag: boolean;
   /** F98: is a render-pipeline lens currently active (so "clear lens" is meaningful)? */
   hasLens: boolean;
+  /** F103: is a cohort focus currently active (so "clear cohort" is meaningful)? */
+  hasCohort: boolean;
+  /** F103: is there a chokepoint to focus (so "focus biggest chokepoint" is meaningful)? */
+  hasChokepoint: boolean;
 }
 
 /**
@@ -359,6 +363,40 @@ export function clearLensCommand(lensLabel: string | null): Command {
 }
 
 /**
+ * F103: the two cohort-focus palette commands — the keyboard-only sisters of
+ * F96's sidebar focus button + filter-bar clear chip (which are mouse-only):
+ *   - "Clear cohort focus (<summary>)" — shown context-aware, routing through
+ *     setCohort->clear. Its label names the active cohort ("3 waiting on #1")
+ *     so the palette doubles as a "what am I focused on?" readout, mirroring
+ *     F98's lens-label-in-the-command. Disabled (with a "no cohort active"
+ *     reason via F89) when no cohort is focused.
+ *   - "Focus biggest chokepoint (#N)" — runs setCohort(biggestChokepoint.id)
+ *     keyboard-only, so you can drop into the worst bottleneck's cohort without
+ *     reaching for the sidebar. Disabled ("no chokepoint") on a flat board.
+ * Pure → unit-tested. `cohortSummary` is the active cohort's summary (or null);
+ * `chokepointId` is the biggest chokepoint's id (or null when the board is flat).
+ */
+export function clearCohortCommand(cohortSummary: string | null): Command {
+  return {
+    id: "cohort-clear",
+    title: cohortSummary ? `Clear cohort focus (${cohortSummary})` : "Clear cohort focus",
+    group: "View",
+    keywords: ["cohort", "focus", "reset", "unfilter", "waiting", "chokepoint", "bottleneck"],
+    disabled: cohortSummary === null,
+  };
+}
+
+export function focusChokepointCommand(chokepointId: number | null): Command {
+  return {
+    id: "cohort-focus-biggest",
+    title: chokepointId !== null ? `Focus biggest chokepoint (#${chokepointId})` : "Focus biggest chokepoint",
+    group: "View",
+    keywords: ["cohort", "focus", "chokepoint", "bottleneck", "waiting", "blocked", "stuck"],
+    disabled: chokepointId === null,
+  };
+}
+
+/**
  * F89: the human reason ANY disabled palette command is greyed — the general
  * form of F83, which only covered the Set due/priority group. So every greyed
  * command explains itself in the preview slot:
@@ -368,7 +406,9 @@ export function clearLensCommand(lensLabel: string | null): Command {
  *   - "Undo last delete" with nothing pending -> "nothing to undo";
  *   - "Focus filter / search" with no tasks   -> "no tasks to filter";
  *   - "Go to all tasks" when already there     -> "already on all tasks";
- *   - "Clear lens" with no lens active (F98)   -> "no lens active".
+ *   - "Clear lens" with no lens active (F98)   -> "no lens active";
+ *   - "Clear cohort focus" with none (F103)    -> "no cohort active";
+ *   - "Focus biggest chokepoint" on a flat board (F103) -> "no chokepoint".
  * Returns null for a command with no known disabled-reason (the slot hides).
  * Pure → unit-tested. Delegates to setCommandDisabledReason first so the F83
  * set-command behaviour is preserved exactly. The caller only consults this for
@@ -383,5 +423,7 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   if (id === "filter" && !ctx.hasTasks) return "no tasks to filter";
   if (id === "alltasks" && !ctx.onTag) return "already on all tasks";
   if (id === "lens-clear" && !ctx.hasLens) return "no lens active";
+  if (id === "cohort-clear" && !ctx.hasCohort) return "no cohort active";
+  if (id === "cohort-focus-biggest" && !ctx.hasChokepoint) return "no chokepoint";
   return null;
 }

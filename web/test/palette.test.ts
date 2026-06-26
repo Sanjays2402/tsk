@@ -16,6 +16,8 @@ import {
   setCommandDisabledReason,
   commandDisabledReason,
   clearLensCommand,
+  clearCohortCommand,
+  focusChokepointCommand,
   SELECTION_GATED_COMMANDS,
   renderDisabledReason,
   type Command,
@@ -378,7 +380,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, hasCohort: true, hasChokepoint: true };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -446,5 +448,49 @@ test("clearLensCommand is fuzzy-findable by 'lens' and 'clear'", () => {
   const list = filterCommands([clearLensCommand("blocked")], "clear lens");
   assert.equal(list.length, 1);
   assert.equal(list[0].id, "lens-clear");
+});
+
+// --- F103: the cohort-focus palette commands -------------------------------
+
+test("clearCohortCommand names the active cohort and is enabled when one is on", () => {
+  const c = clearCohortCommand("3 waiting on #1");
+  assert.equal(c.id, "cohort-clear");
+  assert.equal(c.title, "Clear cohort focus (3 waiting on #1)");
+  assert.equal(c.disabled, false);
+  assert.equal(c.group, "View");
+});
+
+test("clearCohortCommand reads plainly and is disabled when no cohort is active", () => {
+  const c = clearCohortCommand(null);
+  assert.equal(c.id, "cohort-clear");
+  assert.equal(c.title, "Clear cohort focus");
+  assert.equal(c.disabled, true);
+});
+
+test("focusChokepointCommand names the chokepoint and is enabled when one exists", () => {
+  const c = focusChokepointCommand(7);
+  assert.equal(c.id, "cohort-focus-biggest");
+  assert.equal(c.title, "Focus biggest chokepoint (#7)");
+  assert.equal(c.disabled, false);
+});
+
+test("focusChokepointCommand reads plainly and is disabled on a flat board", () => {
+  const c = focusChokepointCommand(null);
+  assert.equal(c.id, "cohort-focus-biggest");
+  assert.equal(c.title, "Focus biggest chokepoint");
+  assert.equal(c.disabled, true);
+});
+
+test("commandDisabledReason: cohort commands explain their absent precondition", () => {
+  assert.equal(commandDisabledReason("cohort-clear", { ...FULL_CTX, hasCohort: false }), "no cohort active");
+  assert.equal(commandDisabledReason("cohort-clear", FULL_CTX), null);
+  assert.equal(commandDisabledReason("cohort-focus-biggest", { ...FULL_CTX, hasChokepoint: false }), "no chokepoint");
+  assert.equal(commandDisabledReason("cohort-focus-biggest", FULL_CTX), null);
+});
+
+test("cohort commands are fuzzy-findable by 'cohort' and 'chokepoint'", () => {
+  const cmds = [clearCohortCommand("2 on #5"), focusChokepointCommand(5)];
+  assert.equal(filterCommands(cmds, "cohort").length, 2);
+  assert.equal(filterCommands(cmds, "chokepoint")[0].id, "cohort-focus-biggest");
 });
 

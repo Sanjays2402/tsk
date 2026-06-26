@@ -8,6 +8,7 @@ import {
   cohortChipTitle,
   reconcileCohort,
   renderCohortFocusButton,
+  cohortSummary,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -159,4 +160,11 @@ test("renderCohortFocusButton names the source task in its title", () => {
   assert.match(html, /waiting on #42/);
   // Title + aria-label both present for hover + a11y.
   assert.match(html, /aria-label=/);
+});
+
+// --- F103: cohortSummary ----------------------------------------------------
+
+test("cohortSummary reads as 'N waiting on #M'", () => {
+  assert.equal(cohortSummary({ sourceId: 1, ids: [2, 3, 4] }), "3 waiting on #1");
+  assert.equal(cohortSummary({ sourceId: 5, ids: [9] }), "1 waiting on #5");
 });

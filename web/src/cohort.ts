@@ -85,6 +85,16 @@ export function cohortChipTitle(focus: CohortFocus): string {
 }
 
 /**
+ * F103: a one-line human summary of the active cohort for the Cmd-K palette
+ * label (e.g. "3 waiting on #1"), so a "Clear cohort focus (<summary>)" command
+ * doubles as a "what am I focused on?" readout — the cohort sibling of F98's
+ * lens-label-in-the-command pattern. Pure → unit-tested.
+ */
+export function cohortSummary(focus: CohortFocus): string {
+  return `${cohortCount(focus)} on #${focus.sourceId}`;
+}
+
+/**
  * F101: the outcome of re-deriving a cohort focus against a fresh task list.
  * A cohort's `ids` are a snapshot of who waited on #sourceId at click time; an
  * external edit (CLI / TUI / hand / another tab) can complete those waiters,

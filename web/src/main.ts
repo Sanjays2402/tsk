@@ -81,6 +81,7 @@ import {
   cohortChipTitle,
   reconcileCohort,
   renderCohortFocusButton,
+  cohortSummary,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -151,6 +152,8 @@ import {
   commandDisabledReason,
   renderDisabledReason,
   clearLensCommand,
+  clearCohortCommand,
+  focusChokepointCommand,
   type Command,
 } from "./palette";
 import {
@@ -2946,6 +2949,21 @@ function clearCohort(): void {
   render();
 }
 
+/**
+ * F103: the id of the current biggest chokepoint (the undone task the most
+ * others wait on), or null on a flat board. Computed over the same live list +
+ * whole-list done-index the F92 sidebar line uses, so the Cmd-K "Focus biggest
+ * chokepoint" command targets exactly what the sidebar shows. Kept as a small
+ * helper so buildCommands stays declarative.
+ */
+function currentChokepointId(): number | null {
+  const choke = biggestChokepoint(
+    currentTasks as DepStatsTask[],
+    doneIndex(currentTasks as DepStatsTask[]),
+  );
+  return choke ? choke.id : null;
+}
+
 /** F93: mirror the active lens (or its absence) into sessionStorage.
  *
  * F97: also persist the priority FACET drilled on top of the lens (the F81
@@ -4368,6 +4386,14 @@ function buildCommands(): Command[] {
     // there was no palette CLEAR). Shown always so it's discoverable; disabled
     // (with a "no lens active" reason via F89) when no lens is on.
     clearLensCommand(activeLens ? lensMeta(activeLens).label : null),
+    // F103: the cohort-focus sisters of clearLensCommand — the keyboard-only
+    // way to clear a cohort focus (naming it, "3 waiting on #1") and to drop
+    // into the biggest chokepoint's cohort (naming it, "#N"). F96's sidebar
+    // focus button + filter-bar clear chip are mouse-only; these reach the same
+    // setCohort path from Cmd-K. Each disabled (with a reason via F89) when its
+    // precondition is absent (no cohort focused / a flat board).
+    clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null),
+    focusChokepointCommand(currentChokepointId()),
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
     { id: "settings", title: "Open settings", group: "View", keywords: ["preferences", "density", "compact", "options", "config"], hint: "," },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
@@ -4460,6 +4486,19 @@ function runCommand(id: string): void {
       // F98: drop the active render-pipeline lens (the keyboard-only exit).
       setLens(null);
       break;
+    case "cohort-clear":
+      // F103: drop the active cohort focus (keyboard-only sister of the
+      // filter-bar clear chip).
+      clearCohort();
+      break;
+    case "cohort-focus-biggest": {
+      // F103: focus the biggest chokepoint's cohort keyboard-only (sister of
+      // the sidebar focus button). setCohort no-ops with a status note if the
+      // board went flat between palette-build and dispatch.
+      const id = currentChokepointId();
+      if (id !== null) setCohort(id);
+      break;
+    }
     case "theme":
       cycleTheme();
       break;
@@ -4619,6 +4658,8 @@ function paintPaletteDuePreview(): void {
           hasTasks: !els.filterbar.hidden,
           onTag: route.kind === "tag",
           hasLens: activeLens !== null,
+          hasCohort: focusCohort !== null,
+          hasChokepoint: currentChokepointId() !== null,
         })
       : null;
   if (reason !== null) {
