@@ -8,6 +8,7 @@ import {
   lensForDigit,
   lensDigit,
   activeLensSummary,
+  renderActiveLensHelp,
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
@@ -128,6 +129,42 @@ test("renderLensChipBody shows the label + a clear affordance", () => {
   assert.match(html, /overdue/);
   assert.match(html, /lens-x/);
   assert.match(html, /&times;/);
+});
+
+// --- F82: digit-key hint in the chip + help overlay ------------------------
+
+test("renderLensChipBody leads with the lens digit badge", () => {
+  // overdue is digit 2 (blocked=1, overdue=2, today=3, week=4, nodue=5)
+  const html = renderLensChipBody("overdue");
+  assert.match(html, /<kbd class="lens-chip-key"[^>]*>2<\/kbd>/);
+  // blocked is digit 1
+  assert.match(renderLensChipBody("blocked"), /lens-chip-key[^>]*>1</);
+  // nodue is digit 5
+  assert.match(renderLensChipBody("nodue"), /lens-chip-key[^>]*>5</);
+});
+
+test("renderLensChipBody digit matches lensDigit for every lens", () => {
+  for (const k of LENS_ORDER) {
+    const html = renderLensChipBody(k);
+    assert.match(html, new RegExp(`lens-chip-key[^>]*>${lensDigit(k)}<`));
+  }
+});
+
+test("renderActiveLensHelp bolds the label + shows the digit kbd", () => {
+  const html = renderActiveLensHelp("today"); // digit 3
+  assert.match(html, /Active lens:/);
+  assert.match(html, /<kbd>3<\/kbd>/);
+  assert.match(html, /<strong>due today<\/strong>/);
+});
+
+test("renderActiveLensHelp is empty with no active lens", () => {
+  assert.equal(renderActiveLensHelp(null), "");
+});
+
+test("renderActiveLensHelp digit agrees with lensDigit per lens", () => {
+  for (const k of LENS_ORDER) {
+    assert.match(renderActiveLensHelp(k), new RegExp(`<kbd>${lensDigit(k)}</kbd>`));
+  }
 });
 
 test("renderLensChipBody is empty when no lens is active", () => {

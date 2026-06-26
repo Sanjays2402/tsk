@@ -263,11 +263,35 @@ function escapeHTML(s: string): string {
  * Returns "" when no lens is active (the chip element hides). The chip carries
  * the lens glyph + label and a trailing × to signal that clicking it clears
  * the lens. The `hue-<kind>` class lets the chip echo its source tile's color.
+ *
+ * F82: a leading digit badge echoes the number-key shortcut that toggles this
+ * lens (the same "1".."5" the F76 stat tiles wear), so the active shortcut is
+ * visible right on the chip — "2 ⚠ overdue ×". Reuses lensDigit so the badge
+ * can never drift from lensForDigit / LENS_ORDER.
  */
 export function renderLensChipBody(kind: LensKind | null): string {
   if (kind === null) return "";
   const meta = LENS_META[kind];
-  return `${meta.glyph} ${escapeHTML(meta.label)} <span class="lens-x" aria-hidden="true">&times;</span>`;
+  const digit = lensDigit(kind);
+  const key = digit
+    ? `<kbd class="lens-chip-key" aria-hidden="true">${digit}</kbd> `
+    : "";
+  return `${key}${meta.glyph} ${escapeHTML(meta.label)} <span class="lens-x" aria-hidden="true">&times;</span>`;
+}
+
+/**
+ * F82: render the help overlay's "active lens" line as HTML (vs the plain-text
+ * activeLensSummary). Bolds the lens label and shows its number-key shortcut as
+ * a <kbd>, so the `?` overlay surfaces both WHAT you're looking at and the
+ * digit that toggles it — the same shortcut the chip and the stat tiles show.
+ * Returns "" when no lens is active so the line collapses. Pure → unit-tested.
+ */
+export function renderActiveLensHelp(kind: LensKind | null): string {
+  if (kind === null) return "";
+  const meta = LENS_META[kind];
+  const digit = lensDigit(kind);
+  const key = digit ? `<kbd>${digit}</kbd> ` : "";
+  return `Active lens: ${key}${meta.glyph} <strong>${escapeHTML(meta.label)}</strong>`;
 }
 
 /**

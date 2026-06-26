@@ -59,7 +59,7 @@ import {
   renderLensChipBody,
   lensMeta,
   lensForDigit,
-  activeLensSummary,
+  renderActiveLensHelp,
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
@@ -3809,10 +3809,13 @@ function ensureHelpEl(): HTMLElement {
     <div class="help-card">
       <div class="help-title">Keyboard shortcuts</div>
       <dl class="help-list">
-        ${HELP_ROWS.map(
-          ([keys, desc]) =>
-            `<div class="help-row"><dt><kbd>${escapeAttr(keys)}</kbd></dt><dd>${escapeAttr(desc)}</dd></div>`,
-        ).join("")}
+        ${HELP_ROWS.map(([keys, desc]) => {
+          // F82: tag the lens-shortcut row so toggleHelp can bold it when a
+          // stats lens is active, making the live shortcut obvious in the `?`
+          // overlay too (it's where the chip's digit comes from).
+          const lensRow = /stats lens/i.test(desc) ? " data-help-lens-row" : "";
+          return `<div class="help-row"${lensRow}><dt><kbd>${escapeAttr(keys)}</kbd></dt><dd>${escapeAttr(desc)}</dd></div>`;
+        }).join("")}
       </dl>
       <div class="help-foot" data-help-active></div>
       <div class="help-foot">Press <kbd>?</kbd> or <kbd>esc</kbd> to close</div>
@@ -3828,14 +3831,19 @@ function ensureHelpEl(): HTMLElement {
 function toggleHelp(open: boolean): void {
   helpOpen = open;
   const el = ensureHelpEl();
-  // F71: reflect the active stats lens (if any) so the overlay doubles as a
-  // "what am I currently looking at?" readout. Empty -> the line collapses.
+  // F71/F82: reflect the active stats lens (if any) so the overlay doubles as a
+  // "what am I currently looking at?" readout — with the lens label bolded and
+  // its number-key shortcut shown as a <kbd>. Empty -> the line collapses.
   const activeEl = el.querySelector<HTMLElement>("[data-help-active]");
   if (activeEl) {
-    const summary = activeLensSummary(activeLens);
-    activeEl.hidden = summary === "";
-    activeEl.textContent = summary ? `Active lens: ${summary}` : "";
+    const html = renderActiveLensHelp(activeLens);
+    activeEl.hidden = html === "";
+    activeEl.innerHTML = html;
   }
+  // F82: bold the lens-shortcut row while a lens is active so the digit map is
+  // visibly "live" in the overlay, matching the chip's digit badge.
+  const lensRow = el.querySelector<HTMLElement>("[data-help-lens-row]");
+  lensRow?.classList.toggle("is-active", activeLens !== null);
   el.classList.toggle("is-open", open);
 }
 

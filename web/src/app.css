@@ -1147,6 +1147,16 @@ kbd {
   font-size: var(--fs-sm);
   color: var(--color-text-dim);
 }
+/* F82: the lens-shortcut row goes bold + accented while a stats lens is active,
+   so the `?` overlay shows the digit map is live (echoes the chip's badge). */
+.help-row.is-active dd {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.help-row.is-active dt kbd {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
 .help-foot {
   margin-top: var(--sp-4);
   padding-top: var(--sp-3);
@@ -1432,6 +1442,21 @@ kbd {
 .fpill.lens-blocked .lens-x {
   font-size: var(--fs-sm);
   opacity: 0.8;
+}
+/* F82: the digit-key badge inside the active-lens chip, echoing the number-key
+   shortcut that toggles the lens (same "1".."5" the stat tiles wear). Inverts
+   against the chip's solid hue so it stays legible on every hue. */
+.fpill.lens-blocked .lens-chip-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 13px;
+  min-width: 13px;
+  padding: 0 3px;
+  text-align: center;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.22);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 .fchip {
   display: inline-flex;
