@@ -1260,24 +1260,24 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T14 lens-digit / palette-priority-preview / scoped-export-commands /
 chip-chain-walk / lens-breakdown cluster:
 
-- [ ] **F81** Lens-breakdown pills are clickable: clicking the "3 urgent" pill in
+- [x] **F81** Lens-breakdown pills are clickable: clicking the "3 urgent" pill in
       the F80 breakdown layers the priority facet on top of the active lens (lens
       AND urgent), so the sidebar's mini-counts become a drill-down, not just a
       readout. Reuse setFilter's priorities facet — lenses already coexist with
       facets in the render pipeline.
-- [ ] **F82** Digit-key hint in the lens chip + help overlay row: now that F76 put
+- [x] **F82** Digit-key hint in the lens chip + help overlay row: now that F76 put
       the "1".."5" badges on the tiles, echo the active lens's digit in the
       filter-bar lens chip ("2 overdue x") and bold that row in the `?` overlay's
       lens list, so the active shortcut is visible everywhere the lens is.
-- [ ] **F83** Palette "Set due ▸" + "Set priority ▸" disabled-reason hints: when a
+- [x] **F83** Palette "Set due ▸" + "Set priority ▸" disabled-reason hints: when a
       set command is disabled (no selection, or already in effect), show WHY in the
       preview slot ("select a task first" / "already urgent") instead of just
       greying it — reuse the F77/F73 preview line for the message.
-- [ ] **F84** Scoped export parity for the export MENU button: the F78 palette
+- [x] **F84** Scoped export parity for the export MENU button: the F78 palette
       commands can force whole-store vs scoped, but the menu button only auto-scopes
       — add a small "all / shown" toggle to the export dropdown header so the menu
       reaches both too (mirror the palette's two-command split).
-- [ ] **F85** Chain-walk reachability from the row badge's UPSTREAM too: F61/F79
+- [x] **F85** Chain-walk reachability from the row badge's UPSTREAM too: F61/F79
       walk a task's blocker chain (downstream to root); add a "what waits on this?"
       walk that follows dependents (upstream), reusing the graph the dep stats
       already build, so you can audit impact both directions from one popover.
@@ -1290,4 +1290,75 @@ chip-chain-walk / lens-breakdown cluster:
       ASCII/SVG "what blocks what" preview of the selected task's neighborhood.
 - [ ] **F54** (carried) Row context menu on touch: long-press (reuse the F28 machine)
       to open the F37 menu, with a press-and-hold disambiguation.
+
+---
+
+## TICK LOG — T15 (2026-06-25 ~18:19 PT)
+
+Shipped 5/5 web slices on `main` (F81-F85), gated once, pushed clean
+(f2f412c..6f6fc6e). 29 net-new web tests (557 -> 586), Go gates green,
+bundle rebuilt + embedded, live `tsk serve` smoke-tested.
+
+- **F81** `764ad66` Clickable lens-breakdown priority pills. renderLensBreakdown
+  gains an `active` set; the four priority pills become <button data-lens-bd-prio>
+  drill-downs that layer the priorities facet onto the active lens (lens AND
+  urgent). New pure lensBreakdownPriority + LENS_BD_PRIORITIES. Cross-cut pills
+  (overdue/blocked) stay plain spans. +6 lens tests.
+- **F82** `aa7bcd1` Lens digit echoed in the chip + help overlay. renderLensChipBody
+  leads with a lens-chip-key <kbd> ("2 overdue x"); new renderActiveLensHelp()
+  builds the ? overlay line with the digit kbd + bold label; the lens-shortcut
+  help row bolds while a lens is active. +5 lens tests.
+- **F83** `6bfebf1` Palette set-command disabled-reason hints. setCommandDisabledReason
+  + renderDisabledReason: a disabled Set due/priority command with no selection
+  says "select a task first" in the shared preview slot (the already-<level> case
+  keeps F77's empty-state text). paintPaletteDuePreview checks it first, seq-bumping
+  in-flight due parses. +6 palette tests.
+- **F84** `de50582` All/shown scope toggle for the export menu. renderExportMenu
+  gains a scopeShown param; when scoping is active the header is an All / N shown
+  segmented toggle (data-export-scope-toggle), items carry data-export-scope mapped
+  to F78's forceScope override. Live-verified the /api/export?ids= backend. +4
+  export tests (one F75 test updated for the new markup).
+- **F85** `c084551` Upstream "what waits on this?" walk. deps.ts: openDependents,
+  deepestDependentChainFrom, hasWalkableDependents (reverse-edge mirrors of the
+  blocker walk). openChainDrill takes a direction + a header flip button so both
+  downstream blockers and upstream dependents are auditable from one popover. +8
+  deps tests.
+- `6f6fc6e` bundle rebuild (40 modules, JS 34.32KB gz, CSS 9.30KB gz).
+
+Live proof: built /tmp/tsk-t15, a #4->#3->#2->#1 dep chain, `tsk serve
+--addr 127.0.0.1:7895`. /api/export?ids=1,4 returned exactly #1+#4 in store
+order; whole-store returned all four. Served bundle carries every hook
+(lens-bd-prio, lens-chip-key, "select a task first", export-scope-toggle,
+data-chain-flip + "Waiting on #" + "what waits on this?"). Raw .tsk.md stayed
+plain hand-editable markdown with depends: meta; `tsk show 4` + `tsk depend 4
+--tree` read the chain back intact. Storage contract honoured.
+
+Deferred: nothing forced. F48/F49/F50/F54 remain the standing T9 carries.
+T16 backlog (F86-F90) appended below so the loop never starves.
+
+### T16 — depth (appended T15 2026-06-25 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T15 lens-drill / lens-digit / disabled-reason / export-toggle / dependent-
+walk cluster:
+
+- [ ] **F86** Lens-breakdown drill is two-way reversible from the filter bar: once
+      F81 layers a priority facet onto a lens, add a tiny "in <lens>" qualifier to
+      the priority chip in the filter bar while a lens is also active, so it's clear
+      the facet is scoped to the lens, not the whole board.
+- [ ] **F87** Dependent-walk count badge on the row: now that F85 can walk upstream,
+      surface a small "N waiting" badge on a task that other undone tasks depend on
+      (openDependents length), so you can SEE a chokepoint before opening the popover
+      — sister of the existing "blocked by #N" downstream badge.
+- [ ] **F88** Export menu remembers the last scope choice within a session: F84 resets
+      to "shown" each open; persist the All/shown pick in sessionStorage so a user who
+      always wants "All" isn't re-toggling every time.
+- [ ] **F89** Palette disabled-reason for non-set commands too: extend F83 beyond Set
+      due/priority — "Toggle done" with no selection -> "select a task first", "Undo"
+      with nothing to undo -> "nothing to undo", so every greyed command explains itself.
+- [ ] **F90** Help overlay digit map is a live mini-legend: under the bolded F82 lens
+      row, render the five lens labels with their digit kbds inline ("1 blocked · 2
+      overdue · …") and mark the active one, so the ? overlay teaches the whole digit
+      map at a glance.
 
