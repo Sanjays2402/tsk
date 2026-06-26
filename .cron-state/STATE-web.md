@@ -1343,22 +1343,118 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T15 lens-drill / lens-digit / disabled-reason / export-toggle / dependent-
 walk cluster:
 
-- [ ] **F86** Lens-breakdown drill is two-way reversible from the filter bar: once
+- [x] **F86** Lens-breakdown drill is two-way reversible from the filter bar: once
       F81 layers a priority facet onto a lens, add a tiny "in <lens>" qualifier to
       the priority chip in the filter bar while a lens is also active, so it's clear
-      the facet is scoped to the lens, not the whole board.
-- [ ] **F87** Dependent-walk count badge on the row: now that F85 can walk upstream,
+      the facet is scoped to the lens, not the whole board. (tick T16 2026-06-25)
+- [x] **F87** Dependent-walk count badge on the row: now that F85 can walk upstream,
       surface a small "N waiting" badge on a task that other undone tasks depend on
       (openDependents length), so you can SEE a chokepoint before opening the popover
-      — sister of the existing "blocked by #N" downstream badge.
-- [ ] **F88** Export menu remembers the last scope choice within a session: F84 resets
+      — sister of the existing "blocked by #N" downstream badge. (tick T16 2026-06-25)
+- [x] **F88** Export menu remembers the last scope choice within a session: F84 resets
       to "shown" each open; persist the All/shown pick in sessionStorage so a user who
-      always wants "All" isn't re-toggling every time.
-- [ ] **F89** Palette disabled-reason for non-set commands too: extend F83 beyond Set
+      always wants "All" isn't re-toggling every time. (tick T16 2026-06-25)
+- [x] **F89** Palette disabled-reason for non-set commands too: extend F83 beyond Set
       due/priority — "Toggle done" with no selection -> "select a task first", "Undo"
-      with nothing to undo -> "nothing to undo", so every greyed command explains itself.
-- [ ] **F90** Help overlay digit map is a live mini-legend: under the bolded F82 lens
+      with nothing to undo -> "nothing to undo", so every greyed command explains itself. (tick T16 2026-06-25)
+- [x] **F90** Help overlay digit map is a live mini-legend: under the bolded F82 lens
       row, render the five lens labels with their digit kbds inline ("1 blocked · 2
       overdue · …") and mark the active one, so the ? overlay teaches the whole digit
-      map at a glance.
+      map at a glance. (tick T16 2026-06-25)
+
+---
+
+## TICK LOG — T16 (2026-06-25 ~22:52 PT)
+
+Shipped 5/5 web slices on `main` (F86-F90), gated once, pushed clean
+(fc5f47d..910857b). 21 net-new web tests (586 -> 607), Go gates green,
+bundle rebuilt + embedded, live `tsk serve` smoke-tested. The canonical
+workdir `/Volumes/Projects/tsk` WAS mounted this tick — the lock wrapper
+resolved the repo cleanly (HEAD at fc5f47d, clean tree, node_modules
+present). The SSD-absent fallback was not needed.
+
+This batch finishes the T16 standing queue exactly as written (no drops):
+a "consistency + discoverability" cluster that closes loops opened by the
+T15 lens-drill / dependent-walk / export-toggle / disabled-reason work.
+
+- **F86** `ef00686` Priority-facet scope note. New pure
+  filter.renderPriorityScopeNote(lensLabel, state) -> "in <lens>" only when a
+  priority facet AND a lens are both active (else ""); HTML-escaped.
+  renderFilterBar appends it after the priority pills using the active lens
+  meta label; faint italic .fprio-scope, .filter-prios gains
+  align-items:center. +4 filter tests.
+- **F87** `9833f8c` "N waiting" dependent chokepoint badge. deps.ts:
+  dependentCount + renderWaitingBadge (button with the open-dependent count +
+  data-waiting-walk; "" when nothing waits or the task is done). render.ts
+  threads the whole live list through a new RowContext.allTasks and renders the
+  badge beside the blocked badge; main.ts feeds notDeleted and routes a click
+  into the F85 dependent chain-drill (direction "dependent"), anchoring the
+  popover on the waiting badge. Amber .waiting-badge (the upstream mirror of the
+  red blocked-by badge). +4 deps tests.
+- **F88** `4870b33` Persisted export scope. export.ts: EXPORT_SCOPE_KEY +
+  parseExportScope (default shown/true for null/corrupt) + serializeExportScope.
+  main.ts seeds exportScopeShown from sessionStorage at boot, re-reads on each
+  open instead of force-resetting to "shown", and writes on the segment flip.
+  +4 export tests.
+- **F89** `b42d034` Palette disabled-reason for every gated command.
+  palette.ts: SELECTION_GATED_COMMANDS set + commandDisabledReason(id, ctx),
+  which delegates to setCommandDisabledReason first (F83 preserved exactly) then
+  covers undo ("nothing to undo"), filter ("no tasks to filter"), alltasks
+  ("already on all tasks"), and all per-task verbs ("select a task first").
+  main.ts feeds the live ctx and only consults it when the highlighted command
+  is actually disabled. +6 palette tests.
+- **F90** `f129918` Live lens digit-map mini-legend. lens.ts:
+  renderLensDigitMap(active) walks LENS_ORDER (can't drift from lensForDigit)
+  emitting each lens's digit + glyph + label with a data-lens-legend hook; the
+  active entry gets is-active + aria-current. main.ts renders it into a new
+  data-help-legend slot in the help card, refreshed on every open. Faint legend
+  that brightens the active entry to the amber accent. +3 lens tests.
+- `910857b` bundle rebuild (40 modules, JS 34.84KB gz, CSS 9.45KB gz).
+
+Live proof: built /tmp/tsk-t16, a #4->#3->#2->#1 dep chain (so #1 is a
+chokepoint), `tsk serve --addr 127.0.0.1:7896`. /api/export?ids=1,4 returned
+exactly #1+#4 in store order; whole-store returned all four. Served bundle
+carries every hook (fprio-scope, waiting-badge + data-waiting-walk x3,
+tsk.export.scopeShown, "nothing to undo"/"no tasks to filter"/"already on all
+tasks", lens-legend + data-lens-legend + data-help-legend). Toggling the #1
+chokepoint done round-tripped to .tsk.md preserving the depends: chain + adding
+completed:; `tsk depend 4 --tree` read the whole #4->#3->#2->#1 chain back.
+Storage contract honoured.
+
+Deferred: nothing forced. F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu) remain the standing
+long-carries. T17 backlog (F91-F95) appended below so the loop never starves.
+
+### T17 — depth (appended T16 2026-06-25 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T16 scope-note / waiting-badge / persisted-export / disabled-reason /
+digit-legend cluster:
+
+- [ ] **F91** Lens digit-map legend is clickable: F90 renders the five lenses with
+      data-lens-legend hooks but they're inert. Wire a click on a legend entry to
+      toggle that lens (same path as the digit key / stat tile) and close the help
+      overlay, so the ? overlay becomes an actionable lens switcher, not just a
+      readout. Reuse the existing setLens/toggle path.
+- [ ] **F92** Waiting-badge count in the stats sidebar: F87 surfaces a per-row "N
+      waiting" badge; add an aggregate "biggest chokepoint: #N (k waiting)" line to
+      the dep-stats sidebar so the single worst bottleneck is visible without
+      scanning rows. Reuse openDependents over the live graph; tie-break by id.
+- [ ] **F93** Persist the active lens across reloads (sessionStorage): the lens is
+      render-only state today, lost on refresh. Persist the active LensKind per-tab
+      (sessionStorage, NOT localStorage — a lens is time-relative and shouldn't leak
+      across sessions) and restore it on boot, mirroring F88's export-scope pattern.
+      Validate the stored kind against LENS_ORDER so a stale value can't wedge.
+- [ ] **F94** Scope note for the TAG facet too (sister of F86): when a tag chip is
+      active AND a lens is on, show the same "in <lens>" qualifier on the tag row, so
+      every facet layered onto a lens reads as scoped, not just priority. Reuse
+      renderPriorityScopeNote's shape over the tags facet.
+- [ ] **F95** Disabled-reason hints for the bulk-edit bar commands (extend F89's idea
+      beyond the palette): when a bulk action is unavailable (e.g. "set due" with no
+      rows selected, or an operation that would no-op), surface the same quiet reason
+      text in the bulk bar so the floating-bar actions explain themselves too.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, etc.).
 
