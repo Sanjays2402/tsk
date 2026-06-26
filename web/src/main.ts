@@ -66,6 +66,8 @@ import {
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
+  parseLens,
+  LENS_KEY,
   type LensKind,
   type LensBreakdownTask,
 } from "./lens";
@@ -400,7 +402,7 @@ let recalledViewId: string | null = null;
  * chip in the filter bar clears it. The "Open" tile is the exception — it maps
  * to the real `hideDone` facet (which DOES serialize), so it routes there.
  */
-let activeLens: LensKind | null = null;
+let activeLens: LensKind | null = parseLens(sessionStorage.getItem(LENS_KEY));
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -2795,11 +2797,27 @@ function setFilter(next: Partial<FilterState>): void {
  * by clicking a stats tile (Blocked / Overdue / Due today / Due this week / No
  * due → sets it) and the filter-bar lens chip / clear-all (clears it). Exactly
  * one lens is active at a time. Re-renders through the normal pipeline.
+ *
+ * F93: persists the choice per-tab in sessionStorage so a reload restores the
+ * lens (it's time-relative, so sessionStorage — not localStorage — is the right
+ * scope: it shouldn't leak across sessions). persistLens centralizes the write
+ * so the clear paths (clear-all, jump-to-task) stay in sync too.
  */
 function setLens(kind: LensKind | null): void {
   if (activeLens === kind) return;
   activeLens = kind;
+  persistLens();
   render();
+}
+
+/** F93: mirror the active lens (or its absence) into sessionStorage. */
+function persistLens(): void {
+  try {
+    if (activeLens) sessionStorage.setItem(LENS_KEY, activeLens);
+    else sessionStorage.removeItem(LENS_KEY);
+  } catch {
+    // ignore (private mode / storage disabled) — lens still works in-session
+  }
 }
 
 // --- F25: saved views ------------------------------------------------------
@@ -2968,6 +2986,7 @@ els.filterClear.addEventListener("click", () => {
   els.filterInput.value = "";
   filter = emptyFilter();
   activeLens = null; // F66: clear the active lens too
+  persistLens(); // F93: forget the persisted lens on a full clear
   recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
   els.filterInput.focus();
@@ -3692,6 +3711,7 @@ function jumpToTask(id: number): void {
     let needsRender = false;
     if (activeLens) {
       activeLens = null; // F66: clear the active lens too
+      persistLens(); // F93: a jump that drops the lens forgets it from storage
       needsRender = true;
     }
     if (isFilterActive(filter)) {

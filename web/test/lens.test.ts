@@ -13,6 +13,8 @@ import {
   computeLensBreakdown,
   renderLensBreakdown,
   lensBreakdownPriority,
+  parseLens,
+  LENS_KEY,
   LENS_BD_PRIORITIES,
   LENS_ORDER,
   type LensKind,
@@ -215,6 +217,25 @@ test("renderLensDigitMap titles read 'show' for inactive and 'clear' for the act
   // The active entry offers to clear; an inactive one offers to show.
   assert.match(html, /data-lens-legend="today"[^>]*title="Clear the due today lens"/);
   assert.match(html, /data-lens-legend="blocked"[^>]*title="Show only blocked \(key 1\)"/);
+});
+
+// F93 — per-tab active-lens persistence (parseLens + the storage key).
+test("parseLens round-trips every known lens kind", () => {
+  for (const k of LENS_ORDER) {
+    assert.equal(parseLens(k), k);
+  }
+});
+
+test("parseLens rejects null, empty, and unknown values (no wedge)", () => {
+  assert.equal(parseLens(null), null);
+  assert.equal(parseLens(""), null);
+  assert.equal(parseLens("open"), null); // the hide-done facet is NOT a lens
+  assert.equal(parseLens("bogus"), null);
+  assert.equal(parseLens("BLOCKED"), null); // case-sensitive — must match exactly
+});
+
+test("LENS_KEY is the documented per-tab sessionStorage key", () => {
+  assert.equal(LENS_KEY, "tsk.lens");
 });
 
 test("renderLensChipBody is empty when no lens is active", () => {

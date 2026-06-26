@@ -323,6 +323,28 @@ export function renderLensDigitMap(active: LensKind | null): string {
 }
 
 /**
+ * F93: sessionStorage key for the per-tab active lens. A lens is time-relative
+ * (overdue / today / week shift as the clock moves) and cross-task (blocked
+ * depends on other tasks' done state), so it must NOT leak across sessions the
+ * way a saved view does — sessionStorage (per-tab, cleared on close) is the
+ * right scope, mirroring F88's export-scope persistence. Exported so the reader
+ * and writer can't drift on the key string.
+ */
+export const LENS_KEY = "tsk.lens";
+
+/**
+ * F93: decode a persisted lens value into a LensKind, validating it against
+ * LENS_ORDER so a stale/garbage stored value (e.g. a lens kind removed in a
+ * later version, or a hand-poked sessionStorage) can never wedge the board into
+ * an unknown state — it simply falls back to "no lens". Pure → unit-tested.
+ * Returns null for null/empty/unknown input, the matching LensKind otherwise.
+ */
+export function parseLens(raw: string | null): LensKind | null {
+  if (!raw) return null;
+  return (LENS_ORDER as ReadonlyArray<string>).includes(raw) ? (raw as LensKind) : null;
+}
+
+/**
  * F81: the priority levels a lens-breakdown pill can drill into, in the same
  * urgent-first order the pills render. The cross-cut pills (overdue / blocked)
  * are NOT in this set — they're derived facets, not the `priorities` filter
