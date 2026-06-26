@@ -18,6 +18,7 @@ import {
   hasWalkableDependents,
   dependentCount,
   biggestChokepoint,
+  topChokepoints,
   renderWaitingBadge,
   renderBlockedBadge,
   blockedClass,
@@ -583,4 +584,68 @@ test("biggestChokepoint ignores done waiters and done candidates", () => {
   ];
   const idx = doneIndex(list);
   assert.deepEqual(biggestChokepoint(list, idx), { id: 1, count: 1 });
+});
+
+// --- F106: topChokepoints (the ranked runner-up list) ----------------------
+
+test("topChokepoints ranks chokepoints most-blocking first", () => {
+  // #1 has 3 waiters (#2,#3,#4); #5 has 1 (#6). Ranked: #1, then #5.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [1] },
+    { id: 5, done: false },
+    { id: 6, done: false, depends_on: [5] },
+  ];
+  const out = topChokepoints(list, doneIndex(list));
+  assert.deepEqual(out, [
+    { id: 1, count: 3 },
+    { id: 5, count: 1 },
+  ]);
+});
+
+test("topChokepoints[0] always equals biggestChokepoint", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false },
+    { id: 4, done: false, depends_on: [3] },
+    { id: 5, done: false, depends_on: [3] },
+  ];
+  const idx = doneIndex(list);
+  const top = topChokepoints(list, idx);
+  assert.deepEqual(top[0], biggestChokepoint(list, idx)); // #3 with 2 waiters
+});
+
+test("topChokepoints breaks count ties by lowest id", () => {
+  // #1 and #2 each have one waiter; #1 ranks first (lower id).
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [2] },
+  ];
+  const out = topChokepoints(list, doneIndex(list));
+  assert.deepEqual(out, [
+    { id: 1, count: 1 },
+    { id: 2, count: 1 },
+  ]);
+});
+
+test("topChokepoints honours the limit and the empty/zero edges", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false },
+    { id: 4, done: false, depends_on: [3] },
+    { id: 5, done: false },
+    { id: 6, done: false, depends_on: [5] },
+  ];
+  const idx = doneIndex(list);
+  assert.equal(topChokepoints(list, idx, 2).length, 2); // capped
+  assert.deepEqual(topChokepoints(list, idx, 0), []); // limit 0 -> empty
+  assert.deepEqual(topChokepoints(list, idx, -1), []); // negative -> empty
+  // A flat board (nothing waits) yields no chokepoints at all.
+  assert.deepEqual(topChokepoints([{ id: 1, done: false }], new Map([[1, false]])), []);
 });

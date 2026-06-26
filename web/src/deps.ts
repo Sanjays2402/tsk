@@ -591,6 +591,37 @@ export function biggestChokepoint(
 }
 
 /**
+ * F106: the top-N chokepoints, most-blocking first — the ranked generalization
+ * of biggestChokepoint. On a complex board several tasks may each block a
+ * cohort; F92 surfaces only the single worst one, so the runners-up are
+ * invisible without scanning every row for F87 badges. This returns every
+ * undone task that has at least one open dependent, sorted by waiter count
+ * descending (ties broken by lowest id, matching biggestChokepoint's
+ * determinism), capped at `limit`. Pure → unit-tested. The first element always
+ * equals biggestChokepoint, so the two never disagree on "the worst one".
+ *
+ * `limit` defaults to 5 (a tidy sidebar list); a limit <= 0 returns []. Reuses
+ * dependentCount over the same whole-list done index the badges + sidebar use,
+ * so every chokepoint number agrees across the UI.
+ */
+export function topChokepoints(
+  tasks: DepStatsTask[],
+  done: Map<number, boolean>,
+  limit = 5,
+): Chokepoint[] {
+  if (limit <= 0) return [];
+  const all: Chokepoint[] = [];
+  for (const t of tasks) {
+    if (t.done) continue;
+    const count = dependentCount(tasks, t.id, done);
+    if (count === 0) continue;
+    all.push({ id: t.id, count });
+  }
+  all.sort((a, b) => (b.count !== a.count ? b.count - a.count : a.id - b.id));
+  return all.slice(0, limit);
+}
+
+/**
  * F87: render the "N waiting" chokepoint badge for a row — a small affordance on
  * a task that OTHER undone tasks depend on, so you can SEE a bottleneck before
  * opening the F85 dependents popover. The upstream mirror of the F26 "blocked by

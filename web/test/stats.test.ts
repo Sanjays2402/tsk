@@ -10,6 +10,7 @@ import {
   renderTopTags,
   renderDepStats,
   renderChokepoint,
+  renderOtherChokepoints,
   renderScheduleStats,
   renderStatsPanel,
 } from "../src/stats.ts";
@@ -306,4 +307,38 @@ test("renderChokepoint focus button is absent when there's no chokepoint", () =>
 test("renderChokepoint focus title reads naturally for one vs many waiters", () => {
   assert.match(renderChokepoint({ id: 4, count: 1 }), /waiting on #4/);
   assert.match(renderChokepoint({ id: 4, count: 2 }), /2 tasks waiting on #4/);
+});
+
+// --- F106: the "Other bottlenecks" runner-up list --------------------------
+
+test("renderOtherChokepoints skips the biggest and lists the runners-up", () => {
+  const html = renderOtherChokepoints([
+    { id: 1, count: 5 }, // the biggest — shown by renderChokepoint, skipped here
+    { id: 3, count: 3 },
+    { id: 7, count: 2 },
+  ]);
+  assert.match(html, /Other bottlenecks/);
+  // The biggest (#1) is NOT repeated here.
+  assert.doesNotMatch(html, /#1\b/);
+  // The runners-up ARE listed, each with the shared walk + focus hooks.
+  assert.match(html, /data-waiting-walk="3"/);
+  assert.match(html, /data-cohort-focus="3"/);
+  assert.match(html, /data-waiting-walk="7"/);
+  assert.match(html, /data-cohort-focus="7"/);
+  assert.match(html, /3 waiting/);
+  assert.match(html, /2 waiting/);
+});
+
+test("renderOtherChokepoints collapses with 0 or 1 chokepoint", () => {
+  assert.equal(renderOtherChokepoints([]), "");
+  assert.equal(renderOtherChokepoints([{ id: 1, count: 4 }]), "");
+});
+
+test("renderOtherChokepoints uses singular noun in the title for a single waiter", () => {
+  const html = renderOtherChokepoints([
+    { id: 1, count: 3 },
+    { id: 2, count: 1 },
+  ]);
+  assert.match(html, /1 task waits on #2/);
+  assert.match(html, /waiting on #2/); // focus title
 });

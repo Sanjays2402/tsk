@@ -2446,6 +2446,77 @@ button.stat-metric:focus-visible .lens-key {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
+/* F106: the "Other bottlenecks" list — the runner-up chokepoints below the
+   single biggest one. Each row mirrors the F96 chokepoint-row layout (a walk
+   button + a compact focus pill) but at a quieter, denser scale so the list of
+   secondary bottlenecks reads as a triage queue, not a headline. */
+.stat-choke-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+.stat-choke-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1);
+}
+.stat-choke-walk {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.stat-choke-walk:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.stat-choke-walk:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.stat-choke-id {
+  font-weight: 600;
+}
+.stat-choke-n {
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.stat-choke-focus {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.stat-choke-focus:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+.stat-choke-focus:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
 /* F64: the Blocked tile is a button when anything is blocked — it filters the
    list to just those tasks. Match the chain tile's interactive affordance. */
 button.stat-metric.metric-blocked {

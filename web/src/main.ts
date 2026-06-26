@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, biggestChokepoint, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, biggestChokepoint, topChokepoints, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -1315,7 +1315,16 @@ async function refreshStats(): Promise<void> {
       currentTasks as DepStatsTask[],
       doneIndex(currentTasks as DepStatsTask[]),
     );
-    let html = renderStatsPanel(stats, dep, sched, choke);
+    // F106: the ranked chokepoint list so the sidebar can show the runners-up
+    // ("Other bottlenecks") below the single biggest one. Same live list +
+    // done-index, so every chokepoint number agrees across the UI. Capped small
+    // so the section stays a tidy triage list, not a wall.
+    const chokes = topChokepoints(
+      currentTasks as DepStatsTask[],
+      doneIndex(currentTasks as DepStatsTask[]),
+      6,
+    );
+    let html = renderStatsPanel(stats, dep, sched, choke, chokes);
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
     // not just whole-board totals. Computed over the same not-deleted pool the

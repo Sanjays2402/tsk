@@ -219,6 +219,42 @@ export function renderChokepoint(choke?: Chokepoint | null): string {
 }
 
 /**
+ * F106: render the "Other bottlenecks" list — the runner-up chokepoints below
+ * the single biggest one F92/renderChokepoint surfaces. On a board with several
+ * bottlenecks, the second/third worst are invisible without scanning every row
+ * for F87 badges; this lists them compactly so you can triage the whole set.
+ *
+ * `chokes` is the full ranked list from topChokepoints (biggest first); this
+ * renderer SKIPS the first (already shown above) and emits the rest. Each row
+ * reuses the SAME hooks the sidebar's big line + the row badges use:
+ * `data-waiting-walk` (open the dependent chain-drill) on the id/count, and a
+ * compact `data-cohort-focus` "focus" button — so clicking routes through the
+ * existing wiring with zero new dispatch. Returns "" when there are no
+ * runners-up (0 or 1 chokepoint) so the section collapses. Pure → unit-tested.
+ */
+export function renderOtherChokepoints(chokes: Chokepoint[]): string {
+  if (chokes.length <= 1) return "";
+  const rows = chokes
+    .slice(1)
+    .map((c) => {
+      const noun = c.count === 1 ? "task waits" : "tasks wait";
+      const walkTitle = `${c.count} ${noun} on #${c.id} — click to see what`;
+      const focusTitle = `Focus the board on the ${c.count} ${c.count === 1 ? "task" : "tasks"} waiting on #${c.id}`;
+      return `<div class="stat-choke-row">
+        <button type="button" class="stat-choke-walk" data-waiting-walk="${c.id}" title="${escapeHTML(walkTitle)}" aria-label="${escapeHTML(walkTitle)}">
+          <span class="stat-choke-id">#${c.id}</span>
+          <span class="stat-choke-n">&#8593; ${c.count} waiting</span>
+        </button>
+        <button type="button" class="stat-choke-focus" data-cohort-focus="${c.id}" title="${escapeHTML(focusTitle)}" aria-label="${escapeHTML(focusTitle)}">focus</button>
+      </div>`;
+    })
+    .join("");
+  return `
+    <div class="stats-section-label">Other bottlenecks</div>
+    <div class="stat-choke-list">${rows}</div>`;
+}
+
+/**
  * F59: render the schedule lens — a "Due this week" tile (undone work on deck
  * in the next 7 days) and a "No due" tile (undone backlog with no date). Pure →
  * unit-tested. Returns "" when both are zero so the row collapses on an empty /
@@ -261,12 +297,19 @@ export function renderScheduleStats(sched: ScheduleStats): string {
     </div>`;
 }
 
-/** Render the whole stats panel body. Pure → unit-tested. */
+/** Render the whole stats panel body. Pure → unit-tested.
+ *
+ * F106: an optional `chokes` (the ranked top-N chokepoints from topChokepoints)
+ * renders an "Other bottlenecks" list of the runners-up below the dep stats, so
+ * the second/third worst chokepoints are visible alongside the single biggest
+ * one (`choke`). Omitting it keeps the panel byte-identical for older callers.
+ */
 export function renderStatsPanel(
   stats: Stats,
   dep?: DepStats,
   sched?: ScheduleStats,
   choke?: Chokepoint | null,
+  chokes?: Chokepoint[],
 ): string {
   return `
     <div class="stats-top">
@@ -285,6 +328,7 @@ export function renderStatsPanel(
     </div>
     ${sched ? renderScheduleStats(sched) : ""}
     ${dep ? renderDepStats(dep, choke) : ""}
+    ${chokes ? renderOtherChokepoints(chokes) : ""}
     <div class="stats-section-label">Top tags</div>
     ${renderTopTags(stats)}`;
 }
