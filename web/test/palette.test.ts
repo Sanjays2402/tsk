@@ -15,6 +15,7 @@ import {
   renderPriorityPreview,
   setCommandDisabledReason,
   commandDisabledReason,
+  clearLensCommand,
   SELECTION_GATED_COMMANDS,
   renderDisabledReason,
   type Command,
@@ -377,7 +378,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -417,3 +418,33 @@ test("SELECTION_GATED_COMMANDS holds the per-task verbs, not the global ones", (
   assert.ok(!SELECTION_GATED_COMMANDS.has("add"));
   assert.ok(!SELECTION_GATED_COMMANDS.has("undo"));
 });
+
+// --- F98: the "Clear lens" palette command ---------------------------------
+
+test("clearLensCommand names the active lens and is enabled when one is on", () => {
+  const c = clearLensCommand("overdue");
+  assert.equal(c.id, "lens-clear");
+  assert.equal(c.title, "Clear lens (overdue)");
+  assert.equal(c.disabled, false);
+  assert.equal(c.group, "View");
+});
+
+test("clearLensCommand reads plainly and is disabled when no lens is active", () => {
+  const c = clearLensCommand(null);
+  assert.equal(c.id, "lens-clear");
+  assert.equal(c.title, "Clear lens");
+  assert.equal(c.disabled, true);
+});
+
+test("commandDisabledReason: clear-lens with no lens -> 'no lens active'", () => {
+  assert.equal(commandDisabledReason("lens-clear", { ...FULL_CTX, hasLens: false }), "no lens active");
+  // With a lens active it isn't disabled -> no reason.
+  assert.equal(commandDisabledReason("lens-clear", FULL_CTX), null);
+});
+
+test("clearLensCommand is fuzzy-findable by 'lens' and 'clear'", () => {
+  const list = filterCommands([clearLensCommand("blocked")], "clear lens");
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, "lens-clear");
+});
+

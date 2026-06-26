@@ -334,6 +334,28 @@ export interface CommandReasonContext {
   hasTasks: boolean;
   /** Is the board currently on a tag page (so "all tasks" is meaningful)? */
   onTag: boolean;
+  /** F98: is a render-pipeline lens currently active (so "clear lens" is meaningful)? */
+  hasLens: boolean;
+}
+
+/**
+ * F98: build the context-aware "Clear lens" command for the palette. The
+ * keyboard-only path can SET a lens (the digit keys / stat tiles) but had no
+ * explicit CLEAR — you had to reach for the filter-bar chip. This command
+ * closes that loop, routing through setLens(null) like the chip does. Its label
+ * names the active lens ("Clear lens (overdue)") so the palette doubles as a
+ * "which lens am I in?" readout; with no lens it reads plainly and is disabled
+ * (F89/F95 then explain "no lens active" in the preview slot). Pure → unit-
+ * tested. `lensLabel` is the active lens's human label, or null when none.
+ */
+export function clearLensCommand(lensLabel: string | null): Command {
+  return {
+    id: "lens-clear",
+    title: lensLabel ? `Clear lens (${lensLabel})` : "Clear lens",
+    group: "View",
+    keywords: ["lens", "reset", "unfilter", "blocked", "overdue", "today", "week", "due"],
+    disabled: lensLabel === null,
+  };
 }
 
 /**
@@ -345,7 +367,8 @@ export interface CommandReasonContext {
  *     -> "select a task first";
  *   - "Undo last delete" with nothing pending -> "nothing to undo";
  *   - "Focus filter / search" with no tasks   -> "no tasks to filter";
- *   - "Go to all tasks" when already there     -> "already on all tasks".
+ *   - "Go to all tasks" when already there     -> "already on all tasks";
+ *   - "Clear lens" with no lens active (F98)   -> "no lens active".
  * Returns null for a command with no known disabled-reason (the slot hides).
  * Pure → unit-tested. Delegates to setCommandDisabledReason first so the F83
  * set-command behaviour is preserved exactly. The caller only consults this for
@@ -359,5 +382,6 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   if (id === "undo" && !ctx.canUndo) return "nothing to undo";
   if (id === "filter" && !ctx.hasTasks) return "no tasks to filter";
   if (id === "alltasks" && !ctx.onTag) return "already on all tasks";
+  if (id === "lens-clear" && !ctx.hasLens) return "no lens active";
   return null;
 }

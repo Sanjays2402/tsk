@@ -144,6 +144,7 @@ import {
   renderPriorityPreview,
   commandDisabledReason,
   renderDisabledReason,
+  clearLensCommand,
   type Command,
 } from "./palette";
 import {
@@ -4282,6 +4283,11 @@ function buildCommands(): Command[] {
     { id: "undo", title: "Undo last delete", group: "Task", keywords: ["restore"], hint: "u", disabled: !pending },
     { id: "filter", title: "Focus filter / search", group: "View", keywords: ["search", "find"], hint: "/", disabled: Boolean(els.filterbar.hidden) },
     { id: "stats", title: statsOpen ? "Hide stats panel" : "Show stats panel", group: "View", keywords: ["metrics", "summary"], hint: "s" },
+    // F98: a context-aware "Clear lens (<label>)" command — the keyboard-only
+    // way to exit a render-pipeline lens (digit keys / stat tiles SET one, but
+    // there was no palette CLEAR). Shown always so it's discoverable; disabled
+    // (with a "no lens active" reason via F89) when no lens is on.
+    clearLensCommand(activeLens ? lensMeta(activeLens).label : null),
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
     { id: "settings", title: "Open settings", group: "View", keywords: ["preferences", "density", "compact", "options", "config"], hint: "," },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
@@ -4369,6 +4375,10 @@ function runCommand(id: string): void {
       break;
     case "stats":
       toggleStats(!statsOpen);
+      break;
+    case "lens-clear":
+      // F98: drop the active render-pipeline lens (the keyboard-only exit).
+      setLens(null);
       break;
     case "theme":
       cycleTheme();
@@ -4528,6 +4538,7 @@ function paintPaletteDuePreview(): void {
           canUndo: pending !== null,
           hasTasks: !els.filterbar.hidden,
           onTag: route.kind === "tag",
+          hasLens: activeLens !== null,
         })
       : null;
   if (reason !== null) {
