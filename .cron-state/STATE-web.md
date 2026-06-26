@@ -1532,30 +1532,143 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T17 chokepoint / tag-scope / bulk-disabled-reason / clickable-legend /
 persisted-lens cluster:
 
-- [ ] **F96** Chokepoint line also offers a quick "filter to its dependents":
+- [x] **F96** Chokepoint line also offers a quick "filter to its dependents":
       F92 surfaces #N with K waiters and opens the dependent chain-drill on click.
       Add a secondary affordance (or a drill-popover action) that layers a filter
       showing exactly the K undone tasks waiting on #N, so you can act on the whole
       blocked cohort, not just walk it. Reuse openDependents for the id set.
-- [ ] **F97** Persist the stats-sidebar lens-breakdown drilled facet across the
+      (tick T18 2026-06-26)
+- [x] **F97** Persist the stats-sidebar lens-breakdown drilled facet across the
       reload too: F93 restores the active lens, but if F81 layered a priority facet
       onto it (lens AND urgent), that facet rides the normal filter — confirm it
       restores coherently with the lens on boot, and add a regression test for the
       lens+facet combo surviving a reload (sessionStorage lens + the facet state).
-- [ ] **F98** "Clear lens" entry in the Cmd-K palette: the palette can set lenses
+      (tick T18 2026-06-26)
+- [x] **F98** "Clear lens" entry in the Cmd-K palette: the palette can set lenses
       (digit / tile) but has no explicit clear when one's active. Add a context-aware
       "Clear lens (<label>)" command shown only while a lens is active, routing
       through setLens(null), so the keyboard-only path can exit a lens without the
       filter-bar chip. Pair with a disabled-reason ("no lens active") per F89/F95.
-- [ ] **F99** Tag-scope note is clickable to clear the lens (sister of the F86/F94
+      (tick T18 2026-06-26)
+- [x] **F99** Tag-scope note is clickable to clear the lens (sister of the F86/F94
       notes being passive): make the "in <lens>" qualifier a tiny button that clears
       the lens (keeping the facet), so you can drop the lens scope in one click while
       keeping your tag/priority filter. Reuse setLens(null); keep it keyboard-focusable.
-- [ ] **F100** Bulk-bar "set due" / "tag" disabled-reason parity: F95 covers the
+      (tick T18 2026-06-26)
+- [x] **F100** Bulk-bar "set due" / "tag" disabled-reason parity: F95 covers the
       priority + pin menus; extend the same quiet reason line to the due + tag editors
       when they'd no-op (e.g. an empty due-clear on tasks that already have no due, or
       a tag op that changes nothing across the whole selection). Reuse the bulkReasonLine.
+      (tick T18 2026-06-26)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
 for a lens+facet combo, etc.).
+
+---
+
+## TICK LOG — T18 (2026-06-26 ~08:50 PT)
+
+Shipped 5/5 web slices on `main` (F96-F100), gated once, pushed clean
+(95b0a0d..6d06ce3). 33 net-new web tests (633 -> 666), Go gates green,
+bundle rebuilt + embedded, live `tsk serve` smoke-tested. The canonical
+workdir `/Volumes/Projects/tsk` WAS mounted this tick (HEAD at 95b0a0d,
+clean tree, node_modules present). The SSD-absent fallback was not needed.
+
+This batch finishes the T18 standing queue exactly as written (no drops):
+a "close-the-loop" cluster acting on the dependency/lens/bulk surfaces the
+T15-T17 work opened — turning readouts into actions and closing the last
+disabled-reason / persistence gaps.
+
+- **F96** `bd02cae` Focus the board on a chokepoint's waiting cohort. New
+  pure `web/src/cohort.ts` (buildCohort over deps.openDependents, applyCohort,
+  chip markup) — an explicit id-set render-pipeline narrowing, the sibling of a
+  lens (non-serializing, mutually exclusive with one). A "focus" button on the
+  F92 chokepoint line (data-cohort-focus) narrows the board to exactly the K
+  undone waiters; a filter-bar cohort chip (alert hue) clears it. ALSO wired the
+  F92 chokepoint's data-waiting-walk hook in the sidebar (it was previously
+  unwired there — now opens the dependent chain-drill). isExportScoped +
+  jumpToTask + clear-all account for the cohort. +21 tests (cohort 11, stats 3,
+  + the chokepoint suite).
+- **F97** `3fa1ce6` Persist the lens-drilled priority facet across reloads.
+  lens.ts: LENS_FACET_KEY + parseLensFacet (validated JSON array of known
+  levels, garbage-proof) + serializeLensFacet. main.ts persists the facet from
+  setFilter while a lens is active, in persistLens tied to the lens lifecycle,
+  restores at boot only when a lens restored. The F81 lens+facet drill now
+  survives a refresh whole, not just the lens (F93). +8 tests.
+- **F98** `f46f8aa` "Clear lens" Cmd-K command. palette.ts: clearLensCommand
+  (names the active lens; disabled when none) + CommandReasonContext.hasLens so
+  commandDisabledReason explains "no lens active". main.ts adds it to
+  buildCommands + runCommand (setLens(null)) + threads hasLens. The keyboard-only
+  path can now exit a lens without the filter-bar chip. +5 tests.
+- **F99** `be1124c` Clickable lens scope notes. filter.ts: renderPriorityScopeNote
+  + renderTagScopeNote now emit a <button data-lens-scope-clear> (same
+  fprio-scope/ftag-scope class + "in <lens>" text). main.ts wires a delegated
+  click on the priority + tag rows to setLens(null) (drops the lens, keeps the
+  facet). app.css strips the button chrome + adds a hover underline. +3 tests.
+- **F100** `bc75963` Due + tag bulk-edit reason parity. bulkedit.ts: BulkTaskLike
+  gains tags+due; bulkTagCommandReason (set-equal applyTagOps over the selection)
+  + bulkDueClearDisabledReason; bulkReasonLine exported (data-bulk-reason hook);
+  the tag + due editors render a [data-bulk-reason-slot] main.ts fills live per
+  keystroke. Closes the F95 parity so every bulk action explains a no-op. +8 tests.
+- `6d06ce3` bundle rebuild (41 modules, JS 36.50KB gz, CSS 9.91KB gz).
+
+Live proof: built /tmp/tsk-t18, a #2/#3/#4 -> #1 dep chain (so #1 is a
+chokepoint with 3 waiters), `tsk serve --addr 127.0.0.1:7898`. The served
+bundle carried every hook (data-cohort-focus x2, data-filter-cohort x2,
+stat-chokepoint-focus, tsk.lens.facet, lens-clear + "Clear lens" + "no lens
+active", data-lens-scope-clear x2, data-bulk-reason-slot x3 + "no change to
+any selected" + "all already have no due"). /api/export?ids=2,3 returned
+exactly the cohort in store order. Toggling the #1 chokepoint done round-tripped
+to .tsk.md preserving the depends: chain + adding completed:; `tsk show 2` read
+depends:#1 back. Storage contract honoured — the raw .tsk.md stayed plain
+hand-editable markdown.
+
+Commit-split note: F96 and F97 are physically interleaved in main.ts (cohort
+state lives beside the lens-facet boot-restore + persistLens rewrite), so the
+F96 commit carries those few shared lens-restore lines; F97's commit owns the
+lens.ts facet functions + tests + the setFilter hook. Each feature is still
+revertible by its own module/test files; the cumulative index build was verified
+byte-for-byte equal to the final tree before each commit.
+
+Deferred: nothing forced. F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu) remain the standing
+long-carries. T19 backlog (F101-F105) appended below so the loop never starves.
+
+### T19 — depth (appended T18 2026-06-26 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T18 cohort-focus / lens-facet-persist / clear-lens / scope-clear /
+bulk-reason-parity cluster:
+
+- [ ] **F101** Persist the cohort focus across a live-reload refresh: F96's
+      focusCohort is dropped on every render-from-server today (it's re-derived
+      only when you click focus). When an SSE change lands (F21) or you hit refresh,
+      re-derive the cohort for the same sourceId against the fresh graph and keep the
+      focus if it still has waiters (else clear it with a quiet toast), so a chokepoint
+      cohort survives an external .tsk.md edit instead of silently vanishing.
+- [ ] **F102** Cohort focus from the per-row "N waiting" badge too: F87's row badge
+      (data-waiting-walk) opens the dependent chain-drill; add a secondary focus
+      affordance (or a drill-popover "focus these" action) so you can drop into the
+      cohort from ANY chokepoint row, not just the single biggest one F92 surfaces.
+      Reuse setCohort(id); keyboard-reachable from the drill.
+- [ ] **F103** "Clear cohort" + "Focus chokepoint cohort" Cmd-K commands (sisters of
+      F98): a context-aware "Clear cohort focus (N waiting on #M)" shown only while a
+      cohort is active (routes setCohort->clear), plus a "Focus biggest chokepoint"
+      command that runs setCohort(biggestChokepoint.id) keyboard-only. Pair both with
+      disabled-reasons ("no cohort active" / "no chokepoint") per F89/F95.
+- [ ] **F104** Lens+facet saved-view bridge: a cohort/lens is non-serializing by
+      design, but the lens+facet COMBO (F97) is a recurring drill — offer a "save this
+      lens+facet as a view" that captures the facet (the serializable half) and notes
+      the lens kind in the view name (e.g. "Urgent (overdue)"), recalling it re-applies
+      the facet and re-sets the lens. Bridges the F25 saved views to the F66/F81 lenses.
+- [ ] **F105** Bulk-bar reason parity for the priority/pin menus' EMPTY-selection edge
+      + a "nothing selected" guard surfaced consistently: F95/F100 cover no-op reasons
+      for a live selection; round out the family so opening any bulk editor with the
+      bar somehow empty (race) reads a single quiet "select tasks first" instead of an
+      inert menu. Small, but closes the last gap in the bulk disabled-reason cluster.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, a cohort
+history / back-stack, etc.).
