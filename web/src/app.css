@@ -1484,6 +1484,18 @@ button.lens-legend-item:focus-visible {
   border-color: var(--color-accent);
   background: var(--color-accent-soft);
 }
+/* F104: a view that captured a render-pipeline lens (the lens+facet drill) wears
+   a faint leading marker (a small filled triangle echoing the lens chip glyphs)
+   so a lensed view is visually distinct from a plain filter view in the row. */
+.view-chip.is-lensed .view-chip-name::before {
+  content: "\25C8"; /* ◈ — a diamond echoing the "special narrowing" of a lens */
+  margin-right: 4px;
+  opacity: 0.55;
+  font-size: 0.85em;
+}
+.view-chip.is-lensed.is-active .view-chip-name::before {
+  opacity: 0.9;
+}
 .view-chip-name {
   font-family: var(--font-sans);
   font-size: var(--fs-xs);

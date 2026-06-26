@@ -26,6 +26,17 @@ export interface SavedView {
   id: string;
   name: string;
   filter: ViewFilter;
+  /**
+   * F104: an optional render-pipeline lens kind (blocked / overdue / today /
+   * week / nodue) captured alongside the serializable filter. A lens is NOT a
+   * ViewFilter facet — it's time-relative / cross-task, so it can't live inside
+   * `filter` — but the lens+facet COMBO (F81/F97) is a recurring drill worth
+   * naming. Stored as a plain string (validated against LENS_ORDER on the
+   * main.ts side at recall time, via parseLens) so views.ts stays decoupled
+   * from the lens module. Absent for a plain filter-only view (the common case),
+   * keeping older stored views byte-identical.
+   */
+  lens?: string;
 }
 
 export const STORAGE_KEY = "tsk.views";
@@ -69,7 +80,7 @@ export function normalizeViews(raw: unknown): SavedView[] {
     const o = item as Record<string, unknown>;
     if (typeof o.name !== "string" || o.name.trim() === "") continue;
     const f = (typeof o.filter === "object" && o.filter !== null ? o.filter : {}) as Record<string, unknown>;
-    out.push({
+    const view: SavedView = {
       id: typeof o.id === "string" && o.id !== "" ? o.id : makeId(),
       name: o.name.trim(),
       filter: normalizeFilter({
@@ -78,7 +89,13 @@ export function normalizeViews(raw: unknown): SavedView[] {
         tags: Array.isArray(f.tags) ? f.tags.filter((t): t is string => typeof t === "string") : [],
         hideDone: f.hideDone === true,
       }),
-    });
+    };
+    // F104: carry a captured lens kind through round-trips. Kept as a plain
+    // non-empty string here (the main.ts recall path validates it against the
+    // real LENS_ORDER via parseLens, so a stale/garbage kind degrades to "no
+    // lens" rather than wedging the board). A non-string/empty lens is dropped.
+    if (typeof o.lens === "string" && o.lens !== "") view.lens = o.lens;
+    out.push(view);
   }
   return out;
 }
@@ -112,16 +129,32 @@ export function makeId(): string {
  * capturing the given filter. Returns a NEW array. A blank name or an empty
  * filter is rejected (returns the list unchanged) — the caller validates UX
  * messaging; this just guarantees the store stays clean.
+ *
+ * F104: an optional `lens` captures a render-pipeline lens kind alongside the
+ * filter (the lens+facet combo). When a lens is supplied the view is savable
+ * even if the plain filter is otherwise empty (a pure-lens view like "blocked"
+ * is meaningful), so the empty-filter rejection only applies when there's ALSO
+ * no lens. A captured lens is stored on the view; omitting it (or passing
+ * undefined) keeps the filter-only behaviour byte-identical.
  */
-export function addView(views: SavedView[], name: string, filter: ViewFilter): SavedView[] {
+export function addView(views: SavedView[], name: string, filter: ViewFilter, lens?: string): SavedView[] {
   const trimmed = name.trim();
-  if (trimmed === "" || filterIsEmpty(filter)) return views;
+  if (trimmed === "" || (filterIsEmpty(filter) && !lens)) return views;
   const norm = normalizeFilter(filter);
   const existing = views.find((v) => v.name.toLowerCase() === trimmed.toLowerCase());
   if (existing) {
-    return views.map((v) => (v.id === existing.id ? { ...v, name: trimmed, filter: norm } : v));
+    return views.map((v) =>
+      v.id === existing.id ? withLens({ ...v, name: trimmed, filter: norm }, lens) : v,
+    );
   }
-  return [...views, { id: makeId(), name: trimmed, filter: norm }];
+  return [...views, withLens({ id: makeId(), name: trimmed, filter: norm }, lens)];
+}
+
+/** F104: attach (or strip) the optional lens on a view, keeping it absent when none. */
+function withLens(view: SavedView, lens?: string): SavedView {
+  if (lens) return { ...view, lens };
+  const { lens: _drop, ...rest } = view;
+  return rest;
 }
 
 /** Remove a view by id. Returns a NEW array. */
@@ -135,11 +168,17 @@ export function removeView(views: SavedView[], id: string): SavedView[] {
  * changes. An empty filter is rejected (returns the list unchanged) so a view
  * never silently degrades into "match everything". A no-op when the id is
  * unknown. Returns a NEW array.
+ *
+ * F104: an optional `lens` re-captures the render-pipeline lens alongside the
+ * filter, so updating a recalled lens+facet view to the live state keeps the
+ * lens half in sync (toggling the lens off updates the view to filter-only).
+ * When a lens is supplied the empty-filter rejection is relaxed (a pure-lens
+ * view is valid), matching addView. Omitting `lens` strips any stored lens.
  */
-export function updateView(views: SavedView[], id: string, filter: ViewFilter): SavedView[] {
-  if (filterIsEmpty(filter)) return views;
+export function updateView(views: SavedView[], id: string, filter: ViewFilter, lens?: string): SavedView[] {
+  if (filterIsEmpty(filter) && !lens) return views;
   const norm = normalizeFilter(filter);
-  return views.map((v) => (v.id === id ? { ...v, filter: norm } : v));
+  return views.map((v) => (v.id === id ? withLens({ ...v, filter: norm }, lens) : v));
 }
 
 /**
@@ -173,6 +212,42 @@ export function activeView(views: SavedView[], filter: ViewFilter): SavedView | 
   return views.find((v) => filtersEqual(v.filter, filter)) ?? null;
 }
 
+/**
+ * F104: does a saved view match the live filter AND lens? The lens-aware sister
+ * of activeView: a view that captured a lens is "active" only when the live
+ * lens equals the captured one (so "Urgent (overdue)" doesn't light up while
+ * you're on the same facet but a DIFFERENT lens, or no lens). A view with no
+ * captured lens (`view.lens` absent) requires NO live lens to match, so a plain
+ * filter-only view stays distinct from its lensed sibling. `liveLens` is the
+ * active lens kind, or null when none. Unlike activeView this also matches a
+ * pure-lens view (empty filter + a lens), which is a meaningful saved drill.
+ * Pure → unit-tested.
+ */
+export function viewMatches(view: SavedView, filter: ViewFilter, liveLens: string | null): boolean {
+  const lensOk = (view.lens ?? null) === liveLens;
+  if (!lensOk) return false;
+  // A pure-lens view (empty filter) matches on the lens alone; otherwise the
+  // serializable filter must match too.
+  if (filterIsEmpty(view.filter)) return filterIsEmpty(filter);
+  return filtersEqual(view.filter, filter);
+}
+
+/**
+ * F104: the lens-aware active view — the view (if any) matching BOTH the live
+ * filter and the live lens. Used by main.ts to drive the dup-detection +
+ * active-chip highlight so a lens+facet view only reads as "active" when the
+ * whole combo is in effect. Returns null when nothing matches. Unlike
+ * activeView, an empty plain filter is fine here as long as a lens-bearing view
+ * matches the live lens. Pure → unit-tested.
+ */
+export function activeViewWithLens(
+  views: SavedView[],
+  filter: ViewFilter,
+  liveLens: string | null,
+): SavedView | null {
+  return views.find((v) => viewMatches(v, filter, liveLens)) ?? null;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -180,9 +255,15 @@ function escapeHTML(s: string): string {
   );
 }
 
-/** A compact human description of what a view filters, for the chip tooltip. */
+/** A compact human description of what a view filters, for the chip tooltip.
+ *
+ * F104: when the view captured a lens, prefix the description with the lens
+ * kind ("lens: overdue") so the tooltip reveals the WHOLE drill, not just the
+ * serializable facet half. The lens label is the raw kind string (main.ts could
+ * map it to a prettier label, but the kind is already human-legible). */
 export function describeView(v: SavedView): string {
   const parts: string[] = [];
+  if (v.lens) parts.push(`lens: ${v.lens}`);
   if (v.filter.query) parts.push(`"${v.filter.query}"`);
   if (v.filter.priorities.length) parts.push(`priority: ${v.filter.priorities.join("/")}`);
   if (v.filter.tags.length) parts.push(`tags: ${v.filter.tags.map((t) => "#" + t).join(" ")}`);
@@ -201,10 +282,20 @@ export function describeView(v: SavedView): string {
  *   - updatableId: the one view whose filter has diverged from the live filter
  *     (you recalled it, then tweaked) — that chip shows a `data-view-update`
  *     button to overwrite the saved view with the current filter.
+ *
+ * F104:
+ *   - liveLens: the active render-pipeline lens kind (or null). When provided,
+ *     the active-chip highlight uses the lens-aware viewMatches so a lens+facet
+ *     view only lights up when BOTH its facet and its lens are in effect.
+ *     Omitting it (undefined) falls back to the F32 filter-only match so
+ *     existing callers/tests are unaffected.
+ *   - a view that captured a lens wears a small "lens" marker class so it's
+ *     visually distinct from a plain filter view.
  */
 export interface ViewChipOpts {
   draggable?: boolean;
   updatableId?: string | null;
+  liveLens?: string | null;
 }
 
 export function renderViewChips(
@@ -214,14 +305,22 @@ export function renderViewChips(
 ): string {
   if (views.length === 0) return "";
   const dragAttrs = opts.draggable ? ` draggable="true" data-view-drag` : "";
+  // F104: when the caller passes liveLens (even null), use the lens-aware match
+  // so a lensed view's highlight reflects the whole combo; otherwise keep the
+  // F32 filter-only equality.
+  const lensAware = opts.liveLens !== undefined;
   return views
     .map((v) => {
-      const active = filtersEqual(v.filter, filter) ? " is-active" : "";
+      const isActive = lensAware
+        ? viewMatches(v, filter, opts.liveLens ?? null)
+        : filtersEqual(v.filter, filter);
+      const active = isActive ? " is-active" : "";
+      const lensed = v.lens ? " is-lensed" : "";
       const update =
         opts.updatableId && opts.updatableId === v.id
           ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
           : "";
-      return `<span class="view-chip${active}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      return `<span class="view-chip${active}${lensed}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

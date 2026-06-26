@@ -12,6 +12,8 @@ import {
   updateView,
   moveView,
   activeView,
+  activeViewWithLens,
+  viewMatches,
   describeView,
   renderViewChips,
   type ViewFilter,
@@ -192,4 +194,117 @@ test("renderViewChips escapes view names", () => {
   const html = renderViewChips(views, EMPTY);
   assert.doesNotMatch(html, /<b>x<\/b>/);
   assert.match(html, /&lt;b&gt;/);
+});
+
+// --- F104: the lens+facet saved-view bridge --------------------------------
+
+test("addView captures an optional lens and stores it on the view", () => {
+  const out = addView([], "Urgent overdue", { ...EMPTY, priorities: ["urgent"] }, "overdue");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].lens, "overdue");
+  assert.deepEqual(out[0].filter.priorities, ["urgent"]);
+});
+
+test("addView allows a pure-lens view even when the plain filter is empty", () => {
+  const out = addView([], "Blocked", EMPTY, "blocked");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].lens, "blocked");
+  // Still rejected when there's neither a filter nor a lens.
+  assert.equal(addView([], "Nope", EMPTY).length, 0);
+});
+
+test("addView without a lens stores no lens key (back-compat)", () => {
+  const out = addView([], "Work", { ...EMPTY, tags: ["work"] });
+  assert.equal("lens" in out[0], false);
+});
+
+test("addView overwriting a same-name view updates its lens (and strips when omitted)", () => {
+  let v = addView([], "V", { ...EMPTY, priorities: ["high"] }, "today");
+  assert.equal(v[0].lens, "today");
+  // Re-save same name without a lens -> lens stripped, filter updated.
+  v = addView(v, "V", { ...EMPTY, priorities: ["low"] });
+  assert.equal(v.length, 1);
+  assert.equal("lens" in v[0], false);
+  assert.deepEqual(v[0].filter.priorities, ["low"]);
+});
+
+test("normalizeViews round-trips a stored lens and drops a junk one", () => {
+  const stored = [
+    { id: "a", name: "Lensed", filter: { priorities: ["urgent"] }, lens: "overdue" },
+    { id: "b", name: "Junk lens", filter: { tags: ["x"] }, lens: 42 },
+    { id: "c", name: "Empty lens", filter: {}, lens: "" },
+  ];
+  const out = normalizeViews(stored);
+  assert.equal(out[0].lens, "overdue");
+  assert.equal("lens" in out[1], false); // non-string dropped
+  assert.equal("lens" in out[2], false); // empty dropped
+});
+
+test("serialize/parse preserves the captured lens", () => {
+  const views = addView([], "Drill", { ...EMPTY, priorities: ["urgent"] }, "blocked");
+  const round = parseViews(serializeViews(views));
+  assert.equal(round[0].lens, "blocked");
+});
+
+test("viewMatches requires BOTH the facet and the lens to line up", () => {
+  const v: SavedView = { id: "1", name: "UO", filter: { ...EMPTY, priorities: ["urgent"] }, lens: "overdue" };
+  const f: ViewFilter = { ...EMPTY, priorities: ["urgent"] };
+  assert.equal(viewMatches(v, f, "overdue"), true); // facet + lens both match
+  assert.equal(viewMatches(v, f, "blocked"), false); // wrong lens
+  assert.equal(viewMatches(v, f, null), false); // no live lens
+  assert.equal(viewMatches(v, { ...EMPTY, priorities: ["high"] }, "overdue"), false); // wrong facet
+});
+
+test("viewMatches: a lens-less view requires NO live lens", () => {
+  const v: SavedView = { id: "1", name: "W", filter: { ...EMPTY, tags: ["work"] } };
+  const f = { ...EMPTY, tags: ["work"] };
+  assert.equal(viewMatches(v, f, null), true);
+  assert.equal(viewMatches(v, f, "blocked"), false); // a live lens means it's not this plain view
+});
+
+test("viewMatches: a pure-lens view matches on the lens with an empty filter", () => {
+  const v: SavedView = { id: "1", name: "B", filter: { ...EMPTY }, lens: "blocked" };
+  assert.equal(viewMatches(v, EMPTY, "blocked"), true);
+  assert.equal(viewMatches(v, { ...EMPTY, tags: ["x"] }, "blocked"), false); // extra facet
+});
+
+test("activeViewWithLens finds the lens+facet combo, distinct from activeView", () => {
+  const plain: SavedView = { id: "1", name: "Urgent", filter: { ...EMPTY, priorities: ["urgent"] } };
+  const lensed: SavedView = { id: "2", name: "Urgent overdue", filter: { ...EMPTY, priorities: ["urgent"] }, lens: "overdue" };
+  const views = [plain, lensed];
+  const f: ViewFilter = { ...EMPTY, priorities: ["urgent"] };
+  // With the overdue lens on, the lensed view is the active combo.
+  assert.equal(activeViewWithLens(views, f, "overdue")?.id, "2");
+  // With no lens, the plain view is active.
+  assert.equal(activeViewWithLens(views, f, null)?.id, "1");
+  // activeView (lens-blind) only ever sees the first filter match.
+  assert.equal(activeView(views, f)?.id, "1");
+});
+
+test("describeView surfaces the captured lens", () => {
+  const v: SavedView = { id: "1", name: "UO", filter: { ...EMPTY, priorities: ["urgent"] }, lens: "overdue" };
+  assert.match(describeView(v), /lens: overdue/);
+});
+
+test("renderViewChips lens-aware highlight + is-lensed marker", () => {
+  const lensed: SavedView = { id: "2", name: "UO", filter: { ...EMPTY, priorities: ["urgent"] }, lens: "overdue" };
+  const f: ViewFilter = { ...EMPTY, priorities: ["urgent"] };
+  // liveLens matches -> is-active; the chip is also marked is-lensed.
+  const onHtml = renderViewChips([lensed], f, { liveLens: "overdue" });
+  assert.match(onHtml, /is-active/);
+  assert.match(onHtml, /is-lensed/);
+  // liveLens mismatch -> not active (but still marked lensed).
+  const offHtml = renderViewChips([lensed], f, { liveLens: null });
+  assert.doesNotMatch(offHtml, /is-active/);
+  assert.match(offHtml, /is-lensed/);
+});
+
+test("updateView can re-capture or strip the lens", () => {
+  let v = addView([], "V", { ...EMPTY, priorities: ["urgent"] }, "overdue");
+  // Update with a new lens.
+  v = updateView(v, v[0].id, { ...EMPTY, priorities: ["urgent"] }, "blocked");
+  assert.equal(v[0].lens, "blocked");
+  // Update without a lens -> stripped.
+  v = updateView(v, v[0].id, { ...EMPTY, priorities: ["high"] });
+  assert.equal("lens" in v[0], false);
 });

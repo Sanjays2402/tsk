@@ -210,7 +210,7 @@ import {
   removeView,
   updateView,
   moveView,
-  activeView,
+  activeViewWithLens,
   renderViewChips,
   filterIsEmpty,
   filtersEqual,
@@ -3016,43 +3016,75 @@ function saveViews(): void {
 /** Repaint the saved-views chip row + the enabled state of "save view". */
 function renderViewsRow(): void {
   const f = currentViewFilter();
+  const lens: string | null = activeLens; // F104: the live lens half of the drill
   const hasViews = views.length > 0;
-  // The row shows whenever there are saved views OR the current filter is
-  // worth saving — otherwise it stays out of the way.
-  const savable = !filterIsEmpty(f);
+  // The row shows whenever there are saved views OR the current filter/lens is
+  // worth saving — otherwise it stays out of the way. F104: a lens alone (no
+  // facet) is savable too (a pure-lens view).
+  const savable = !filterIsEmpty(f) || lens !== null;
   els.viewsRow.hidden = !hasViews && !savable;
-  // F32: if the last-recalled view still exists but its saved filter no longer
-  // matches the live filter, that chip becomes "updatable" so you can save your
-  // tweaks back onto it.
+  // F32/F104: if the last-recalled view still exists but its saved filter OR
+  // lens no longer matches the live state, that chip becomes "updatable" so you
+  // can save your tweaks back onto it. The match is lens-aware so toggling the
+  // lens off (or to another) marks the recalled view as diverged.
   const recalled = recalledViewId ? views.find((v) => v.id === recalledViewId) : undefined;
-  const updatableId = recalled && !filtersEqual(recalled.filter, f) && !filterIsEmpty(f)
-    ? recalled.id
-    : null;
-  els.viewsChips.innerHTML = renderViewChips(views, f, { draggable: true, updatableId });
-  // Disable "save view" when there's nothing to save, or the exact filter is
-  // already saved (activeView non-null means an identical view exists).
-  const dup = activeView(views, f) !== null;
+  const recalledMatches =
+    recalled &&
+    filtersEqual(recalled.filter, f) &&
+    (recalled.lens ?? null) === lens;
+  const updatableId = recalled && !recalledMatches && savable ? recalled.id : null;
+  els.viewsChips.innerHTML = renderViewChips(views, f, {
+    draggable: true,
+    updatableId,
+    liveLens: lens, // F104: lens-aware active-chip highlight
+  });
+  // Disable "save view" when there's nothing to save, or the exact filter+lens
+  // combo is already saved (activeViewWithLens non-null means an identical
+  // view, lens included, exists).
+  const dup = activeViewWithLens(views, f, lens) !== null;
   els.viewsSave.disabled = !savable || dup;
   els.viewsSave.textContent = dup ? "saved" : "+ save view";
 }
 
-/** Prompt for a name and save the current filter as a view. */
+/** Prompt for a name and save the current filter as a view.
+ *
+ * F104: also capture the active render-pipeline lens (if any) so a lens+facet
+ * drill (F81/F97) — e.g. "Urgent (overdue)" — can be saved as one named view
+ * and recalled whole. A lens makes the view savable even when the plain filter
+ * is otherwise empty (a pure-lens view like "blocked" is meaningful). The lens
+ * kind is stored as a string on the view; recallView validates + re-applies it.
+ */
 function saveCurrentView(): void {
   const f = currentViewFilter();
-  if (filterIsEmpty(f)) {
-    setStatus("nothing to save — set a filter first", true);
+  const lens = activeLens ?? undefined; // F104: capture the lens half of the drill
+  if (filterIsEmpty(f) && !lens) {
+    setStatus("nothing to save — set a filter or lens first", true);
     setTimeout(() => setStatus("ready", false), 3_000);
     return;
   }
-  const name = typeof prompt === "function" ? prompt("Name this view:") : null;
+  // F104: suggest a name that names the lens drill, e.g. "urgent (overdue)".
+  const suggested = lens ? defaultViewName(f, lens) : "";
+  const name = typeof prompt === "function" ? prompt("Name this view:", suggested) : null;
   if (name === null) return; // cancelled
   const trimmed = name.trim();
   if (trimmed === "") return;
-  views = addView(views, trimmed, f);
+  views = addView(views, trimmed, f, lens);
   saveViews();
   render();
   setStatus(`saved view "${trimmed}"`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
+ * F104: a sensible default name for a lens+facet view — the facet priorities
+ * (if any) with the lens label in parentheses, e.g. "urgent (overdue)" or just
+ * "(blocked)" for a pure-lens view. Keeps the saved-view name self-describing so
+ * the chip row reads as a set of named drills.
+ */
+function defaultViewName(f: ViewFilter, lens: LensKind): string {
+  const label = lensMeta(lens).label;
+  const facet = f.priorities.length ? f.priorities.join("/") : "";
+  return facet ? `${facet} (${label})` : `(${label})`;
 }
 
 /** Recall a saved view by id: apply its filter and repaint. */
@@ -3068,6 +3100,13 @@ function recallView(id: string): void {
     hideDone: v.filter.hideDone,
   };
   els.filterInput.value = v.filter.query;
+  // F104: re-apply the captured lens half of the drill. A view that saved a
+  // lens (F81/F97 lens+facet combo) restores BOTH the facet (above) and the
+  // lens here; parseLens validates the stored kind against LENS_ORDER so a
+  // stale/garbage value degrades to "no lens" rather than wedging the board. A
+  // filter-only view (no v.lens) clears any active lens so recall is clean.
+  activeLens = parseLens(v.lens ?? null);
+  persistLens();
   // F32: remember which view is active (drives the "update" affordance) and
   // reflect it into the URL hash so the view is shareable/bookmarkable.
   recalledViewId = id;
@@ -3081,12 +3120,17 @@ function recallView(id: string): void {
   setTimeout(() => setStatus("ready", false), 1_500);
 }
 
-/** F32: overwrite a saved view's filter with the live filter, then repaint. */
+/** F32: overwrite a saved view's filter with the live filter, then repaint.
+ *
+ * F104: also re-capture the live lens so updating a recalled lens+facet view
+ * keeps both halves in sync (toggling the lens off updates it to filter-only).
+ */
 function updateViewToCurrent(id: string): void {
   const f = currentViewFilter();
-  if (filterIsEmpty(f)) return;
+  const lens = activeLens ?? undefined;
+  if (filterIsEmpty(f) && !lens) return;
   const v = views.find((x) => x.id === id);
-  views = updateView(views, id, f);
+  views = updateView(views, id, f, lens);
   saveViews();
   recalledViewId = id; // it now matches again
   render();
@@ -4408,8 +4452,12 @@ function buildCommands(): Command[] {
       id: "save-view",
       title: "Save current filter as a view",
       group: "Views",
-      keywords: ["bookmark", "store", "remember"],
-      disabled: filterIsEmpty(currentViewFilter()) || activeView(views, currentViewFilter()) !== null,
+      keywords: ["bookmark", "store", "remember", "lens"],
+      // F104: savable when a filter OR a lens is in effect; disabled when the
+      // exact filter+lens combo is already saved (lens-aware dup check).
+      disabled:
+        (filterIsEmpty(currentViewFilter()) && activeLens === null) ||
+        activeViewWithLens(views, currentViewFilter(), activeLens) !== null,
     },
     ...viewCommands,
   ];
