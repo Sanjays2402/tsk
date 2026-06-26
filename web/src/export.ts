@@ -80,15 +80,35 @@ function escapeHTML(s: string): string {
  * clear the download will carry only the visible (lens/filter/tag) subset, not
  * the whole store. With null (nothing narrowing the board) the header is
  * omitted and the menu exports everything as before.
+ *
+ * F84: when scoping is active, the header is a two-button "all / shown" segmented
+ * toggle (data-export-scope-toggle) so the menu reaches BOTH targets — mirroring
+ * the palette's two-command split (F78). `scopeShown` selects which segment is
+ * active: true -> the items download the visible subset, false -> the whole
+ * store. The chosen segment wears `is-on`; the format items below carry
+ * data-export-scope so the click handler knows which target to honour without
+ * re-reading the toggle. With null scopedCount (nothing narrows the board) there
+ * is only one possible target, so no toggle is shown.
  */
-export function renderExportMenu(scopedCount: number | null = null): string {
-  const header =
-    scopedCount === null
-      ? ""
-      : `<div class="export-scope" role="presentation">${escapeHTML(exportScopeLabel(scopedCount))}</div>`;
+export function renderExportMenu(
+  scopedCount: number | null = null,
+  scopeShown = true,
+): string {
+  let header = "";
+  if (scopedCount !== null) {
+    const allOn = scopeShown ? "" : " is-on";
+    const shownOn = scopeShown ? " is-on" : "";
+    header = `<div class="export-scope-toggle" role="group" aria-label="Export scope">
+      <button type="button" class="export-scope-seg${allOn}" data-export-scope-toggle="all" aria-pressed="${!scopeShown}">All</button>
+      <button type="button" class="export-scope-seg${shownOn}" data-export-scope-toggle="shown" aria-pressed="${scopeShown}">${escapeHTML(exportScopeLabel(scopedCount).replace(/^Export /, ""))}</button>
+    </div>`;
+  }
+  // F84: items advertise the active scope so the handler honours the toggle.
+  // When nothing narrows the board (scopedCount null) the items are unscoped.
+  const itemScope = scopedCount !== null && scopeShown ? "shown" : "all";
   const items = EXPORT_OPTIONS.map(
     (o) =>
-      `<button type="button" class="export-item" role="menuitem" data-export-format="${o.format}">
+      `<button type="button" class="export-item" role="menuitem" data-export-format="${o.format}" data-export-scope="${itemScope}">
         <span class="export-label">${escapeHTML(o.label)}</span>
         <span class="export-ext">${escapeHTML(o.ext)}</span>
       </button>`,

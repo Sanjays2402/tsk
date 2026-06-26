@@ -2872,6 +2872,42 @@ button.lens-bd-pill.is-drill.is-on {
   color: var(--color-amber-600);
   letter-spacing: 0.02em;
 }
+/* F84: the "all / shown" segmented toggle that lets the menu reach BOTH the
+   whole store and the visible subset (mirrors the palette's two-command split). */
+.export-scope-toggle {
+  display: flex;
+  gap: 2px;
+  padding: var(--sp-1);
+  margin-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--color-border);
+}
+.export-scope-seg {
+  flex: 1;
+  padding: 3px var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.export-scope-seg:hover,
+.export-scope-seg:focus-visible {
+  color: var(--color-text);
+  outline: none;
+}
+.export-scope-seg.is-on {
+  color: var(--color-amber-700, var(--color-accent));
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
 .export-item {
   display: flex;
   align-items: center;

@@ -3054,6 +3054,13 @@ els.bulkbar.addEventListener("click", (e) => {
 // --- F19: export menu wiring -----------------------------------------------
 
 let exportOpen = false;
+/**
+ * F84: which scope segment the export menu's "all / shown" toggle is on. Only
+ * meaningful while scoping is active; defaults to "shown" (the F75 auto-scope)
+ * each time the menu opens so the common case (export what you see) stays one
+ * click, while "All" is now reachable too — mirroring the palette's split.
+ */
+let exportScopeShown = true;
 
 /** Show/hide the export dropdown, painting its items lazily on first open. */
 function toggleExportMenu(open: boolean): void {
@@ -3062,11 +3069,21 @@ function toggleExportMenu(open: boolean): void {
   els.exportToggle.setAttribute("aria-expanded", String(open));
   els.exportToggle.classList.toggle("is-active", open);
   if (open) {
-    // F75: rebuild each open so the "Export N shown" header reflects the live
-    // lens/filter scope (null -> whole store, no header).
-    const scopedCount = isExportScoped() ? visibleIds.length : null;
-    els.exportMenu.innerHTML = renderExportMenu(scopedCount);
+    // F75/F84: rebuild each open so the header reflects the live lens/filter
+    // scope. Reset the toggle to "shown" so the menu opens on the common case.
+    exportScopeShown = true;
+    paintExportMenu();
   }
+}
+
+/**
+ * F84: (re)render the export menu body for the current scope + toggle choice.
+ * Split out from toggleExportMenu so flipping the "all / shown" segment can
+ * repaint in place without closing the menu.
+ */
+function paintExportMenu(): void {
+  const scopedCount = isExportScoped() ? visibleIds.length : null;
+  els.exportMenu.innerHTML = renderExportMenu(scopedCount, exportScopeShown);
 }
 
 /**
@@ -3111,9 +3128,21 @@ els.exportToggle.addEventListener("click", (e) => {
   toggleExportMenu(!exportOpen);
 });
 els.exportMenu.addEventListener("click", (e) => {
-  const item = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-export-format]");
+  const target = e.target as HTMLElement | null;
+  // F84: the "all / shown" segmented toggle flips the menu's scope in place.
+  const seg = target?.closest<HTMLElement>("[data-export-scope-toggle]");
+  if (seg) {
+    exportScopeShown = seg.dataset.exportScopeToggle === "shown";
+    paintExportMenu();
+    return;
+  }
+  const item = target?.closest<HTMLElement>("[data-export-format]");
   if (!item) return;
-  downloadExport(item.dataset.exportFormat as ExportFormat);
+  // F84: honour the item's advertised scope — "shown" forces the visible subset,
+  // "all" forces the whole store — so the toggle reaches both targets just like
+  // the palette's two-command split.
+  const force = item.dataset.exportScope === "shown" ? true : item.dataset.exportScope === "all" ? false : undefined;
+  downloadExport(item.dataset.exportFormat as ExportFormat, force);
 });
 // Click anywhere outside closes the menu.
 document.addEventListener("click", (e) => {

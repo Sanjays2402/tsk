@@ -79,16 +79,57 @@ test("exportScopeLabel reads 'Export N shown' when scoped, 'Export' otherwise", 
   assert.equal(exportScopeLabel(0), "Export 0 shown");
 });
 
-test("renderExportMenu adds a scope header only when scopedCount is a number", () => {
-  assert.doesNotMatch(renderExportMenu(), /export-scope/);
-  assert.doesNotMatch(renderExportMenu(null), /export-scope/);
+test("renderExportMenu adds a scope toggle only when scopedCount is a number", () => {
+  // No scoping -> no toggle header; items default to the 'all' scope.
+  assert.doesNotMatch(renderExportMenu(), /export-scope-toggle/);
+  assert.doesNotMatch(renderExportMenu(null), /export-scope-toggle/);
+  assert.match(renderExportMenu(), /data-export-scope="all"/);
+  // Scoping active -> the all/shown segmented toggle appears.
   const scoped = renderExportMenu(4);
-  assert.match(scoped, /export-scope/);
-  assert.match(scoped, /Export 4 shown/);
+  assert.match(scoped, /export-scope-toggle/);
+  assert.match(scoped, /data-export-scope-toggle="all"/);
+  assert.match(scoped, /data-export-scope-toggle="shown"/);
+  assert.match(scoped, /4 shown/);
   // the items still render alongside the header
   for (const o of EXPORT_OPTIONS) {
     assert.ok(scoped.includes(`data-export-format="${o.format}"`));
   }
+});
+
+// --- F84: scoped export parity for the menu button -------------------------
+
+test("renderExportMenu defaults the 'shown' segment on + scopes items when scoped", () => {
+  const html = renderExportMenu(4); // scopeShown defaults to true
+  // the shown segment is the active one
+  assert.match(html, /data-export-scope-toggle="shown"[^>]*aria-pressed="true"/);
+  assert.match(html, /data-export-scope-toggle="all"[^>]*aria-pressed="false"/);
+  // and the format items advertise the 'shown' scope
+  assert.match(html, /data-export-format="json" data-export-scope="shown"/);
+});
+
+test("renderExportMenu with scopeShown=false flips to the 'all' segment + scope", () => {
+  const html = renderExportMenu(4, false);
+  assert.match(html, /data-export-scope-toggle="all"[^>]*aria-pressed="true"/);
+  assert.match(html, /data-export-scope-toggle="shown"[^>]*aria-pressed="false"/);
+  // items now advertise the whole-store scope
+  assert.match(html, /data-export-format="csv" data-export-scope="all"/);
+  assert.doesNotMatch(html, /data-export-scope="shown"/);
+});
+
+test("renderExportMenu unscoped board keeps items on 'all' regardless of scopeShown", () => {
+  // With nothing narrowing the board there's only one target.
+  for (const shown of [true, false]) {
+    const html = renderExportMenu(null, shown);
+    assert.doesNotMatch(html, /export-scope-toggle/);
+    assert.match(html, /data-export-format="markdown" data-export-scope="all"/);
+  }
+});
+
+test("renderExportMenu 'is-on' marks exactly the active segment", () => {
+  const shownMenu = renderExportMenu(3, true);
+  assert.match(shownMenu, /export-scope-seg is-on" data-export-scope-toggle="shown"/);
+  const allMenu = renderExportMenu(3, false);
+  assert.match(allMenu, /export-scope-seg is-on" data-export-scope-toggle="all"/);
 });
 
 // --- F78: scoped export commands in the palette ----------------------------
