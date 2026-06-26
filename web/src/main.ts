@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, biggestChokepoint, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -1179,7 +1179,15 @@ async function refreshStats(): Promise<void> {
     // F59: the schedule lens (due-this-week / no-due) is likewise derived from
     // the live list, relative to the client's "today".
     const sched = computeScheduleStats(currentTasks, new Date());
-    let html = renderStatsPanel(stats, dep, sched);
+    // F92: the single worst bottleneck — the undone task the most others wait
+    // on — surfaced once in the dep row so the biggest chokepoint is visible
+    // without scanning rows for F87 badges. Computed over the same live list +
+    // whole-list done-index the per-row badges use, so the two always agree.
+    const choke = biggestChokepoint(
+      currentTasks as DepStatsTask[],
+      doneIndex(currentTasks as DepStatsTask[]),
+    );
+    let html = renderStatsPanel(stats, dep, sched, choke);
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
     // not just whole-board totals. Computed over the same not-deleted pool the

@@ -2261,6 +2261,48 @@ button.stat-metric:focus-visible .lens-key {
 .stat-metric.metric-chain .stat-num {
   color: var(--color-accent);
 }
+/* F92: the "biggest chokepoint" line under the dep grid — a full-width button
+   naming the worst bottleneck (#N with the most waiters). A subtle amber wash
+   (matching the F87 row "N waiting" badge hue) marks it as the upstream/impact
+   signal; clicking it opens the dependent chain-drill (shared data-waiting-walk
+   hook), so the worst bottleneck is one click from "what waits on it?". */
+.stat-chokepoint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-accent-soft);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+.stat-chokepoint:hover {
+  border-color: var(--color-accent);
+}
+.stat-chokepoint:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.chokepoint-label {
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+}
+.chokepoint-val {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chokepoint-n {
+  color: var(--color-accent);
+  font-variant-numeric: tabular-nums;
+}
 /* F64: the Blocked tile is a button when anything is blocked — it filters the
    list to just those tasks. Match the chain tile's interactive affordance. */
 button.stat-metric.metric-blocked {

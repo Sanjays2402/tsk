@@ -555,6 +555,42 @@ export function dependentCount(
 }
 
 /**
+ * F92: the single worst bottleneck on the board — the UNDONE task that the most
+ * OTHER undone tasks are directly waiting on. The aggregate of the F87 per-row
+ * "N waiting" badge, surfaced once in the dep-stats sidebar so the most-blocking
+ * task is visible without scanning every row. Pure → unit-tested.
+ *
+ * Scans every task's open-dependent count (reusing dependentCount over the same
+ * whole-list done index the badges use) and keeps the max. Ties break by the
+ * LOWEST id so the result is deterministic (the earliest-declared chokepoint
+ * wins). Returns null when nothing waits on anything (a flat board) so the
+ * sidebar line collapses. A done task can't be a live chokepoint, so only undone
+ * tasks are considered as candidates.
+ */
+export interface Chokepoint {
+  /** The undone task other tasks wait on. */
+  id: number;
+  /** How many undone tasks are directly waiting on it (>= 1). */
+  count: number;
+}
+
+export function biggestChokepoint(
+  tasks: DepStatsTask[],
+  done: Map<number, boolean>,
+): Chokepoint | null {
+  let best: Chokepoint | null = null;
+  for (const t of tasks) {
+    if (t.done) continue;
+    const count = dependentCount(tasks, t.id, done);
+    if (count === 0) continue;
+    if (best === null || count > best.count || (count === best.count && t.id < best.id)) {
+      best = { id: t.id, count };
+    }
+  }
+  return best;
+}
+
+/**
  * F87: render the "N waiting" chokepoint badge for a row — a small affordance on
  * a task that OTHER undone tasks depend on, so you can SEE a bottleneck before
  * opening the F85 dependents popover. The upstream mirror of the F26 "blocked by

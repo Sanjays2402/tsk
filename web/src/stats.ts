@@ -9,7 +9,7 @@
  */
 
 import type { Stats } from "./api";
-import type { DepStats } from "./deps";
+import type { DepStats, Chokepoint } from "./deps";
 import type { ScheduleStats } from "./schedule";
 import { lensDigit } from "./lens.ts";
 
@@ -149,7 +149,7 @@ export function renderTopTags(stats: Stats): string {
  * flat graph) so the section collapses on simple boards. The blocked tile
  * lights up as an alert when anything is blocked.
  */
-export function renderDepStats(dep: DepStats): string {
+export function renderDepStats(dep: DepStats, choke?: Chokepoint | null): string {
   if (dep.blocked === 0 && dep.pinned === 0 && dep.longestChain === 0) return "";
   const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
   // F64/F66: when anything is blocked, the Blocked tile becomes a button that
@@ -183,7 +183,28 @@ export function renderDepStats(dep: DepStats): string {
         <span class="stat-label">Pinned</span>
       </div>
       ${chainTile}
-    </div>`;
+    </div>
+    ${renderChokepoint(choke)}`;
+}
+
+/**
+ * F92: render the single worst bottleneck — the "biggest chokepoint" line for
+ * the dep-stats sidebar, naming the undone task the most others are waiting on
+ * and how many wait (the aggregate of F87's per-row "N waiting" badges). Pure →
+ * unit-tested. Returns "" when there's no chokepoint (a flat board, choke ===
+ * null/undefined) so the line collapses. The line is a button carrying
+ * `data-waiting-walk="<id>"` — the SAME hook the row badge uses — so clicking it
+ * opens the F85 dependent chain-drill for that task, jumping straight from "what's
+ * the worst bottleneck?" to "what exactly waits on it?".
+ */
+export function renderChokepoint(choke?: Chokepoint | null): string {
+  if (!choke || choke.count === 0) return "";
+  const noun = choke.count === 1 ? "task waits" : "tasks wait";
+  const title = `#${choke.id} is the biggest chokepoint — ${choke.count} ${noun} on it; click to see what`;
+  return `<button type="button" class="stat-chokepoint" data-waiting-walk="${choke.id}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">
+      <span class="chokepoint-label">Biggest chokepoint</span>
+      <span class="chokepoint-val">#${choke.id} <span class="chokepoint-n">&#8593; ${choke.count} waiting</span></span>
+    </button>`;
 }
 
 /**
@@ -230,7 +251,12 @@ export function renderScheduleStats(sched: ScheduleStats): string {
 }
 
 /** Render the whole stats panel body. Pure → unit-tested. */
-export function renderStatsPanel(stats: Stats, dep?: DepStats, sched?: ScheduleStats): string {
+export function renderStatsPanel(
+  stats: Stats,
+  dep?: DepStats,
+  sched?: ScheduleStats,
+  choke?: Chokepoint | null,
+): string {
   return `
     <div class="stats-top">
       ${renderDonut(stats)}
@@ -247,7 +273,7 @@ export function renderStatsPanel(stats: Stats, dep?: DepStats, sched?: ScheduleS
       ${renderLensMetric(stats.overdue, "Overdue", "overdue", "overdue")}
     </div>
     ${sched ? renderScheduleStats(sched) : ""}
-    ${dep ? renderDepStats(dep) : ""}
+    ${dep ? renderDepStats(dep, choke) : ""}
     <div class="stats-section-label">Top tags</div>
     ${renderTopTags(stats)}`;
 }

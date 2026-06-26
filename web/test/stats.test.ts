@@ -9,6 +9,7 @@ import {
   renderLensMetric,
   renderTopTags,
   renderDepStats,
+  renderChokepoint,
   renderScheduleStats,
   renderStatsPanel,
 } from "../src/stats.ts";
@@ -242,4 +243,46 @@ test("renderScheduleStats: week + nodue drill tiles show keys 4 and 5", () => {
   const html = renderScheduleStats({ dueThisWeek: 2, noDue: 3 });
   assert.match(html, /lens-key"[^>]*>4</);
   assert.match(html, /lens-key"[^>]*>5</);
+});
+
+// --- F92: biggest-chokepoint line ------------------------------------------
+
+test("renderChokepoint names the worst bottleneck and its waiter count", () => {
+  const html = renderChokepoint({ id: 7, count: 3 });
+  assert.match(html, /Biggest chokepoint/);
+  assert.match(html, /#7/);
+  assert.match(html, /3 waiting/);
+  // It shares the F87 dependent-walk hook so a click opens "what waits on it?".
+  assert.match(html, /data-waiting-walk="7"/);
+});
+
+test("renderChokepoint uses the singular noun for a single waiter", () => {
+  const html = renderChokepoint({ id: 2, count: 1 });
+  assert.match(html, /1 task waits on it/);
+  assert.doesNotMatch(html, /tasks wait/);
+});
+
+test("renderChokepoint collapses to empty for null / zero", () => {
+  assert.equal(renderChokepoint(null), "");
+  assert.equal(renderChokepoint(undefined), "");
+  assert.equal(renderChokepoint({ id: 1, count: 0 }), "");
+});
+
+test("renderDepStats appends the chokepoint line only when one is passed", () => {
+  const dep = { blocked: 2, pinned: 0, longestChain: 1 };
+  assert.match(renderDepStats(dep, { id: 4, count: 2 }), /data-waiting-walk="4"/);
+  // Back-compat: the one-arg call (and a null choke) render no chokepoint line.
+  assert.doesNotMatch(renderDepStats(dep), /stat-chokepoint/);
+  assert.doesNotMatch(renderDepStats(dep, null), /stat-chokepoint/);
+});
+
+test("renderStatsPanel threads the chokepoint through to the dep row", () => {
+  const html = renderStatsPanel(
+    stats(),
+    { blocked: 1, pinned: 0, longestChain: 0 },
+    undefined,
+    { id: 9, count: 5 },
+  );
+  assert.match(html, /Biggest chokepoint/);
+  assert.match(html, /data-waiting-walk="9"/);
 });

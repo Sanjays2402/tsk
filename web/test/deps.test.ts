@@ -17,6 +17,7 @@ import {
   deepestDependentChainFrom,
   hasWalkableDependents,
   dependentCount,
+  biggestChokepoint,
   renderWaitingBadge,
   renderBlockedBadge,
   blockedClass,
@@ -532,4 +533,54 @@ test("renderWaitingBadge is empty when nothing waits on a task, or it is done", 
   ];
   const idx2 = doneIndex(doneChoke);
   assert.equal(renderWaitingBadge(doneChoke[0] as DepTask, doneChoke, idx2), "");
+});
+
+// --- F92: biggest chokepoint (the worst bottleneck) ------------------------
+
+test("biggestChokepoint picks the undone task the most others wait on", () => {
+  // #1 has two waiters (#2, #3); #4 has one (#5). #1 wins.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false },
+    { id: 5, done: false, depends_on: [4] },
+  ];
+  const idx = doneIndex(list);
+  assert.deepEqual(biggestChokepoint(list, idx), { id: 1, count: 2 });
+});
+
+test("biggestChokepoint breaks ties by the lowest id (deterministic)", () => {
+  // #1 and #2 each have exactly one waiter; the lower id (#1) wins.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [2] },
+  ];
+  const idx = doneIndex(list);
+  assert.deepEqual(biggestChokepoint(list, idx), { id: 1, count: 1 });
+});
+
+test("biggestChokepoint returns null on a flat board (nothing waits)", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false },
+  ];
+  assert.equal(biggestChokepoint(list, doneIndex(list)), null);
+});
+
+test("biggestChokepoint ignores done waiters and done candidates", () => {
+  // #1 is depended on by done #2 (doesn't count) and open #3 (counts) -> 1.
+  // #4 is depended on by open #5 -> 1, but #4 itself is done so it's not a
+  // candidate; only the count of OPEN waiters on OPEN tasks matters.
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: true, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: true },
+    { id: 5, done: false, depends_on: [4] },
+  ];
+  const idx = doneIndex(list);
+  assert.deepEqual(biggestChokepoint(list, idx), { id: 1, count: 1 });
 });
