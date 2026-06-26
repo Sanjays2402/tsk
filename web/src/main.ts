@@ -128,7 +128,7 @@ import {
   priorityForCommandId,
   priorityPreviewVM,
   renderPriorityPreview,
-  setCommandDisabledReason,
+  commandDisabledReason,
   renderDisabledReason,
   type Command,
 } from "./palette";
@@ -4303,12 +4303,22 @@ function paintPaletteDuePreview(): void {
   const line = el?.querySelector<HTMLElement>("[data-cmdk-due-preview]");
   if (!line) return;
   const cmd = paletteResults[paletteIndex];
-  // F83: a highlighted "Set due ▸" / "Set priority ▸" command that's disabled
-  // for lack of a selection explains itself in the slot ("select a task first")
-  // rather than just greying — the actionable reason, not a dead preview. The
-  // "already <level>" case is handled below by priorityPreviewVM's empty state.
+  // F83/F89: a highlighted DISABLED command explains itself in the slot instead
+  // of just greying — "select a task first" for the per-task verbs + the Set
+  // due/priority group, "nothing to undo" / "no tasks to filter" / "already on
+  // all tasks" for the other gated commands. Only shown when the command is
+  // actually disabled; the "already <level>" case is left to priorityPreviewVM's
+  // empty state below. commandDisabledReason subsumes the F83 set-command path.
   const sel = nav.selectedId;
-  const reason = cmd ? setCommandDisabledReason(cmd.id, sel !== null) : null;
+  const reason =
+    cmd && cmd.disabled
+      ? commandDisabledReason(cmd.id, {
+          hasSel: sel !== null,
+          canUndo: pending !== null,
+          hasTasks: !els.filterbar.hidden,
+          onTag: route.kind === "tag",
+        })
+      : null;
   if (reason !== null) {
     paletteDueParseSeq++; // invalidate any in-flight due parse — the hint wins the slot
     line.hidden = false;

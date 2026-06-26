@@ -14,6 +14,8 @@ import {
   priorityPreviewVM,
   renderPriorityPreview,
   setCommandDisabledReason,
+  commandDisabledReason,
+  SELECTION_GATED_COMMANDS,
   renderDisabledReason,
   type Command,
 } from "../src/palette.ts";
@@ -371,4 +373,47 @@ test("renderDisabledReason escapes its text", () => {
   const html = renderDisabledReason("<b>pick</b> & go");
   assert.match(html, /&lt;b&gt;pick&lt;\/b&gt; &amp; go/);
   assert.doesNotMatch(html, /<b>pick/);
+});
+
+// --- F89: general disabled-reason hints for every gated command ------------
+
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true };
+
+test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
+  const ctx = { ...FULL_CTX, hasSel: false };
+  for (const id of SELECTION_GATED_COMMANDS) {
+    assert.equal(commandDisabledReason(id, ctx), "select a task first", `for ${id}`);
+  }
+  // The F83 set-command group is still covered (delegated through).
+  assert.equal(commandDisabledReason("prio-set-urgent", ctx), "select a task first");
+  assert.equal(commandDisabledReason("due-set-today", ctx), "select a task first");
+});
+
+test("commandDisabledReason: undo with nothing pending -> 'nothing to undo'", () => {
+  assert.equal(commandDisabledReason("undo", { ...FULL_CTX, canUndo: false }), "nothing to undo");
+  // With something to undo it's not disabled -> no reason.
+  assert.equal(commandDisabledReason("undo", FULL_CTX), null);
+});
+
+test("commandDisabledReason: filter with no tasks -> 'no tasks to filter'", () => {
+  assert.equal(commandDisabledReason("filter", { ...FULL_CTX, hasTasks: false }), "no tasks to filter");
+  assert.equal(commandDisabledReason("filter", FULL_CTX), null);
+});
+
+test("commandDisabledReason: all-tasks while not on a tag -> 'already on all tasks'", () => {
+  assert.equal(commandDisabledReason("alltasks", { ...FULL_CTX, onTag: false }), "already on all tasks");
+  assert.equal(commandDisabledReason("alltasks", FULL_CTX), null);
+});
+
+test("commandDisabledReason: null for commands with no known reason", () => {
+  assert.equal(commandDisabledReason("add", { ...FULL_CTX, hasSel: false }), null);
+  assert.equal(commandDisabledReason("stats", { ...FULL_CTX, hasSel: false }), null);
+  assert.equal(commandDisabledReason("theme", FULL_CTX), null);
+});
+
+test("SELECTION_GATED_COMMANDS holds the per-task verbs, not the global ones", () => {
+  assert.ok(SELECTION_GATED_COMMANDS.has("toggle"));
+  assert.ok(SELECTION_GATED_COMMANDS.has("delete"));
+  assert.ok(!SELECTION_GATED_COMMANDS.has("add"));
+  assert.ok(!SELECTION_GATED_COMMANDS.has("undo"));
 });

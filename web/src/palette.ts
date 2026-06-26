@@ -304,3 +304,60 @@ export function setCommandDisabledReason(id: string, hasSel: boolean): string | 
 export function renderDisabledReason(reason: string): string {
   return `<span class="due-preview is-empty">${escapeHTML(reason)}</span>`;
 }
+
+/**
+ * F89: the per-task command ids that need a SELECTION to act on, so a disabled
+ * one (no row selected) can explain itself with "select a task first" — the
+ * same reason F83 gives the Set due/priority commands. Exported as a single
+ * source of truth so the reason map can't drift from buildCommands' disabled
+ * gating (these are the ids whose `disabled` is `!hasSel`).
+ */
+export const SELECTION_GATED_COMMANDS: ReadonlySet<string> = new Set([
+  "toggle",
+  "edit",
+  "due",
+  "notes",
+  "deps",
+  "pin",
+  "prio-up",
+  "prio-down",
+  "delete",
+]);
+
+/** F89: the live context a disabled command needs to explain WHY it's greyed. */
+export interface CommandReasonContext {
+  /** Is a task currently selected? */
+  hasSel: boolean;
+  /** Is there a pending delete to undo? */
+  canUndo: boolean;
+  /** Are there any tasks to filter (the filter bar is shown)? */
+  hasTasks: boolean;
+  /** Is the board currently on a tag page (so "all tasks" is meaningful)? */
+  onTag: boolean;
+}
+
+/**
+ * F89: the human reason ANY disabled palette command is greyed — the general
+ * form of F83, which only covered the Set due/priority group. So every greyed
+ * command explains itself in the preview slot:
+ *   - the selection-gated per-task verbs (toggle/edit/due/notes/deps/pin/
+ *     prio-up/prio-down/delete) + the Set due/priority group, with no selection
+ *     -> "select a task first";
+ *   - "Undo last delete" with nothing pending -> "nothing to undo";
+ *   - "Focus filter / search" with no tasks   -> "no tasks to filter";
+ *   - "Go to all tasks" when already there     -> "already on all tasks".
+ * Returns null for a command with no known disabled-reason (the slot hides).
+ * Pure → unit-tested. Delegates to setCommandDisabledReason first so the F83
+ * set-command behaviour is preserved exactly. The caller only consults this for
+ * a command it already knows is disabled, so the context conditions here line
+ * up with buildCommands' `disabled` gates.
+ */
+export function commandDisabledReason(id: string, ctx: CommandReasonContext): string | null {
+  const setReason = setCommandDisabledReason(id, ctx.hasSel);
+  if (setReason !== null) return setReason;
+  if (SELECTION_GATED_COMMANDS.has(id) && !ctx.hasSel) return "select a task first";
+  if (id === "undo" && !ctx.canUndo) return "nothing to undo";
+  if (id === "filter" && !ctx.hasTasks) return "no tasks to filter";
+  if (id === "alltasks" && !ctx.onTag) return "already on all tasks";
+  return null;
+}
