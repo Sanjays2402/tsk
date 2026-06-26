@@ -275,3 +275,32 @@ export function priorityPreviewVM(
 export function renderPriorityPreview(vm: PriorityPreview): string {
   return `<span class="due-preview is-${vm.state}">${escapeHTML(vm.text)}</span>`;
 }
+
+/**
+ * F83: the human reason a "Set due ▸" / "Set priority ▸" palette command is
+ * disabled, so a greyed command can explain itself in the preview slot instead
+ * of just dimming. Pure → unit-tested.
+ *
+ * Only the "no selection" case is surfaced here: a set command needs a target
+ * task, and without one every set command is disabled — \"select a task first\"
+ * tells you the one thing to do. The OTHER disabled case ("already urgent") is
+ * already handled by priorityPreviewVM's empty state, which renders its own
+ * "Already <Level>" text, so it's intentionally left to that path. Returns null
+ * for any non-set command (no hint) or when a selection exists (the normal
+ * preview takes over).
+ */
+export function setCommandDisabledReason(id: string, hasSel: boolean): string | null {
+  const isSet = priorityForCommandId(id) !== null || dueTokenForCommandId(id) !== null;
+  if (!isSet) return null;
+  if (!hasSel) return "select a task first";
+  return null;
+}
+
+/**
+ * F83: render a disabled-reason hint into the shared palette preview slot,
+ * reusing the `.due-preview is-empty` faint style so it reads as a quiet
+ * "can't do this yet" note rather than a live preview. Pure → unit-tested.
+ */
+export function renderDisabledReason(reason: string): string {
+  return `<span class="due-preview is-empty">${escapeHTML(reason)}</span>`;
+}

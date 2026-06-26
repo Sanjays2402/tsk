@@ -13,6 +13,8 @@ import {
   priorityForCommandId,
   priorityPreviewVM,
   renderPriorityPreview,
+  setCommandDisabledReason,
+  renderDisabledReason,
   type Command,
 } from "../src/palette.ts";
 
@@ -328,4 +330,45 @@ test("renderPriorityPreview escapes its text", () => {
   const html = renderPriorityPreview({ state: "valid", text: "<x> & y" });
   assert.match(html, /&lt;x&gt; &amp; y/);
   assert.doesNotMatch(html, /<x>/);
+});
+
+// --- F83: disabled-reason hints for set commands ---------------------------
+
+test("setCommandDisabledReason: no selection -> 'select a task first' for set commands", () => {
+  assert.equal(setCommandDisabledReason("prio-set-urgent", false), "select a task first");
+  assert.equal(setCommandDisabledReason("due-set-today", false), "select a task first");
+  assert.equal(setCommandDisabledReason("due-set-clear", false), "select a task first");
+});
+
+test("setCommandDisabledReason: with a selection -> null (the normal preview takes over)", () => {
+  assert.equal(setCommandDisabledReason("prio-set-urgent", true), null);
+  assert.equal(setCommandDisabledReason("due-set-today", true), null);
+});
+
+test("setCommandDisabledReason: null for non-set commands either way", () => {
+  assert.equal(setCommandDisabledReason("add", false), null);
+  assert.equal(setCommandDisabledReason("toggle", false), null);
+  assert.equal(setCommandDisabledReason("export-csv", false), null);
+  assert.equal(setCommandDisabledReason("view:abc", false), null);
+});
+
+test("setCommandDisabledReason covers every priority + due preset id", () => {
+  for (const lvl of ["urgent", "high", "medium", "low"]) {
+    assert.equal(setCommandDisabledReason(`prio-set-${lvl}`, false), "select a task first");
+  }
+  for (const tok of ["today", "tomorrow", "eow", "1w", "eom"]) {
+    assert.equal(setCommandDisabledReason(`due-set-${tok}`, false), "select a task first");
+  }
+});
+
+test("renderDisabledReason reuses the faint .due-preview is-empty style", () => {
+  const html = renderDisabledReason("select a task first");
+  assert.match(html, /due-preview is-empty/);
+  assert.match(html, /select a task first/);
+});
+
+test("renderDisabledReason escapes its text", () => {
+  const html = renderDisabledReason("<b>pick</b> & go");
+  assert.match(html, /&lt;b&gt;pick&lt;\/b&gt; &amp; go/);
+  assert.doesNotMatch(html, /<b>pick/);
 });
