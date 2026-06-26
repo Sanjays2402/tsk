@@ -139,6 +139,9 @@ import {
   renderExportMenu,
   buildExportCommands,
   exportCommandTarget,
+  EXPORT_SCOPE_KEY,
+  parseExportScope,
+  serializeExportScope,
   type ExportFormat,
 } from "./export";
 import {
@@ -3074,8 +3077,13 @@ let exportOpen = false;
  * meaningful while scoping is active; defaults to "shown" (the F75 auto-scope)
  * each time the menu opens so the common case (export what you see) stays one
  * click, while "All" is now reachable too — mirroring the palette's split.
+ *
+ * F88: the choice is persisted per-session in sessionStorage so a user who
+ * always wants "All" isn't re-toggling on every open. Seeded from storage at
+ * boot (default "shown" when unset), and re-read on each open so the toggle
+ * sticks within the session but resets cleanly on a new tab/session.
  */
-let exportScopeShown = true;
+let exportScopeShown = parseExportScope(sessionStorage.getItem(EXPORT_SCOPE_KEY));
 
 /** Show/hide the export dropdown, painting its items lazily on first open. */
 function toggleExportMenu(open: boolean): void {
@@ -3085,8 +3093,9 @@ function toggleExportMenu(open: boolean): void {
   els.exportToggle.classList.toggle("is-active", open);
   if (open) {
     // F75/F84: rebuild each open so the header reflects the live lens/filter
-    // scope. Reset the toggle to "shown" so the menu opens on the common case.
-    exportScopeShown = true;
+    // scope. F88: re-read the persisted scope choice so it sticks across opens
+    // within the session (no longer force-reset to "shown" each time).
+    exportScopeShown = parseExportScope(sessionStorage.getItem(EXPORT_SCOPE_KEY));
     paintExportMenu();
   }
 }
@@ -3148,6 +3157,8 @@ els.exportMenu.addEventListener("click", (e) => {
   const seg = target?.closest<HTMLElement>("[data-export-scope-toggle]");
   if (seg) {
     exportScopeShown = seg.dataset.exportScopeToggle === "shown";
+    // F88: persist the choice for the session so it survives reopening.
+    sessionStorage.setItem(EXPORT_SCOPE_KEY, serializeExportScope(exportScopeShown));
     paintExportMenu();
     return;
   }

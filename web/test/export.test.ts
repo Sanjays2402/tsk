@@ -9,6 +9,9 @@ import {
   renderExportMenu,
   buildExportCommands,
   exportCommandTarget,
+  EXPORT_SCOPE_KEY,
+  parseExportScope,
+  serializeExportScope,
   type ExportFormat,
 } from "../src/export.ts";
 
@@ -203,4 +206,27 @@ test("exportCommandTarget round-trips every buildExportCommands id", () => {
     // scoped ids decode to scoped:true, whole-store to scoped:false
     assert.equal(t!.scoped, c.id.startsWith("export-scoped-"));
   }
+});
+
+// F88 — persisted All/shown scope choice.
+test("EXPORT_SCOPE_KEY is a stable sessionStorage key", () => {
+  assert.equal(EXPORT_SCOPE_KEY, "tsk.export.scopeShown");
+});
+
+test("parseExportScope defaults to shown (true) for unset / unknown values", () => {
+  assert.equal(parseExportScope(null), true); // never set
+  assert.equal(parseExportScope("1"), true); // shown
+  assert.equal(parseExportScope("garbage"), true); // corrupt -> safe default
+});
+
+test("parseExportScope decodes the explicit 'all' choice", () => {
+  assert.equal(parseExportScope("0"), false);
+});
+
+test("serializeExportScope round-trips through parseExportScope", () => {
+  for (const v of [true, false]) {
+    assert.equal(parseExportScope(serializeExportScope(v)), v);
+  }
+  assert.equal(serializeExportScope(true), "1");
+  assert.equal(serializeExportScope(false), "0");
 });

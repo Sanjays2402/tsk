@@ -73,6 +73,31 @@ function escapeHTML(s: string): string {
 }
 
 /**
+ * F88: the sessionStorage key the export menu persists its All/shown scope
+ * choice under, so a user who always wants "All" isn't re-toggling every open
+ * within a session (F84 reset to "shown" each open). Exported as a constant so
+ * the reader + writer can't drift.
+ */
+export const EXPORT_SCOPE_KEY = "tsk.export.scopeShown";
+
+/**
+ * F88: decode a persisted export-scope preference into the `scopeShown` boolean
+ * the menu renders with. Pure → unit-tested. Stored as "1" (shown) / "0" (all);
+ * anything else — including null (never set) — falls back to `true` (the F84
+ * default of "export what you see"), so the common case stays one click and a
+ * corrupt/absent value can never wedge the menu.
+ */
+export function parseExportScope(raw: string | null): boolean {
+  if (raw === "0") return false;
+  return true;
+}
+
+/** F88: serialize the scopeShown choice for sessionStorage ("1" / "0"). */
+export function serializeExportScope(scopeShown: boolean): string {
+  return scopeShown ? "1" : "0";
+}
+
+/**
  * Render the export dropdown menu. Pure -> unit-tested. Each item carries
  * data-export-format so a delegated listener can trigger the download.
  *
