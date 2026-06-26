@@ -83,3 +83,39 @@ export function cohortChipTitle(focus: CohortFocus): string {
   const noun = n === 1 ? "task" : "tasks";
   return `Showing only the ${n} ${noun} waiting on #${focus.sourceId} — click to clear`;
 }
+
+/**
+ * F101: the outcome of re-deriving a cohort focus against a fresh task list.
+ * A cohort's `ids` are a snapshot of who waited on #sourceId at click time; an
+ * external edit (CLI / TUI / hand / another tab) can complete those waiters,
+ * add new ones, or finish #sourceId itself. After a refresh the focus must
+ * track reality rather than show a stale set.
+ */
+export interface CohortReconcile {
+  /** The refreshed cohort (updated id set), or null when it no longer holds. */
+  focus: CohortFocus | null;
+  /** True when a previously-held cohort lost ALL its waiters — caller toasts. */
+  cleared: boolean;
+}
+
+/**
+ * F101: re-derive a cohort focus against the current graph. Given the previous
+ * focus and the fresh task list, rebuild the cohort for the SAME sourceId via
+ * buildCohort:
+ *   - no prior focus           -> { focus: null, cleared: false }  (nothing to do)
+ *   - sourceId still has waiters-> { focus: <fresh>, cleared: false } (id set updated)
+ *   - sourceId done / gone /
+ *     all waiters completed     -> { focus: null,  cleared: true }  (focus dropped)
+ * Pure → unit-tested. main.ts calls this on every refresh so a focused cohort
+ * survives external edits (with a live id set) instead of silently going stale,
+ * and drops cleanly (with a quiet toast) when its blocked cohort is all done.
+ */
+export function reconcileCohort(
+  tasks: DepStatsTask[],
+  prev: CohortFocus | null,
+): CohortReconcile {
+  if (prev === null) return { focus: null, cleared: false };
+  const fresh = buildCohort(tasks, prev.sourceId);
+  if (fresh === null) return { focus: null, cleared: true };
+  return { focus: fresh, cleared: false };
+}

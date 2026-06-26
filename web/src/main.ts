@@ -79,6 +79,7 @@ import {
   applyCohort,
   renderCohortChipBody,
   cohortChipTitle,
+  reconcileCohort,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -1257,6 +1258,21 @@ async function refresh(): Promise<void> {
     const { file, tasks } = await api.listTasks();
     currentTasks = tasks;
     els.file.textContent = file;
+    // F101: a cohort focus is a SNAPSHOT of who waited on a chokepoint at click
+    // time; an external edit (CLI / TUI / hand / another tab, surfaced via the
+    // F21 SSE refresh) can complete those waiters or finish the chokepoint
+    // itself. Re-derive the focus against the fresh graph so it tracks reality:
+    // keep it with a live id set while it still has waiters, drop it (with a
+    // quiet toast) when the whole blocked cohort is done. Without this the focus
+    // would silently show a stale set — or vanish on the next manual render.
+    if (focusCohort) {
+      const prevSourceId = focusCohort.sourceId;
+      const rec = reconcileCohort(currentTasks as DepStatsTask[], focusCohort);
+      focusCohort = rec.focus;
+      if (rec.cleared) {
+        showInfoToast(`Cohort cleared — nothing waits on #${prevSourceId} anymore`);
+      }
+    }
     setStatus("ready", false);
     render();
     refreshStats();
