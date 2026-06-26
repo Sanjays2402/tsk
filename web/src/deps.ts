@@ -540,6 +540,47 @@ export function hasWalkableDependents(tasks: DepStatsTask[], start: number): boo
 }
 
 /**
+ * F87: how many UNDONE tasks are directly waiting on `target` — the count of its
+ * open dependents. A thin convenience over openDependents (it just returns the
+ * length) so the row renderer can decide whether to show a "N waiting"
+ * chokepoint badge without materializing the id list twice. Pure → unit-tested.
+ * Zero when nothing waits on it.
+ */
+export function dependentCount(
+  tasks: DepStatsTask[],
+  target: number,
+  done: Map<number, boolean>,
+): number {
+  return openDependents(tasks, target, done).length;
+}
+
+/**
+ * F87: render the "N waiting" chokepoint badge for a row — a small affordance on
+ * a task that OTHER undone tasks depend on, so you can SEE a bottleneck before
+ * opening the F85 dependents popover. The upstream mirror of the F26 "blocked by
+ * #N" badge (which points DOWN at what blocks a task); this points UP at what
+ * the task blocks. Returns "" when nothing waits on it so the badge collapses.
+ *
+ * The badge carries `data-waiting-walk="<id>"` so a delegated click opens the
+ * same F85 dependent chain-drill popover (direction "dependent"), reusing its
+ * keyboard nav + flip-to-blockers affordance. A done task is never a live
+ * chokepoint (it's finished), so the caller passes the whole-list done index and
+ * this returns "" for anything with no OPEN dependents.
+ */
+export function renderWaitingBadge(
+  task: DepTask,
+  tasks: DepStatsTask[],
+  done: Map<number, boolean>,
+): string {
+  if (task.done) return "";
+  const n = dependentCount(tasks, task.id, done);
+  if (n === 0) return "";
+  const noun = n === 1 ? "task waits" : "tasks wait";
+  const title = `${n} ${noun} on #${task.id} — click to see what`;
+  return `<button type="button" class="waiting-badge" data-waiting-walk="${task.id}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">&#8593; ${n} waiting</button>`;
+}
+
+/**
  * F56: render the longest-chain drill-down as an ordered jump-list. Each step
  * is a button carrying `data-chain-jump="<id>"` so a delegated click selects +
  * scrolls to that task; an arrow separates the steps to read the chain

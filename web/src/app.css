@@ -844,6 +844,35 @@ button.priority:focus-visible {
   outline: 2px solid var(--color-overdue);
   outline-offset: 1px;
 }
+/* F87: the "N waiting" chokepoint badge — the upstream mirror of the blocked-by
+   badge. Uses the amber/today hue (not the overdue red) so the two directions
+   read as distinct: red = "I'm blocked", amber = "things wait on me". */
+.waiting-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--color-today);
+  background: color-mix(in srgb, var(--color-today) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-today) 36%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.waiting-badge:hover {
+  background: color-mix(in srgb, var(--color-today) 24%, transparent);
+  border-color: var(--color-today);
+}
+.waiting-badge:focus-visible {
+  outline: 2px solid var(--color-today);
+  outline-offset: 1px;
+}
 /* F61: the badge + chain-walk button sit together as one group; the chain
    button reuses the badge hue but reads as a quiet secondary affordance until
    hovered (the primary action is the jump). */

@@ -422,7 +422,13 @@ function render(): void {
   const doneIdx = doneIndex(notDeleted);
   // F30: pass the active search query so matched title chars get highlighted.
   const query = filter.query.trim();
-  els.content.innerHTML = renderSections(sections, now, { done: doneIdx, query });
+  // F87: thread the whole live (non-deleted) list so each row can show a
+  // "N waiting" chokepoint badge for tasks other undone tasks depend on.
+  els.content.innerHTML = renderSections(sections, now, {
+    done: doneIdx,
+    query,
+    allTasks: notDeleted as DepStatsTask[],
+  });
   els.count.innerHTML = summarize(shown);
   renderFilterBar(routed, shown.length);
   renderTagPage(routed.length);
@@ -3281,6 +3287,14 @@ els.content.addEventListener("click", (e) => {
     if (Number.isFinite(fromId) && fromId > 0) openChainDrill(fromId);
     return;
   }
+  // F87: the "N waiting" chokepoint badge opens the dependent chain-drill
+  // popover (F85, direction "dependent") so you can see WHAT waits on this task.
+  const waitingWalk = target.closest<HTMLElement>("[data-waiting-walk]");
+  if (waitingWalk) {
+    const fromId = Number(waitingWalk.dataset.waitingWalk);
+    if (Number.isFinite(fromId) && fromId > 0) openChainDrill(fromId, "dependent");
+    return;
+  }
   // F26: the "blocked by #N" badge jumps to (selects + scrolls to) the blocker.
   const depJump = target.closest<HTMLElement>("[data-dep-jump]");
   if (depJump) {
@@ -3567,11 +3581,14 @@ function openChainDrill(fromId?: number, dir: "blocker" | "dependent" = "blocker
   }
   pop.innerHTML = `<div class="chain-pop-head">${head}${flip}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
   // Anchor under the chain tile if present (F56), else the badge that opened it
-  // (F61/F85), else the stats panel corner.
+  // (F61/F85/F87), else the stats panel corner. For the dependent direction the
+  // opener may be the F87 "N waiting" badge (data-waiting-walk) rather than the
+  // F61 blocker-chain badge (data-chain-from), so try both.
   const tile = els.statsPanel.querySelector<HTMLElement>("[data-chain-drill]");
   const badge =
     fromId !== undefined
-      ? els.content.querySelector<HTMLElement>(`[data-chain-from="${fromId}"]`)
+      ? els.content.querySelector<HTMLElement>(`[data-chain-from="${fromId}"]`) ??
+        els.content.querySelector<HTMLElement>(`[data-waiting-walk="${fromId}"]`)
       : null;
   const anchor = (badge ?? tile ?? els.statsPanel).getBoundingClientRect();
   pop.style.position = "fixed";

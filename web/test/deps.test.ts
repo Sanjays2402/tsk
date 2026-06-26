@@ -16,6 +16,8 @@ import {
   openDependents,
   deepestDependentChainFrom,
   hasWalkableDependents,
+  dependentCount,
+  renderWaitingBadge,
   renderBlockedBadge,
   blockedClass,
   type DepTask,
@@ -475,4 +477,59 @@ test("blocker + dependent walks are inverses on a straight chain", () => {
   // Downstream from #3: #3 -> #2 -> #1. Upstream from #1: #1 -> #2 -> #3.
   assert.deepEqual(deepestChainFrom(list, 3), [3, 2, 1]);
   assert.deepEqual(deepestDependentChainFrom(list, 1), [1, 2, 3]);
+});
+
+// F87 — "N waiting" chokepoint count + badge.
+test("dependentCount counts the undone tasks directly waiting on a target", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+    { id: 4, done: false, depends_on: [3] },
+  ];
+  const idx = doneIndex(list);
+  assert.equal(dependentCount(list, 1, idx), 2); // #2 + #3 wait on #1
+  assert.equal(dependentCount(list, 3, idx), 1); // #4 waits on #3
+  assert.equal(dependentCount(list, 4, idx), 0); // nothing waits on #4
+});
+
+test("renderWaitingBadge shows the count + a walk hook for a chokepoint", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 3, done: false, depends_on: [1] },
+  ];
+  const idx = doneIndex(list);
+  const html = renderWaitingBadge(list[0] as DepTask, list, idx);
+  assert.match(html, /2 waiting/);
+  assert.match(html, /data-waiting-walk="1"/);
+});
+
+test("renderWaitingBadge uses a singular noun for one waiter", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const idx = doneIndex(list);
+  const html = renderWaitingBadge(list[0] as DepTask, list, idx);
+  assert.match(html, /1 waiting/);
+  assert.match(html, /task waits on #1/);
+  assert.doesNotMatch(html, /tasks wait/);
+});
+
+test("renderWaitingBadge is empty when nothing waits on a task, or it is done", () => {
+  const list: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const idx = doneIndex(list);
+  // #2 is a leaf — nothing waits on it.
+  assert.equal(renderWaitingBadge(list[1] as DepTask, list, idx), "");
+  // A done chokepoint is finished, so it's not a live bottleneck.
+  const doneChoke: DepStatsTask[] = [
+    { id: 1, done: true },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  const idx2 = doneIndex(doneChoke);
+  assert.equal(renderWaitingBadge(doneChoke[0] as DepTask, doneChoke, idx2), "");
 });

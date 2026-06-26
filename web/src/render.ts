@@ -8,7 +8,7 @@
 import type { Task } from "./api";
 import { groupIntoSections, type Section } from "./sections";
 import { renderNotesButton, renderNotesSnippet } from "./notes";
-import { blockedClass, renderBlockedBadge, type DepTask } from "./deps";
+import { blockedClass, renderBlockedBadge, renderWaitingBadge, type DepTask, type DepStatsTask } from "./deps";
 import { highlightText, highlightTitle } from "./highlight";
 
 /** Escape strings before injecting into innerHTML. Cheap, no deps. */
@@ -54,10 +54,15 @@ export function dueClassFor(due: string | undefined, done: boolean, now: Date): 
  * (F26) used to compute blocked state; `query` is the active filter text (F30)
  * used to highlight matched characters in titles. Absent context means "no
  * decoration" (keeps renderRow usable in isolation / tests).
+ *
+ * F87: `allTasks` is the whole live task list (for the "N waiting" dependent
+ * badge — a task's dependents can't be seen from the task alone). Absent ->
+ * the waiting badge is skipped, so renderRow stays usable without it.
  */
 export interface RowContext {
   done?: Map<number, boolean>;
   query?: string;
+  allTasks?: DepStatsTask[];
 }
 
 /** Render a single task row as HTML. */
@@ -82,6 +87,11 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
     ? `<span class="due" data-due title="${escapeHTML(t.due ?? "")} — click to change (d)">${escapeHTML(dueLabel)}</span>`
     : `<button class="due-add" data-due type="button" aria-label="Set due date" title="Set due date (d)">+date</button>`;
   const depBadge = ctx.done ? renderBlockedBadge(t as DepTask, ctx.done) : "";
+  // F87: a "N waiting" chokepoint badge when other undone tasks depend on this
+  // one (the upstream mirror of the blocked-by badge). Needs the whole list to
+  // see a task's dependents, so it only renders when allTasks is threaded in.
+  const waitBadge =
+    ctx.done && ctx.allTasks ? renderWaitingBadge(t as DepTask, ctx.allTasks, ctx.done) : "";
   const pinBtn = `<button class="pin-btn${t.pinned ? " is-on" : ""}" data-pin type="button" aria-pressed="${t.pinned ? "true" : "false"}" aria-label="${t.pinned ? "Unpin task" : "Pin task"}" title="${t.pinned ? "Unpin (p)" : "Pin to top (p)"}" tabindex="-1">${t.pinned ? "★" : "☆"}</button>`;
   // F30: when a search query is active, mark the matched characters in the
   // title. highlightTitle escapes the title itself, so it's safe in innerHTML.
@@ -108,6 +118,7 @@ export function renderRow(t: Task, now: Date, ctx: RowContext = {}): string {
       </div>
       <div class="meta">
         ${depBadge}
+        ${waitBadge}
         ${tagsHTML ? `<span class="tags">${tagsHTML}</span>` : ""}
         ${dueCell}
         ${renderNotesButton(t.notes)}
