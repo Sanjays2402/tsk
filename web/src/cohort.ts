@@ -119,3 +119,18 @@ export function reconcileCohort(
   if (fresh === null) return { focus: null, cleared: true };
   return { focus: fresh, cleared: false };
 }
+
+/**
+ * F102: render the "focus these" affordance for the dependent chain-drill
+ * popover head — it narrows the board to exactly the cohort of undone tasks
+ * waiting on `sourceId` (the same setCohort path F96's sidebar button drives),
+ * so you can drop into a cohort from ANY chokepoint you're walking, not just
+ * the single biggest one F92/F96 surface in the sidebar. Carries
+ * `data-cohort-focus="<id>"` — the SAME hook the sidebar focus button uses —
+ * so a delegated click routes through the existing cohort wiring with no new
+ * dispatch path. Pure → unit-tested.
+ */
+export function renderCohortFocusButton(sourceId: number): string {
+  const title = `Focus the board on the tasks waiting on #${sourceId}`;
+  return `<button type="button" class="chain-pop-focus" data-cohort-focus="${sourceId}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">focus these</button>`;
+}

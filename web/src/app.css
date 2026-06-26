@@ -701,6 +701,31 @@ button.priority:focus-visible {
   border-color: var(--color-accent);
   outline: none;
 }
+/* F102: the "focus these" button in the dependent chain-drill header — narrows
+   the board to the cohort of undone tasks waiting on the walked chokepoint
+   (mirrors the sidebar's .stat-chokepoint-focus pill). Sits beside the keys
+   hint; an alert tint echoes that a cohort is a "what's stuck" view. */
+.chain-pop-focus {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  line-height: 1;
+  padding: 1px var(--sp-1);
+  align-self: center;
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.chain-pop-focus:hover,
+.chain-pop-focus:focus-visible {
+  color: var(--color-danger, var(--color-accent));
+  border-color: var(--color-danger, var(--color-accent));
+  outline: none;
+}
 /* F70: a faint keyboard-nav hint in the popover header (up/down + return). */
 .chain-pop-keys {
   font-family: var(--font-mono);

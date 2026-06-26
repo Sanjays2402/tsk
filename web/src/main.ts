@@ -80,6 +80,7 @@ import {
   renderCohortChipBody,
   cohortChipTitle,
   reconcileCohort,
+  renderCohortFocusButton,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -3832,7 +3833,19 @@ function openChainDrill(fromId?: number, dir: "blocker" | "dependent" = "blocker
       flip = `<button type="button" class="chain-pop-flip" data-chain-flip="${other}" title="${flipLabel}" aria-label="${flipLabel}">&#8646;</button>`;
     }
   }
-  pop.innerHTML = `<div class="chain-pop-head">${head}${flip}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
+  // F102: in the "what waits on this?" (dependent) direction, offer a "focus
+  // these" button that narrows the board to the cohort of undone tasks waiting
+  // on #fromId — so you can ACT on any chokepoint you're walking (not just the
+  // single biggest one F96 surfaces in the sidebar), reusing the F96 cohort
+  // wiring via the shared data-cohort-focus hook. Only meaningful when fromId
+  // actually has open waiters to focus.
+  const focusBtn =
+    dir === "dependent" &&
+    fromId !== undefined &&
+    buildCohort(currentTasks as DepStatsTask[], fromId) !== null
+      ? renderCohortFocusButton(fromId)
+      : "";
+  pop.innerHTML = `<div class="chain-pop-head">${head}${flip}${focusBtn}<span class="chain-pop-keys">&#8593;&#8595; &#8629;</span></div>${renderChainDrill(nodes, filter.query.trim())}`;
   // Anchor under the chain tile if present (F56), else the badge that opened it
   // (F61/F85/F87), else the stats panel corner. For the dependent direction the
   // opener may be the F87 "N waiting" badge (data-waiting-walk) rather than the
@@ -3872,6 +3885,17 @@ function openChainDrill(fromId?: number, dir: "blocker" | "dependent" = "blocker
     if (flipBtn && fromId !== undefined) {
       const next = flipBtn.dataset.chainFlip === "dependent" ? "dependent" : "blocker";
       openChainDrill(fromId, next);
+      return;
+    }
+    // F102: the "focus these" button drops the board into the cohort of undone
+    // tasks waiting on #fromId (the same setCohort path the sidebar focus button
+    // drives), so you can act on the cohort you've been walking. Close the
+    // popover first, then focus.
+    const focusBtnEl = target?.closest<HTMLElement>("[data-cohort-focus]");
+    if (focusBtnEl) {
+      const focusId = Number(focusBtnEl.dataset.cohortFocus);
+      closeChainDrill();
+      if (Number.isFinite(focusId) && focusId > 0) setCohort(focusId);
       return;
     }
     const btn = target?.closest<HTMLElement>("[data-chain-jump]");

@@ -7,6 +7,7 @@ import {
   renderCohortChipBody,
   cohortChipTitle,
   reconcileCohort,
+  renderCohortFocusButton,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -141,4 +142,21 @@ test("reconcileCohort clears when the chokepoint was deleted", () => {
   const prev: CohortFocus = { sourceId: 9, ids: [2] };
   const r = reconcileCohort(graph(), prev); // #9 isn't in the graph
   assert.deepEqual(r, { focus: null, cleared: true });
+});
+
+// --- F102: renderCohortFocusButton -----------------------------------------
+
+test("renderCohortFocusButton carries the shared data-cohort-focus hook", () => {
+  const html = renderCohortFocusButton(7);
+  // Same hook the F96 sidebar focus button uses, so the existing wiring fires.
+  assert.match(html, /data-cohort-focus="7"/);
+  assert.match(html, /focus these/);
+  assert.match(html, /<button/);
+});
+
+test("renderCohortFocusButton names the source task in its title", () => {
+  const html = renderCohortFocusButton(42);
+  assert.match(html, /waiting on #42/);
+  // Title + aria-label both present for hover + a11y.
+  assert.match(html, /aria-label=/);
 });
