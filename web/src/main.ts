@@ -42,6 +42,7 @@ import {
   renderPriorityPills,
   renderTagChips,
   filterSummary,
+  renderPriorityScopeNote,
   type FilterState,
   type Priority,
 } from "./filter";
@@ -454,6 +455,14 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
   els.filterbar.hidden = !hasTasks;
   if (!hasTasks) return;
   els.filterPrios.innerHTML = renderPriorityPills(filter);
+  // F86: when a priority facet is active AND a lens is on, append a small
+  // "in <lens>" qualifier so it's clear the priority is scoped to the lens
+  // (the F81 breakdown-pill drill layers priority ON TOP of the lens), not the
+  // whole board. Cleared automatically when either the lens or the facet drops.
+  els.filterPrios.innerHTML += renderPriorityScopeNote(
+    activeLens ? lensMeta(activeLens).label : null,
+    filter,
+  );
   els.filterTags.innerHTML = renderTagChips(collectTags(allTasks), filter);
   const active = isFilterActive(filter) || activeLens !== null;
   els.filterClear.hidden = !active;

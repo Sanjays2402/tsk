@@ -1280,7 +1280,18 @@ kbd {
 }
 .filter-prios {
   display: flex;
+  align-items: center;
   gap: var(--sp-1);
+}
+/* F86: the "in <lens>" qualifier beside the priority pills, shown only when a
+   priority facet is layered on top of an active lens (the F81 drill). Faint and
+   italic so it reads as a quiet scope note, not another pill. */
+.fprio-scope {
+  font-size: var(--fs-xs, 0.72rem);
+  font-style: italic;
+  color: var(--color-text-faint, var(--color-text-dim));
+  white-space: nowrap;
+  margin-left: 2px;
 }
 .filter-tags {
   display: flex;

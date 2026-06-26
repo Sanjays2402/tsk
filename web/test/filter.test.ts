@@ -12,6 +12,7 @@ import {
   renderPriorityPills,
   renderTagChips,
   filterSummary,
+  renderPriorityScopeNote,
   priorityGlyph,
   type FilterableTask,
   type FilterState,
@@ -150,4 +151,29 @@ test("filterSummary phrasing", () => {
   assert.equal(filterSummary(5, 5), "5 tasks");
   assert.equal(filterSummary(1, 1), "1 task");
   assert.equal(filterSummary(2, 7), "2 of 7 shown");
+});
+
+// F86 — "in <lens>" qualifier beside the priority pills.
+test("renderPriorityScopeNote shows the lens label when a priority facet is active under a lens", () => {
+  const f = { ...emptyFilter(), priorities: ["urgent" as const] };
+  const html = renderPriorityScopeNote("overdue", f);
+  assert.match(html, /in overdue/);
+  assert.match(html, /fprio-scope/);
+});
+
+test("renderPriorityScopeNote is empty without a lens label", () => {
+  const f = { ...emptyFilter(), priorities: ["high" as const] };
+  assert.equal(renderPriorityScopeNote(null, f), "");
+  assert.equal(renderPriorityScopeNote("", f), "");
+});
+
+test("renderPriorityScopeNote is empty when no priority facet is selected", () => {
+  assert.equal(renderPriorityScopeNote("overdue", emptyFilter()), "");
+});
+
+test("renderPriorityScopeNote escapes the lens label", () => {
+  const f = { ...emptyFilter(), priorities: ["low" as const] };
+  const html = renderPriorityScopeNote("a<b", f);
+  assert.match(html, /a&lt;b/);
+  assert.doesNotMatch(html, /in a<b</);
 });

@@ -168,3 +168,24 @@ export function filterSummary(visible: number, total: number): string {
   if (visible === total) return `${total} task${total === 1 ? "" : "s"}`;
   return `${visible} of ${total} shown`;
 }
+
+/**
+ * F86: a tiny "in <lens>" qualifier rendered beside the priority pills when a
+ * priority facet AND a stats lens are BOTH active. Once F81 lets a lens-
+ * breakdown pill layer a priority facet onto the active lens, the filter bar
+ * shows the priority pill lit but gives no hint that it's scoped to the lens
+ * rather than the whole board. This note closes that loop — "Urgent in overdue"
+ * reads correctly, and clearing the lens drops the note automatically. Pure →
+ * unit-tested. Returns "" unless there's a non-empty lens label AND at least one
+ * priority is selected, so a plain priority facet (no lens) stays unqualified.
+ *
+ * `lensLabel` is the active lens's human label (e.g. "overdue", "due today"),
+ * or null/"" when no lens is active. `state` supplies the live priority facet.
+ */
+export function renderPriorityScopeNote(
+  lensLabel: string | null,
+  state: FilterState,
+): string {
+  if (!lensLabel || state.priorities.length === 0) return "";
+  return `<span class="fprio-scope" aria-label="scoped to the ${escapeHTML(lensLabel)} lens">in ${escapeHTML(lensLabel)}</span>`;
+}
