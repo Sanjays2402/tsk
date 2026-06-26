@@ -1432,29 +1432,130 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T16 scope-note / waiting-badge / persisted-export / disabled-reason /
 digit-legend cluster:
 
-- [ ] **F91** Lens digit-map legend is clickable: F90 renders the five lenses with
+- [x] **F91** Lens digit-map legend is clickable: F90 renders the five lenses with
       data-lens-legend hooks but they're inert. Wire a click on a legend entry to
       toggle that lens (same path as the digit key / stat tile) and close the help
       overlay, so the ? overlay becomes an actionable lens switcher, not just a
-      readout. Reuse the existing setLens/toggle path.
-- [ ] **F92** Waiting-badge count in the stats sidebar: F87 surfaces a per-row "N
+      readout. Reuse the existing setLens/toggle path. (tick T17 2026-06-26)
+- [x] **F92** Waiting-badge count in the stats sidebar: F87 surfaces a per-row "N
       waiting" badge; add an aggregate "biggest chokepoint: #N (k waiting)" line to
       the dep-stats sidebar so the single worst bottleneck is visible without
       scanning rows. Reuse openDependents over the live graph; tie-break by id.
-- [ ] **F93** Persist the active lens across reloads (sessionStorage): the lens is
+      (tick T17 2026-06-26)
+- [x] **F93** Persist the active lens across reloads (sessionStorage): the lens is
       render-only state today, lost on refresh. Persist the active LensKind per-tab
       (sessionStorage, NOT localStorage — a lens is time-relative and shouldn't leak
       across sessions) and restore it on boot, mirroring F88's export-scope pattern.
       Validate the stored kind against LENS_ORDER so a stale value can't wedge.
-- [ ] **F94** Scope note for the TAG facet too (sister of F86): when a tag chip is
+      (tick T17 2026-06-26)
+- [x] **F94** Scope note for the TAG facet too (sister of F86): when a tag chip is
       active AND a lens is on, show the same "in <lens>" qualifier on the tag row, so
       every facet layered onto a lens reads as scoped, not just priority. Reuse
-      renderPriorityScopeNote's shape over the tags facet.
-- [ ] **F95** Disabled-reason hints for the bulk-edit bar commands (extend F89's idea
+      renderPriorityScopeNote's shape over the tags facet. (tick T17 2026-06-26)
+- [x] **F95** Disabled-reason hints for the bulk-edit bar commands (extend F89's idea
       beyond the palette): when a bulk action is unavailable (e.g. "set due" with no
       rows selected, or an operation that would no-op), surface the same quiet reason
       text in the bulk bar so the floating-bar actions explain themselves too.
+      (tick T17 2026-06-26)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, etc.).
+---
 
+## TICK LOG — T17 (2026-06-26 ~03:43 PT)
+
+Shipped 5/5 web slices on `main` (F91-F95), gated once, pushed clean
+(2dca726..fe3004a). 26 net-new web tests (607 -> 633), Go gates green,
+bundle rebuilt + embedded, live `tsk serve` smoke-tested. The canonical
+workdir `/Volumes/Projects/tsk` WAS mounted this tick (HEAD at 2dca726,
+clean tree, node_modules present).
+
+This batch finishes the T17 standing queue exactly as written (no drops):
+a "close-the-loop" cluster — the lens/facet/bulk consistency work opened
+by T15-T16 (lens-drill, dependent-walk, scope-note, disabled-reason,
+digit-legend) gets its natural follow-ons.
+
+- **F92** `7c4c13e` Biggest-chokepoint line. deps.ts: biggestChokepoint
+  (scan every undone task's open-dependent count, keep the max, tie-break by
+  lowest id; null on a flat board) + the Chokepoint type. stats.ts:
+  renderChokepoint emits a full-width button under the dep grid ("Biggest
+  chokepoint  #N up K waiting") carrying the SAME data-waiting-walk hook the
+  F87 row badge uses, so a click opens the F85 dependent chain-drill. Threaded
+  through renderDepStats + renderStatsPanel as an optional arg (back-compat).
+  refreshStats computes it over the same live list + whole-list done-index the
+  per-row badges use. +12 tests.
+- **F94** `4ad700e` Tag-facet scope note. filter.ts: renderTagScopeNote mirrors
+  renderPriorityScopeNote over the tags facet ("#work in overdue"); returns ""
+  unless a non-empty lens label AND a tag are both present; own .ftag-scope
+  class. renderFilterBar appends it after the tag chips. Closes the F86 loop so
+  EVERY facet layered onto a lens reads as scoped, not just priority. +5 tests.
+- **F95** `a1d8874` Bulk-bar disabled-reason hints. bulkedit.ts:
+  bulkPriorityDisabledReason + bulkPinDisabledReason (pure no-op detectors over
+  the selection) + a bulkReasonLine; renderBulkPriorityMenu / renderBulkPinMenu
+  take an optional selected[] (default empty -> nothing disabled, back-compat),
+  greying a no-op option (aria-disabled) with a quiet reason ("all already
+  high" / "none are pinned"). openBulkEdit feeds the live selection + short-
+  circuits a click on a greyed option (no PATCH fan-out). Extends F89's palette
+  idea to the floating bar. +9 tests.
+- **F91** `65f49f2` Clickable lens digit-map. lens.ts: renderLensDigitMap emits
+  real <button>s (same lens-legend-item class + data-lens-legend hook + title
+  copy) instead of inert spans. main.ts: a delegated click on the help overlay
+  routes a legend entry through setLens (toggle) + closes the overlay, before
+  the backdrop-dismiss check. CSS strips the native button chrome (pointer,
+  hover, focus ring). +2 tests.
+- **F93** `60f55bd` Persisted active lens. lens.ts: LENS_KEY ("tsk.lens") +
+  parseLens (validates against LENS_ORDER so a stale value can't wedge ->
+  null). main.ts: activeLens seeds from sessionStorage at boot; setLens + the
+  two clear paths route through one persistLens() helper (sessionStorage, NOT
+  localStorage — a lens is time-relative; mirrors F88's export-scope). Writes
+  wrapped so private-mode degrades to in-session-only. +3 tests.
+- `fe3004a` bundle rebuild (40 modules, JS 35.49KB gz, CSS 9.70KB gz).
+
+Live proof: built /tmp/tsk-t17, a #2/#3/#4 -> #1 dep chain (so #1 is a
+chokepoint with 3 waiters), `tsk serve --addr 127.0.0.1:7897`. Served bundle
+carries every hook (data-lens-legend buttons x5, tsk.lens, stat-chokepoint +
+"Biggest chokepoint", ftag-scope, bulkedit-reason + "all already"/"none are
+pinned"; CSS: button.lens-legend-item, chokepoint-n, ftag-scope, bulkedit-
+reason). /api/stats reported overdue:1, the dep chain intact. Toggling the #1
+chokepoint done round-tripped to .tsk.md preserving the depends: chain + adding
+completed:; `tsk show 2` read the depends:#1 link back. Storage contract
+honoured — the raw .tsk.md stayed plain hand-editable markdown.
+
+Deferred: nothing forced. F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu) remain the standing
+long-carries. T18 backlog (F96-F100) appended below so the loop never starves.
+
+### T18 — depth (appended T17 2026-06-26 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T17 chokepoint / tag-scope / bulk-disabled-reason / clickable-legend /
+persisted-lens cluster:
+
+- [ ] **F96** Chokepoint line also offers a quick "filter to its dependents":
+      F92 surfaces #N with K waiters and opens the dependent chain-drill on click.
+      Add a secondary affordance (or a drill-popover action) that layers a filter
+      showing exactly the K undone tasks waiting on #N, so you can act on the whole
+      blocked cohort, not just walk it. Reuse openDependents for the id set.
+- [ ] **F97** Persist the stats-sidebar lens-breakdown drilled facet across the
+      reload too: F93 restores the active lens, but if F81 layered a priority facet
+      onto it (lens AND urgent), that facet rides the normal filter — confirm it
+      restores coherently with the lens on boot, and add a regression test for the
+      lens+facet combo surviving a reload (sessionStorage lens + the facet state).
+- [ ] **F98** "Clear lens" entry in the Cmd-K palette: the palette can set lenses
+      (digit / tile) but has no explicit clear when one's active. Add a context-aware
+      "Clear lens (<label>)" command shown only while a lens is active, routing
+      through setLens(null), so the keyboard-only path can exit a lens without the
+      filter-bar chip. Pair with a disabled-reason ("no lens active") per F89/F95.
+- [ ] **F99** Tag-scope note is clickable to clear the lens (sister of the F86/F94
+      notes being passive): make the "in <lens>" qualifier a tiny button that clears
+      the lens (keeping the facet), so you can drop the lens scope in one click while
+      keeping your tag/priority filter. Reuse setLens(null); keep it keyboard-focusable.
+- [ ] **F100** Bulk-bar "set due" / "tag" disabled-reason parity: F95 covers the
+      priority + pin menus; extend the same quiet reason line to the due + tag editors
+      when they'd no-op (e.g. an empty due-clear on tasks that already have no due, or
+      a tag op that changes nothing across the whole selection). Reuse the bulkReasonLine.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
+for a lens+facet combo, etc.).
