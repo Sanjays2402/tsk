@@ -181,13 +181,19 @@ export function filterSummary(visible: number, total: number): string {
  *
  * `lensLabel` is the active lens's human label (e.g. "overdue", "due today"),
  * or null/"" when no lens is active. `state` supplies the live priority facet.
+ *
+ * F99: the qualifier is now a tiny `<button data-lens-scope-clear>` (was a
+ * passive span) so a click DROPS the lens while keeping the facet — the
+ * one-click "I want this priority across the WHOLE board, not just the lens"
+ * action. Routes through setLens(null) in main.ts. The `.fprio-scope` class +
+ * "in <lens>" text are unchanged so styling and the F86 tests carry over.
  */
 export function renderPriorityScopeNote(
   lensLabel: string | null,
   state: FilterState,
 ): string {
   if (!lensLabel || state.priorities.length === 0) return "";
-  return `<span class="fprio-scope" aria-label="scoped to the ${escapeHTML(lensLabel)} lens">in ${escapeHTML(lensLabel)}</span>`;
+  return `<button type="button" class="fprio-scope" data-lens-scope-clear aria-label="scoped to the ${escapeHTML(lensLabel)} lens — click to clear the lens" title="Clear the ${escapeHTML(lensLabel)} lens (keep this priority filter)">in ${escapeHTML(lensLabel)}</button>`;
 }
 
 /**
@@ -201,11 +207,16 @@ export function renderPriorityScopeNote(
  * AND at least one tag is selected, so a plain tag facet (no lens) stays
  * unqualified, exactly like the priority note. Wears its own `ftag-scope` class
  * (vs `fprio-scope`) so the two notes can be styled/placed independently.
+ *
+ * F99: like its priority sibling, the qualifier is now a `<button data-lens-
+ * scope-clear>` that clears the lens (keeping the tag facet) on click, so you
+ * can drop the lens scope in one click while keeping your #tag filter. The
+ * `.ftag-scope` class + "in <lens>" text are unchanged so the F94 tests carry.
  */
 export function renderTagScopeNote(
   lensLabel: string | null,
   state: FilterState,
 ): string {
   if (!lensLabel || state.tags.length === 0) return "";
-  return `<span class="ftag-scope" aria-label="scoped to the ${escapeHTML(lensLabel)} lens">in ${escapeHTML(lensLabel)}</span>`;
+  return `<button type="button" class="ftag-scope" data-lens-scope-clear aria-label="scoped to the ${escapeHTML(lensLabel)} lens — click to clear the lens" title="Clear the ${escapeHTML(lensLabel)} lens (keep this tag filter)">in ${escapeHTML(lensLabel)}</button>`;
 }

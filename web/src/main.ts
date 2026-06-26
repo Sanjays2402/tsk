@@ -3068,7 +3068,14 @@ els.filterInput.addEventListener("keydown", (e) => {
 
 // Priority pills: toggle membership on click (delegated).
 els.filterPrios.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-prio]");
+  const target = e.target as HTMLElement | null;
+  // F99: the "in <lens>" scope note clears the LENS (keeping the priority facet)
+  // so you can lift a lens-scoped drill to the whole board in one click.
+  if (target?.closest("[data-lens-scope-clear]")) {
+    setLens(null);
+    return;
+  }
+  const btn = target?.closest<HTMLElement>("[data-prio]");
   if (!btn) return;
   const prio = btn.dataset.prio as Priority;
   setFilter({ priorities: toggleMember(filter.priorities, prio) });
@@ -3076,7 +3083,14 @@ els.filterPrios.addEventListener("click", (e) => {
 
 // Tag chips: toggle membership on click (delegated).
 els.filterTags.addEventListener("click", (e) => {
-  const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-tag]");
+  const target = e.target as HTMLElement | null;
+  // F99: the tag-row "in <lens>" scope note clears the LENS (keeping the tag
+  // facet) — sister of the priority-row note above.
+  if (target?.closest("[data-lens-scope-clear]")) {
+    setLens(null);
+    return;
+  }
+  const btn = target?.closest<HTMLElement>("[data-tag]");
   if (!btn) return;
   const tag = btn.dataset.tag ?? "";
   setFilter({ tags: toggleMember(filter.tags, tag) });

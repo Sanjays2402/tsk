@@ -1368,16 +1368,32 @@ button.lens-legend-item:focus-visible {
 }
 /* F86: the "in <lens>" qualifier beside the priority pills, shown only when a
    priority facet is layered on top of an active lens (the F81 drill). Faint and
-   italic so it reads as a quiet scope note, not another pill. */
+   italic so it reads as a quiet scope note, not another pill.
+   F99: now a <button> that clears the lens (keeping the facet) on click — strip
+   the native button chrome and add a subtle hover so the affordance reads. */
 .fprio-scope {
   font-size: var(--fs-xs, 0.72rem);
   font-style: italic;
   color: var(--color-text-faint, var(--color-text-dim));
   white-space: nowrap;
   margin-left: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.fprio-scope:hover,
+.fprio-scope:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+  text-decoration: underline;
 }
 /* F94: the tag-facet scope note — sister of .fprio-scope for the tag chips row.
-   Same quiet italic treatment so a lens-scoped tag reads "#work in overdue". */
+   Same quiet italic treatment so a lens-scoped tag reads "#work in overdue".
+   F99: a <button> clearing the lens (keeping the tag facet) on click. */
 .ftag-scope {
   font-size: var(--fs-xs, 0.72rem);
   font-style: italic;
@@ -1385,6 +1401,19 @@ button.lens-legend-item:focus-visible {
   white-space: nowrap;
   margin-left: 2px;
   align-self: center;
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  font-family: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.ftag-scope:hover,
+.ftag-scope:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+  text-decoration: underline;
 }
 .filter-tags {
   display: flex;

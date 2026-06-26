@@ -205,3 +205,31 @@ test("renderTagScopeNote escapes the lens label", () => {
   assert.match(html, /a&lt;b/);
   assert.doesNotMatch(html, /in a<b</);
 });
+
+// --- F99: the scope notes are clickable buttons that clear the lens ---------
+
+test("renderPriorityScopeNote is a button carrying the lens-scope-clear hook", () => {
+  const f = { ...emptyFilter(), priorities: ["urgent" as const] };
+  const html = renderPriorityScopeNote("overdue", f);
+  assert.match(html, /<button[^>]*data-lens-scope-clear/);
+  assert.match(html, /type="button"/);
+  // Still wears its class + reads "in <lens>" so the F86 styling/tests carry.
+  assert.match(html, /fprio-scope/);
+  assert.match(html, /in overdue/);
+});
+
+test("renderTagScopeNote is a button carrying the lens-scope-clear hook", () => {
+  const f = { ...emptyFilter(), tags: ["work"] };
+  const html = renderTagScopeNote("due today", f);
+  assert.match(html, /<button[^>]*data-lens-scope-clear/);
+  assert.match(html, /ftag-scope/);
+  assert.match(html, /in due today/);
+});
+
+test("F99 scope-clear buttons stay empty without a lens (no dangling button)", () => {
+  const fp = { ...emptyFilter(), priorities: ["high" as const] };
+  const ft = { ...emptyFilter(), tags: ["home"] };
+  assert.equal(renderPriorityScopeNote(null, fp), "");
+  assert.equal(renderTagScopeNote(null, ft), "");
+});
+
