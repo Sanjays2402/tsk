@@ -303,6 +303,31 @@ export function isPureLensView(view: SavedView): boolean {
   return Boolean(view.lens) && filterIsEmpty(view.filter);
 }
 
+/**
+ * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
+ * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
+ * F119 flashes the freshly-pinned chip, but when the Views row has overflowed
+ * horizontally the new chip can sit past the visible edge, so the spatial "it
+ * landed here" confirmation is invisible. main.ts uses this to decide whether to
+ * scrollIntoView the flashed chip before the animation runs.
+ *
+ * Pure geometry over two bounding rects (chip + container): true when the chip's
+ * left edge is before the container's left, OR its right edge is past the
+ * container's right (a small 1px epsilon absorbs sub-pixel rounding so a chip
+ * flush with the edge isn't treated as clipped). Works on plain rect-shaped
+ * objects so it's unit-testable with zero DOM. A chip fully inside the viewport
+ * returns false (no scroll needed). Only the horizontal axis matters — the Views
+ * row is a single horizontally-scrolling line.
+ */
+export interface RectLike {
+  left: number;
+  right: number;
+}
+
+export function chipClippedX(chip: RectLike, container: RectLike, epsilon = 1): boolean {
+  return chip.left < container.left - epsilon || chip.right > container.right + epsilon;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

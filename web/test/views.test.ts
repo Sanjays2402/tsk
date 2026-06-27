@@ -17,6 +17,7 @@ import {
   pureLensViewName,
   findPureLensView,
   isPureLensView,
+  chipClippedX,
   viewMatches,
   describeView,
   renderViewChips,
@@ -460,4 +461,29 @@ test("renderViewChips flash composes with the pure-lens-pin classes", () => {
   });
   assert.match(html, /is-lens-pin/);
   assert.match(html, /is-flash/);
+});
+
+// --- F124: chipClippedX (scroll a just-pinned chip into view) ----------------
+
+test("chipClippedX is false when the chip sits fully inside the container", () => {
+  // container [0,200]; chip [50,120] is comfortably inside -> no scroll needed.
+  assert.equal(chipClippedX({ left: 50, right: 120 }, { left: 0, right: 200 }), false);
+});
+
+test("chipClippedX is true when the chip overflows the right edge", () => {
+  // chip [180,260] runs past the container's right (200) -> clipped.
+  assert.equal(chipClippedX({ left: 180, right: 260 }, { left: 0, right: 200 }), true);
+});
+
+test("chipClippedX is true when the chip is before the left edge", () => {
+  // A scrolled row can push a chip to negative offsets relative to the container.
+  assert.equal(chipClippedX({ left: -30, right: 40 }, { left: 0, right: 200 }), true);
+});
+
+test("chipClippedX tolerates sub-pixel rounding via the epsilon", () => {
+  // A chip flush with the edges (within 1px) is NOT treated as clipped, so a
+  // chip exactly at the boundary doesn't trigger a needless scroll.
+  assert.equal(chipClippedX({ left: -0.4, right: 200.4 }, { left: 0, right: 200 }), false);
+  // Past the epsilon it IS clipped.
+  assert.equal(chipClippedX({ left: 0, right: 202 }, { left: 0, right: 200 }), true);
 });

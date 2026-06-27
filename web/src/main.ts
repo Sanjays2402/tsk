@@ -221,6 +221,7 @@ import {
   pureLensViewName,
   findPureLensView,
   renderViewChips,
+  chipClippedX,
   filterIsEmpty,
   filtersEqual,
   STORAGE_KEY as VIEWS_KEY,
@@ -3220,6 +3221,26 @@ function renderViewsRow(): void {
     // F119: flash a just-pinned chip once so the user sees where the pin landed.
     flashId: pendingPinFlashViewId,
   });
+  // F124: if the just-pinned chip (F119) sits past the visible edge of an
+  // overflowed Views row, the flash highlight plays off-screen and the spatial
+  // "it landed here" confirmation is lost. Scroll it into view (horizontally)
+  // BEFORE consuming the flash slot, so the highlight is actually seen. Guarded
+  // for the test/jsdom-less env (no getBoundingClientRect / scrollIntoView) and
+  // gated by chipClippedX so a chip already in view never triggers a scroll.
+  if (pendingPinFlashViewId) {
+    const chip = els.viewsChips.querySelector<HTMLElement>(
+      `[data-view-id="${pendingPinFlashViewId}"]`,
+    );
+    if (
+      chip &&
+      typeof chip.getBoundingClientRect === "function" &&
+      typeof els.viewsChips.getBoundingClientRect === "function" &&
+      typeof chip.scrollIntoView === "function" &&
+      chipClippedX(chip.getBoundingClientRect(), els.viewsChips.getBoundingClientRect())
+    ) {
+      chip.scrollIntoView({ inline: "nearest", block: "nearest" });
+    }
+  }
   // F119: the flash is a one-shot — consume the slot now that this paint carries
   // the `is-flash` class, so the next render (or a re-render for any other
   // reason) doesn't keep re-triggering the highlight.
