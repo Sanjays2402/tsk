@@ -328,6 +328,29 @@ export function chipClippedX(chip: RectLike, container: RectLike, epsilon = 1): 
   return chip.left < container.left - epsilon || chip.right > container.right + epsilon;
 }
 
+/**
+ * F129: the one-shot exit-animation duration (ms) for a chip being UNPINNED
+ * (F125's lens unpin). F125 removes the pure-lens view instantly — the chip just
+ * vanishes with no spatial feedback. This is the inverse of F119's pin-flash: a
+ * brief fade-out so the user sees WHICH chip left before it's removed. Exported
+ * as the single source of truth so main.ts's deferred-removeView timer and the
+ * CSS `.is-unpinning` animation can't drift. Kept here (not main.ts) so it's
+ * importable into tests without a DOM.
+ */
+export const UNPIN_EXIT_MS = 240;
+
+/**
+ * F129: should main.ts animate a chip's exit before removing its view? True only
+ * when there's a real chip element that supports the class toggle — so the
+ * jsdom-less/test env (chip is null, or a bare object with no classList), or a
+ * chip that isn't currently in the Views row, falls through to a synchronous
+ * remove and behaviour stays unchanged. Pure over a minimal element shape so the
+ * decision is unit-testable with zero DOM, mirroring F124's chipClippedX seam.
+ */
+export function canAnimateChipExit(chip: { classList?: { add?: unknown } } | null): boolean {
+  return Boolean(chip && chip.classList && typeof chip.classList.add === "function");
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

@@ -1586,6 +1586,32 @@ button.lens-legend-item:focus-visible {
     box-shadow: 0 0 0 2px var(--color-accent);
   }
 }
+/* F129: a one-shot fade-out on a chip being UNPINNED (F125's lens unpin) — the
+   inverse of the F119 pin-flash. main.ts marks the leaving chip `is-unpinning`
+   and defers removeView by UNPIN_EXIT_MS so the user sees WHICH chip left before
+   it vanishes. A quick shrink + fade; reduced-motion collapses to an instant
+   opacity drop so the chip still visibly leaves without movement. The duration
+   here MUST match views.ts UNPIN_EXIT_MS (240ms). */
+@keyframes view-chip-unpin {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+}
+.view-chip.is-unpinning {
+  animation: view-chip-unpin 0.24s ease-in 1 forwards;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-chip.is-unpinning {
+    animation: none;
+    opacity: 0;
+  }
+}
 .view-chip-name {
   font-family: var(--font-sans);
   font-size: var(--fs-xs);

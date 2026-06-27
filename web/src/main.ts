@@ -224,6 +224,8 @@ import {
   findPureLensView,
   renderViewChips,
   chipClippedX,
+  canAnimateChipExit,
+  UNPIN_EXIT_MS,
   filterIsEmpty,
   filtersEqual,
   STORAGE_KEY as VIEWS_KEY,
@@ -3347,12 +3349,32 @@ function unpinCurrentLens(): void {
   if (activeLens === null) return;
   const existing = findPureLensView(views, activeLens);
   if (!existing) return; // not pinned — nothing to unpin
-  views = removeView(views, existing.id);
-  saveViews();
-  render();
-  refreshStats();
+  // F129: the inverse of F119's pin-flash — before dropping the view, fade the
+  // leaving chip out so the user sees WHICH chip left (an unpin is otherwise a
+  // silent vanish + a status line). Find the chip, mark it `is-unpinning` for a
+  // brief CSS exit, and DEFER the removeView until the animation has played.
+  // canAnimateChipExit gates this on a real chip with a working classList, so the
+  // jsdom-less/test env (or a chip not in the row) falls straight through to the
+  // synchronous removal — behaviour there is unchanged. The status line still
+  // fires immediately so the keyboard/command feedback isn't delayed.
+  const chip =
+    typeof els.viewsChips.querySelector === "function"
+      ? els.viewsChips.querySelector<HTMLElement>(`[data-view-id="${existing.id}"]`)
+      : null;
+  const finish = (): void => {
+    views = removeView(views, existing.id);
+    saveViews();
+    render();
+    refreshStats();
+  };
   setStatus(`unpinned lens "${existing.name}"`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
+  if (canAnimateChipExit(chip)) {
+    chip!.classList.add("is-unpinning");
+    window.setTimeout(finish, UNPIN_EXIT_MS);
+  } else {
+    finish();
+  }
 }
 
 /**

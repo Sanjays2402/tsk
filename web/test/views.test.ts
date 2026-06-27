@@ -18,6 +18,8 @@ import {
   findPureLensView,
   isPureLensView,
   chipClippedX,
+  canAnimateChipExit,
+  UNPIN_EXIT_MS,
   viewMatches,
   describeView,
   renderViewChips,
@@ -486,4 +488,28 @@ test("chipClippedX tolerates sub-pixel rounding via the epsilon", () => {
   assert.equal(chipClippedX({ left: -0.4, right: 200.4 }, { left: 0, right: 200 }), false);
   // Past the epsilon it IS clipped.
   assert.equal(chipClippedX({ left: 0, right: 202 }, { left: 0, right: 200 }), true);
+});
+
+// --- F129: animate a chip's exit on unpin -----------------------------------
+
+test("canAnimateChipExit is true for a chip with a working classList.add", () => {
+  // A real element shape — has a classList whose add is callable.
+  const chip = { classList: { add: () => {} } };
+  assert.equal(canAnimateChipExit(chip), true);
+});
+
+test("canAnimateChipExit is false in the jsdom-less / detached cases", () => {
+  // Null chip (not in the row, or no DOM) -> synchronous remove, no animation.
+  assert.equal(canAnimateChipExit(null), false);
+  // A bare object with no classList -> can't animate, fall through.
+  assert.equal(canAnimateChipExit({}), false);
+  // A classList without a callable add -> can't animate.
+  assert.equal(canAnimateChipExit({ classList: {} }), false);
+  assert.equal(canAnimateChipExit({ classList: { add: 42 as unknown } }), false);
+});
+
+test("UNPIN_EXIT_MS is a positive duration the CSS keyframe can match", () => {
+  // The deferred removeView timer keys off this; it must be a real positive ms.
+  assert.equal(typeof UNPIN_EXIT_MS, "number");
+  assert.ok(UNPIN_EXIT_MS > 0);
 });
