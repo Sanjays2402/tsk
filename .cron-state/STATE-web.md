@@ -1755,31 +1755,151 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T19 cohort-persist / cohort-focus-from-drill / cohort-commands /
 lens-view-bridge / ranked-chokepoints cluster:
 
-- [ ] **F107** "Other bottlenecks" rows are keyboard-reachable + focus from the
+- [x] **F107** "Other bottlenecks" rows are keyboard-reachable + focus from the
       Cmd-K palette: F106 lists the runner-up chokepoints with mouse hooks; add a
       "Focus chokepoint #N" command group (or extend F103's focus command to a
       ranked submenu) so every bottleneck — not just the biggest — is reachable
-      keyboard-only. Reuse topChokepoints + setCohort.
-- [ ] **F108** Cohort history / back-stack: setCohort replaces the focus today;
+      keyboard-only. Reuse topChokepoints + setCohort. (tick T20 2026-06-26)
+- [x] **F108** Cohort history / back-stack: setCohort replaces the focus today;
       keep a small stack so "focus #1's cohort" then "focus #3's cohort" can step
       BACK to #1 with Escape or a back chip. Bridges the cohort model toward the
       multi-step drill the dep-debugging cluster invites. Persist nothing (cohorts
-      are momentary), but keep the stack per-session.
-- [ ] **F109** Saved-view lens chip in the recalled state: F104 stores the lens on
+      are momentary), but keep the stack per-session. (tick T20 2026-06-26)
+- [x] **F109** Saved-view lens chip in the recalled state: F104 stores the lens on
       a view; when such a view is active, surface the lens it re-applied as a small
       readout beside the view chip (or in the filter bar) so "why is the overdue
-      lens on?" is answerable — it came from the recalled view. Reuse lensMeta.
-- [ ] **F110** "Save lens as quick view" one-click: F104 saves a lens+facet combo
+      lens on?" is answerable — it came from the recalled view. Reuse lensMeta. (tick T20 2026-06-26)
+- [x] **F110** "Save lens as quick view" one-click: F104 saves a lens+facet combo
       via the prompt; add a one-click "pin this lens" affordance on the active-lens
       chip that saves a pure-lens view named after the lens (no prompt) for the
-      common case, so a frequently-used lens becomes a recallable chip in one click.
-- [ ] **F111** Chokepoint trend hint: the dep-stats sidebar shows the current
+      common case, so a frequently-used lens becomes a recallable chip in one click. (tick T20 2026-06-26)
+- [x] **F111** Chokepoint trend hint: the dep-stats sidebar shows the current
       biggest chokepoint (F92) + runners-up (F106); add a tiny "was #M last
       refresh" delta when the biggest chokepoint CHANGES across a live-reload, so a
       shifting bottleneck (e.g. after F101 reconciles a completed chokepoint) is
       visible, not silent. Compare against the previous refresh's biggestChokepoint
-      id held in a module slot.
+      id held in a module slot. (tick T20 2026-06-26)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a cohort
 back-stack, a saved-view import/export, etc.).
+
+---
+
+## TICK LOG — T20 (2026-06-26 ~19:43 PT)
+
+Shipped 5/5 web slices on `main` (F107-F111), gated once, pushed clean
+(ca171c3..82edd7d). 24 net-new web tests (700 -> 724), Go gates green
+(gofmt clean / vet clean / build clean / `go test ./...` all ok — commands,
+serve, store, model, dateparse, tui, util packages), both tsc configs clean,
+bundle rebuilt + embedded (41 modules, JS 38.25KB gz, CSS 10.23KB gz), live
+`tsk serve` smoke-tested. Canonical workdir `/Volumes/Projects/tsk` WAS mounted
+(HEAD at ca171c3, node_modules present).
+
+This batch finishes the T20 queue exactly as written (no deferrals): the
+five fresh follow-ons appended in T19 after the cohort/lens/chokepoint
+cluster. Every slice closes a "the readout exists but the action/answer is
+missing" gap the T15-T19 work opened.
+
+- **F107** `f35e308` Keyboard-focus every bottleneck from Cmd-K. palette.ts:
+  ChokepointLike + buildChokepointFocusCommands(chokes) — skips the first
+  (biggest, owned by F103's focusChokepointCommand so no duplicate ids) and emits
+  one "cohort-focus-<id>" command per runner-up, fuzzy-findable by "#N" +
+  "bottleneck". main.ts: currentChokepoints() (topChokepoints cap 6, matching the
+  sidebar cap); buildCommands spreads them after focusChokepointCommand;
+  runCommand decodes "cohort-focus-<id>" (distinct from "cohort-focus-biggest")
+  -> setCohort. +5 tests.
+- **F108** `4c083c6` Cohort history back-stack. cohort.ts: pushCohortHistory
+  (append, de-dupe top, cap 20) + popCohortHistory(tasks, stack) -> CohortBack
+  (pops most-recent-first, rebuilds each ancestor via buildCohort against the
+  FRESH graph, transparently skipping dead ancestors to land on the nearest live
+  cohort, or null when none holds); renderCohortChipBody gains historyDepth that
+  prepends a data-cohort-back glyph. main.ts: cohortHistory slot; setCohort pushes
+  the outgoing source; clearCohort / setLens / clear-all / jumpToTask reset it;
+  cohortBack() steps one level; Escape steps back first (falling through to
+  bulk-clear / tag-exit when no history); the chip's < glyph routes to cohortBack.
+  app.css: .cohort-back inset pill. +10 tests.
+- **F109** `4a599ae` Lens provenance readout. views.ts: lensProvenanceNote(
+  recalled, liveLens) -> the recalled view's name only when it captured a lens
+  that still equals the live lens (a digit-key lens / a lens changed after recall
+  reports nothing). main.ts: a [data-filter-lens-from] "from <view>" readout
+  beside the lens chip, hidden otherwise. app.css: .lens-from muted italic. +4
+  tests.
+- **F110** `d735b9d` One-click pin-this-lens. views.ts: pureLensViewName(label) +
+  findPureLensView(views, lens) (empty-filter view for a lens kind, distinct from
+  activeViewWithLens). main.ts: a [data-filter-lens-pin] star reflecting pinned
+  state (filled recall vs hollow pin) via findPureLensView; pinCurrentLens() saves
+  a pure-lens view named after the lens with NO prompt, or recalls the existing
+  pin (idempotent, never duplicates). app.css: .lens-pin chrome-free star. +5
+  tests.
+- **F111** `28f910a` Chokepoint trend hint. stats.ts: chokepointTrend(prev, curr)
+  -> the prior id only when both exist and differ; renderChokepointTrend(prev) ->
+  a muted " was #M" note; renderChokepoint / renderDepStats / renderStatsPanel
+  gain an optional trendPrev arg (default null keeps every existing snapshot
+  byte-identical). main.ts: prevBiggestChokepoint slot; refreshStats computes the
+  trend, paints, then updates the slot. app.css: .chokepoint-trend muted inline
+  note. +4 tests.
+- `82edd7d` bundle rebuild (41 modules, JS 38.25KB gz, CSS 10.23KB gz).
+
+Live proof: built /tmp/t20.tsk.md via the CLI (--file), #1 with 3 waiters
+(#3,#4,#5) and #2 with 2 (#6,#7) — two chokepoints — then `tsk serve --addr
+127.0.0.1:7920`. The served bundle (app-BLEIlhsp.js) carried every hook:
+F107 ("cohort-focus-", "Focus chokepoint #"), F108 ("data-cohort-back",
+"cohort-back", "back to ", "cohort history cleared"), F109 ("lens-from",
+"came from the saved view"), F110 ("lens-pin", "is-pinned", "Pin the ",
+"pinned lens"), F111 ("chokepoint-trend", "was #", "biggest chokepoint
+changed"). Toggling the #1 chokepoint done via POST /api/tasks/1/toggle
+round-tripped to .tsk.md preserving every depends: link + adding completed:;
+`tsk show 3` read depends:#1 back. /api/export?ids=6,7 returned exactly #2's
+cohort (200). Storage contract honoured — the raw .tsk.md stayed plain
+hand-editable markdown. (After #1 completes, F111's trend would surface
+"was #1" as the biggest chokepoint shifts to #2 — the exact behaviour shipped.)
+
+Process note: accidentally ran the first few fixture `add`s against the repo's
+own .tsk.md before switching to --file; restored it to its single `testroot`
+line + removed the stray .tsk.md.bak, so the working tree is clean and only the
+intended commits landed.
+
+Deferred: nothing. F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu) remain the standing
+long-carries. T21 backlog (F112-F116) appended below so the loop never starves.
+
+### T21 — depth (appended T20 2026-06-26 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T20 chokepoint-keyboard-focus / cohort-back-stack / lens-provenance /
+pin-lens / chokepoint-trend cluster:
+
+- [ ] **F112** Pinned-lens chips in the Views row read as lenses, not filters:
+      F110 saves a pure-lens view named after the lens; in the views chip row those
+      pins already wear `is-lensed` (F104), but a pin (empty filter + lens) could
+      carry a distinct glyph (the lensMeta glyph) so a pinned lens is visually a
+      "lens bookmark" vs a "filter bookmark" at a glance. Reuse lensMeta(kind).glyph
+      keyed off the view's stored lens string (validate via parseLens).
+- [ ] **F113** Cohort back-stack depth readout: F108 keeps a per-session stack but
+      only the immediate "<" back affordance shows. Add a tiny depth badge on the
+      cohort chip ("‹2") when the stack has >1 entry, so a multi-step drill shows
+      how deep you are. Pure: extend renderCohortChipBody to render the count; the
+      Escape/glyph behaviour is unchanged (still steps one level).
+- [ ] **F114** "Focus chokepoint #N" trend awareness: F107's per-chokepoint focus
+      commands + F111's trend hint don't know about each other. When the biggest
+      chokepoint just changed (trendPrev set), surface a Cmd-K command "Focus the
+      NEW biggest chokepoint (#N, was #M)" at the top of the focus group, so the
+      keyboard path leads with the shift the sidebar just flagged. Reuse
+      chokepointTrend + currentChokepointId.
+- [ ] **F115** Pin-lens from the Cmd-K palette: F110's pin is a mouse-only star on
+      the chip. Add a context-aware "Pin lens (<label>)" command (shown only while a
+      lens is active, disabled-reason "no lens active" via F89) that runs
+      pinCurrentLens keyboard-only — the palette sister of the star, mirroring how
+      F103's cohort commands shadow the sidebar focus button.
+- [ ] **F116** Lens provenance in the help/`?` overlay's active-view line: F109
+      shows "from <view>" beside the chip; the F82 help overlay already has an
+      "active lens" line (renderActiveLensRow). When the lens came from a recalled
+      view, append the provenance there too so the keyboard-only `?` summary answers
+      "why is this lens on?" without looking at the filter bar. Reuse
+      lensProvenanceNote.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
+import/export, a cohort-history breadcrumb trail, etc.).
