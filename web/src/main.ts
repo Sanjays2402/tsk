@@ -157,6 +157,7 @@ import {
   clearCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
+  focusShiftedChokepointCommand,
   type Command,
 } from "./palette";
 import {
@@ -473,6 +474,23 @@ let cohortHistory: number[] = [];
  * each paint so the hint shows for exactly the one render where it changed.
  */
 let prevBiggestChokepoint: number | null = null;
+
+/**
+ * F114: the biggest chokepoint id seen at the LAST refresh, plus the prior id
+ * when the worst bottleneck shifted on that refresh. These drive the Cmd-K
+ * "Focus the new biggest chokepoint (#N, was #M)" lead command, the keyboard
+ * sibling of F111's sidebar "was #M" trend hint.
+ *
+ * F111's prevBiggestChokepoint only updates while the stats panel is OPEN (it
+ * paints the sidebar), so it can't drive a palette command that must work with
+ * the panel closed. These two slots are updated in refresh() — which always runs
+ * — so the shift is tracked independently. `lastBiggestChokepoint` is the prior
+ * refresh's biggest id; `chokepointShiftFrom` holds the id to lead "was #M" with
+ * for exactly the window between the shift and the next refresh (or until the
+ * user acts on the lead), mirroring the momentary lifetime of F111's hint.
+ */
+let lastBiggestChokepoint: number | null = null;
+let chokepointShiftFrom: number | null = null;
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -1338,6 +1356,20 @@ async function refresh(): Promise<void> {
         showInfoToast(`Cohort cleared — nothing waits on #${prevSourceId} anymore`);
       }
     }
+    // F114: track the biggest-chokepoint shift independently of the stats panel
+    // so the Cmd-K "Focus the new biggest chokepoint (#N, was #M)" lead command
+    // works even with the sidebar closed (F111's slot only updates while the
+    // panel paints). chokepointTrend returns the prior id ONLY on a real change;
+    // we hold it in chokepointShiftFrom until the next refresh or until the user
+    // acts on the lead, mirroring the momentary lifetime of F111's sidebar hint.
+    const currBiggest = currentChokepointId();
+    const shift = chokepointTrend(lastBiggestChokepoint, currBiggest);
+    if (shift !== null) chokepointShiftFrom = shift;
+    else if (currBiggest === null || currBiggest === lastBiggestChokepoint) {
+      // Board went flat, or steadied on the same id — no pending shift to lead.
+      chokepointShiftFrom = null;
+    }
+    lastBiggestChokepoint = currBiggest;
     setStatus("ready", false);
     render();
     refreshStats();
@@ -4513,6 +4545,13 @@ let paletteDueParseSeq = 0;
  * Build the command registry from the live app state. Rebuilt each open so
  * enabled/disabled flags (e.g. undo) and the current selection reflect reality.
  */
+function maybeCommand(cmd: Command | null): Command[] {
+  // F114: spread-helper so an optional command (one that only exists in some
+  // states, e.g. the chokepoint-shift lead) drops cleanly out of the registry
+  // when its builder returns null — keeps buildCommands declarative.
+  return cmd ? [cmd] : [];
+}
+
 function buildCommands(): Command[] {
   const sel = nav.selectedId;
   const hasSel = sel !== null;
@@ -4624,6 +4663,12 @@ function buildCommands(): Command[] {
     // setCohort path from Cmd-K. Each disabled (with a reason via F89) when its
     // precondition is absent (no cohort focused / a flat board).
     clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null),
+    // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
+    // independent of the stats panel), lead the focus group with "Focus the new
+    // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
+    // the change F111's sidebar hint flags. Filtered out (null) on a steady or
+    // flat board, so it appears only when there's a shift worth leading with.
+    ...maybeCommand(focusShiftedChokepointCommand(currentChokepointId(), chokepointShiftFrom)),
     focusChokepointCommand(currentChokepointId()),
     // F107: a "Focus chokepoint #N (K waiting)" command per RUNNER-UP
     // chokepoint, so every bottleneck the F106 sidebar lists is reachable
@@ -4739,6 +4784,16 @@ function runCommand(id: string): void {
       if (id !== null) setCohort(id);
       break;
     }
+    case "cohort-focus-new": {
+      // F114: focus the NEW biggest chokepoint after a shift (the lead command).
+      // Same setCohort path as cohort-focus-biggest, but it also consumes the
+      // pending shift so the "was #M" lead doesn't linger after you've acted on
+      // it (the next refresh would clear it anyway; this is the immediate path).
+      const id = currentChokepointId();
+      chokepointShiftFrom = null;
+      if (id !== null) setCohort(id);
+      break;
+    }
     case "theme":
       cycleTheme();
       break;
@@ -4766,7 +4821,11 @@ function runCommand(id: string): void {
   // distinct from the static "cohort-focus-biggest"). Decode the target id and
   // route through the same setCohort path the sidebar focus buttons + the
   // biggest-chokepoint command use — so every bottleneck is keyboard-reachable.
-  if (id.startsWith("cohort-focus-") && id !== "cohort-focus-biggest") {
+  if (
+    id.startsWith("cohort-focus-") &&
+    id !== "cohort-focus-biggest" &&
+    id !== "cohort-focus-new" // F114: the shift-lead is handled in the switch above
+  ) {
     const focusId = Number(id.slice("cohort-focus-".length));
     if (Number.isFinite(focusId) && focusId > 0) setCohort(focusId);
   }

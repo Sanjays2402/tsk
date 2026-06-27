@@ -19,6 +19,7 @@ import {
   clearCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
+  focusShiftedChokepointCommand,
   SELECTION_GATED_COMMANDS,
   renderDisabledReason,
   type Command,
@@ -538,5 +539,42 @@ test("buildChokepointFocusCommands rows are fuzzy-findable by id and 'bottleneck
   // The "#8" keyword lets you jump straight to a known chokepoint by id.
   assert.equal(filterCommands(cmds, "#8")[0].id, "cohort-focus-8");
   assert.equal(filterCommands(cmds, "bottleneck").length, 1);
+});
+
+// --- F114: "Focus the new biggest chokepoint" lead command on a shift --------
+
+test("focusShiftedChokepointCommand leads with the shift only when it changed", () => {
+  // A real shift (#7 -> #3) yields the lead command naming both ids.
+  const c = focusShiftedChokepointCommand(3, 7);
+  assert.notEqual(c, null);
+  assert.equal(c!.id, "cohort-focus-new");
+  assert.equal(c!.title, "Focus the new biggest chokepoint (#3, was #7)");
+  assert.equal(c!.group, "View");
+});
+
+test("focusShiftedChokepointCommand is null on a steady board (same id)", () => {
+  assert.equal(focusShiftedChokepointCommand(5, 5), null);
+});
+
+test("focusShiftedChokepointCommand is null when either id is absent", () => {
+  assert.equal(focusShiftedChokepointCommand(null, 7), null); // flat board now
+  assert.equal(focusShiftedChokepointCommand(3, null), null); // no prior to compare
+  assert.equal(focusShiftedChokepointCommand(null, null), null);
+});
+
+test("focusShiftedChokepointCommand id is disjoint from biggest + per-chokepoint ids", () => {
+  // The decoder routes "cohort-focus-new" through the switch (not the numeric
+  // path), so it must differ from both "cohort-focus-biggest" and any
+  // "cohort-focus-<N>". "new" is non-numeric, so it can never collide.
+  const c = focusShiftedChokepointCommand(3, 7)!;
+  assert.notEqual(c.id, "cohort-focus-biggest");
+  assert.ok(!Number.isFinite(Number(c.id.slice("cohort-focus-".length))));
+});
+
+test("focusShiftedChokepointCommand is fuzzy-findable by 'new' and the new id", () => {
+  const c = focusShiftedChokepointCommand(9, 2)!;
+  assert.equal(filterCommands([c], "new")[0].id, "cohort-focus-new");
+  assert.equal(filterCommands([c], "#9").length, 1);
+  assert.equal(filterCommands([c], "shift").length, 1);
 });
 

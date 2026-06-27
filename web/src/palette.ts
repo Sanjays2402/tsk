@@ -427,6 +427,46 @@ export function buildChokepointFocusCommands(chokes: ChokepointLike[]): Command[
 }
 
 /**
+ * F114: build a "Focus the new biggest chokepoint (#N, was #M)" command for the
+ * TOP of the focus group — but only when the biggest chokepoint JUST CHANGED.
+ * F107's per-chokepoint focus commands + F111's "was #M" sidebar trend hint
+ * don't know about each other: the keyboard path lists every bottleneck in id
+ * order, with no lead on the one that just shifted. When a shift is pending
+ * (`prevId` is the prior biggest, surfaced by chokepointTrend) this returns a
+ * single command that leads with the change the sidebar just flagged, so Cmd-K
+ * opens straight onto the new worst bottleneck.
+ *
+ * Returns null on a steady board (no shift) or a flat board (`currId` null), so
+ * the caller adds nothing — the lead command appears ONLY when there's a shift
+ * worth leading with. Its id is the static "cohort-focus-new" (distinct from
+ * F103's "cohort-focus-biggest" and F107's "cohort-focus-<id>"), routing through
+ * the same setCohort(currentBiggest) path. Pure → unit-tested.
+ */
+export function focusShiftedChokepointCommand(
+  currId: number | null,
+  prevId: number | null,
+): Command | null {
+  if (currId === null || prevId === null || currId === prevId) return null;
+  return {
+    id: "cohort-focus-new",
+    title: `Focus the new biggest chokepoint (#${currId}, was #${prevId})`,
+    group: "View",
+    keywords: [
+      "cohort",
+      "focus",
+      "chokepoint",
+      "bottleneck",
+      "new",
+      "changed",
+      "shift",
+      "moved",
+      "trend",
+      `#${currId}`,
+    ],
+  };
+}
+
+/**
  * F89: the human reason ANY disabled palette command is greyed — the general
  * form of F83, which only covered the Set due/priority group. So every greyed
  * command explains itself in the preview slot:
