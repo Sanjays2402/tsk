@@ -4509,7 +4509,15 @@ function toggleHelp(open: boolean): void {
   // its number-key shortcut shown as a <kbd>. Empty -> the line collapses.
   const activeEl = el.querySelector<HTMLElement>("[data-help-active]");
   if (activeEl) {
-    const html = renderActiveLensHelp(activeLens);
+    // F116: when the active lens came from a recalled lensed view (F104), append
+    // a "from <view>" note to the help line so the keyboard-only `?` summary
+    // answers "why is this lens on?" — the same provenance F109 shows beside the
+    // filter-bar chip. lensProvenanceNote returns the view name only while the
+    // recalled view still equals the live lens (a digit-key / stat-tile lens, or
+    // a lens changed after recall, reports nothing -> the line stays as before).
+    const recalled = recalledViewId ? views.find((v) => v.id === recalledViewId) ?? null : null;
+    const provenance = lensProvenanceNote(recalled, activeLens);
+    const html = renderActiveLensHelp(activeLens, provenance);
     activeEl.hidden = html === "";
     activeEl.innerHTML = html;
   }

@@ -285,13 +285,24 @@ export function renderLensChipBody(kind: LensKind | null): string {
  * a <kbd>, so the `?` overlay surfaces both WHAT you're looking at and the
  * digit that toggles it — the same shortcut the chip and the stat tiles show.
  * Returns "" when no lens is active so the line collapses. Pure → unit-tested.
+ *
+ * F116: when the active lens was re-applied by recalling a lensed saved view
+ * (F104), an optional `provenance` (the recalled view's NAME, from
+ * lensProvenanceNote) appends a quiet "from <view>" note — so the keyboard-only
+ * `?` summary answers "why is this lens on?" without looking at the filter bar,
+ * mirroring F109's chip-side readout. Omitting it (or passing null) keeps the
+ * line byte-identical, so a digit-key / stat-tile lens (no source view) reads
+ * exactly as before.
  */
-export function renderActiveLensHelp(kind: LensKind | null): string {
+export function renderActiveLensHelp(kind: LensKind | null, provenance: string | null = null): string {
   if (kind === null) return "";
   const meta = LENS_META[kind];
   const digit = lensDigit(kind);
   const key = digit ? `<kbd>${digit}</kbd> ` : "";
-  return `Active lens: ${key}${meta.glyph} <strong>${escapeHTML(meta.label)}</strong>`;
+  const from = provenance
+    ? ` <span class="help-lens-from">from ${escapeHTML(provenance)}</span>`
+    : "";
+  return `Active lens: ${key}${meta.glyph} <strong>${escapeHTML(meta.label)}</strong>${from}`;
 }
 
 /**

@@ -1713,6 +1713,16 @@ button.lens-legend-item:focus-visible {
   white-space: nowrap;
   align-self: center;
 }
+/* F116: the lens provenance note inside the help (`?`) overlay's active-lens
+   line — a muted italic "from <view>" appended when the live lens came from a
+   recalled lensed view (F104), so the keyboard-only summary answers "why is
+   this lens on?" Mirrors the .lens-from chip-side readout (F109) but scoped to
+   the overlay line so it inherits its layout. */
+.help-lens-from {
+  color: var(--color-text-dim);
+  font-style: italic;
+  font-weight: 400;
+}
 /* F110: the one-click "pin this lens" star beside the active-lens chip. Hollow
    ☆ when the lens isn't pinned yet (click to save a pure-lens view named after
    the lens); filled ★ in the amber accent when it IS pinned (click to recall).

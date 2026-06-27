@@ -173,6 +173,35 @@ test("renderActiveLensHelp digit agrees with lensDigit per lens", () => {
   }
 });
 
+// --- F116: lens provenance in the help overlay's active-lens line -----------
+
+test("renderActiveLensHelp appends 'from <view>' when a provenance is given", () => {
+  const html = renderActiveLensHelp("overdue", "Sprint");
+  assert.match(html, /Active lens:/);
+  assert.match(html, /<strong>overdue<\/strong>/);
+  assert.match(html, /help-lens-from/);
+  assert.match(html, /from Sprint/);
+});
+
+test("renderActiveLensHelp omits the provenance note when none is given", () => {
+  // Default (no provenance) is byte-identical to the F82 line — a digit-key or
+  // stat-tile lens has no source view, so the note must not appear.
+  assert.equal(renderActiveLensHelp("overdue"), renderActiveLensHelp("overdue", null));
+  assert.doesNotMatch(renderActiveLensHelp("overdue"), /help-lens-from/);
+});
+
+test("renderActiveLensHelp provenance is HTML-escaped", () => {
+  const html = renderActiveLensHelp("today", '<b>x</b>&"');
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;&amp;&quot;/);
+});
+
+test("renderActiveLensHelp with no lens stays empty even with a provenance", () => {
+  // No active lens -> the whole line collapses, provenance or not (the caller
+  // only computes a provenance when a lens is on, but the function is defensive).
+  assert.equal(renderActiveLensHelp(null, "Sprint"), "");
+});
+
 // F90 — the full lens digit-map mini-legend.
 test("renderLensDigitMap lists every lens with its digit + label, in order", () => {
   const html = renderLensDigitMap(null);
