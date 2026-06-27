@@ -251,6 +251,55 @@ test("renderLensDigitMap titles read 'show' for inactive and 'clear' for the act
   assert.match(html, /data-lens-legend="blocked"[^>]*title="Show only blocked \(key 1\)"/);
 });
 
+// --- F120: pinned-lens state synced across help line + digit map ------------
+
+test("renderActiveLensHelp appends a pinned marker when the lens is pinned", () => {
+  const html = renderActiveLensHelp("overdue", null, true);
+  assert.match(html, /help-lens-pinned/);
+  assert.match(html, /pinned/);
+  assert.match(html, /\u2605/); // the ★ echoes the filled chip star
+});
+
+test("renderActiveLensHelp omits the pinned marker by default and when unpinned", () => {
+  // The default (false) keeps the line byte-identical to the F116 form, so an
+  // unpinned lens reads exactly as before.
+  assert.equal(renderActiveLensHelp("overdue", null), renderActiveLensHelp("overdue", null, false));
+  assert.doesNotMatch(renderActiveLensHelp("overdue", null, false), /help-lens-pinned/);
+});
+
+test("renderActiveLensHelp shows BOTH provenance and pinned when both apply", () => {
+  const html = renderActiveLensHelp("overdue", "Sprint", true);
+  assert.match(html, /from Sprint/);
+  assert.match(html, /help-lens-pinned/);
+});
+
+test("renderLensDigitMap marks the active entry pinned only when pinnedKind matches", () => {
+  const html = renderLensDigitMap("overdue", "overdue");
+  assert.match(html, /data-lens-legend="overdue"[^>]*class=|class="[^"]*is-pinned/);
+  // The pinned class + star ride the active overdue entry.
+  assert.match(html, /lens-legend-item is-active is-pinned/);
+  assert.match(html, /lens-legend-pin/);
+});
+
+test("renderLensDigitMap pin defaults off and ignores a non-active pinnedKind", () => {
+  // Default: no pin marker anywhere (byte-identical to the F90 map).
+  assert.doesNotMatch(renderLensDigitMap("overdue"), /is-pinned/);
+  // A pinnedKind that isn't the active lens can't light up an entry (main.ts
+  // only ever passes pinnedKind === active, but guard the renderer anyway).
+  assert.doesNotMatch(renderLensDigitMap("overdue", "today"), /is-pinned/);
+  assert.doesNotMatch(renderLensDigitMap(null, "overdue"), /is-pinned/);
+});
+
+test("F120 pinned marker is consistent across the help line and the digit map", () => {
+  // The two surfaces are driven by the same boolean in main.ts; assert they
+  // agree symbol-for-symbol so a future edit can't desync them.
+  const lensPinned = true;
+  const line = renderActiveLensHelp("blocked", null, lensPinned);
+  const map = renderLensDigitMap("blocked", lensPinned ? "blocked" : null);
+  assert.match(line, /\u2605/);
+  assert.match(map, /\u2605/);
+});
+
 // F93 — per-tab active-lens persistence (parseLens + the storage key).
 test("parseLens round-trips every known lens kind", () => {
   for (const k of LENS_ORDER) {

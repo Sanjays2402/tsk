@@ -4541,7 +4541,12 @@ function toggleHelp(open: boolean): void {
     // a lens changed after recall, reports nothing -> the line stays as before).
     const recalled = recalledViewId ? views.find((v) => v.id === recalledViewId) ?? null : null;
     const provenance = lensProvenanceNote(recalled, activeLens);
-    const html = renderActiveLensHelp(activeLens, provenance);
+    // F120: whether the active lens is pinned (has a pure-lens saved view). The
+    // SAME findPureLensView call drives the F110 chip star and the F115 palette
+    // command, so the help line, the digit map, the star, and the command can
+    // never disagree about the pin state — they're all this one boolean.
+    const lensPinned = activeLens !== null && findPureLensView(views, activeLens) !== null;
+    const html = renderActiveLensHelp(activeLens, provenance, lensPinned);
     activeEl.hidden = html === "";
     activeEl.innerHTML = html;
   }
@@ -4562,7 +4567,14 @@ function toggleHelp(open: boolean): void {
   // number-key shortcut at a glance — not just the one currently active.
   const legendEl = el.querySelector<HTMLElement>("[data-help-legend]");
   if (legendEl) {
-    legendEl.innerHTML = renderLensDigitMap(activeLens);
+    // F120: mark the active lens's legend entry as pinned (★) when it has a
+    // pure-lens saved view — the digit-map third of the three synced surfaces
+    // (chip star, active-lens line, this legend). The pinned kind is the active
+    // lens only when it's actually pinned, so the legend can't claim a pin the
+    // star/line don't show. Reuses the same findPureLensView the line above did.
+    const pinnedKind =
+      activeLens !== null && findPureLensView(views, activeLens) !== null ? activeLens : null;
+    legendEl.innerHTML = renderLensDigitMap(activeLens, pinnedKind);
   }
   // F82: bold the lens-shortcut row while a lens is active so the digit map is
   // visibly "live" in the overlay, matching the chip's digit badge.

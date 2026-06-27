@@ -293,8 +293,20 @@ export function renderLensChipBody(kind: LensKind | null): string {
  * mirroring F109's chip-side readout. Omitting it (or passing null) keeps the
  * line byte-identical, so a digit-key / stat-tile lens (no source view) reads
  * exactly as before.
+ *
+ * F120: when the active lens is ALSO pinned (it has a pure-lens saved view —
+ * the F110 star is filled, the F115 palette command reads "Recall pinned lens"),
+ * an optional `pinned` flag appends a small "★ pinned" marker so the `?` summary
+ * reports the pin state too. The chip star (F110), the Cmd-K command (F115), and
+ * this overlay line all read the SAME findPureLensView result in main.ts, so the
+ * three surfaces can never disagree about whether the active lens is pinned.
+ * Defaults to false, keeping the line byte-identical for an unpinned lens.
  */
-export function renderActiveLensHelp(kind: LensKind | null, provenance: string | null = null): string {
+export function renderActiveLensHelp(
+  kind: LensKind | null,
+  provenance: string | null = null,
+  pinned = false,
+): string {
   if (kind === null) return "";
   const meta = LENS_META[kind];
   const digit = lensDigit(kind);
@@ -302,7 +314,10 @@ export function renderActiveLensHelp(kind: LensKind | null, provenance: string |
   const from = provenance
     ? ` <span class="help-lens-from">from ${escapeHTML(provenance)}</span>`
     : "";
-  return `Active lens: ${key}${meta.glyph} <strong>${escapeHTML(meta.label)}</strong>${from}`;
+  const pin = pinned
+    ? ` <span class="help-lens-pinned" title="This lens is pinned as a saved view">\u2605 pinned</span>`
+    : "";
+  return `Active lens: ${key}${meta.glyph} <strong>${escapeHTML(meta.label)}</strong>${from}${pin}`;
 }
 
 /**
@@ -320,15 +335,30 @@ export function renderActiveLensHelp(kind: LensKind | null, provenance: string |
  * the same way its number-key / stat tile does, then closes the overlay. The
  * markup keeps the same classes + `data-lens-legend` hook F90 shipped, so the
  * existing legend tests and styling carry over unchanged.
+ *
+ * F120: an optional `pinnedKind` marks the ACTIVE lens's legend entry with an
+ * `is-pinned` class + a ★ when that lens is pinned (has a pure-lens saved view).
+ * Only the active+pinned entry is marked, and `pinnedKind` should equal `active`
+ * when set (main.ts derives both from the same state), so the digit map agrees
+ * with the active-lens line's "★ pinned" marker and the chip star — the third of
+ * the three surfaces F120 keeps in sync. Null (the default) keeps the legend
+ * byte-identical, so an unpinned / no-lens map reads exactly as before.
  */
-export function renderLensDigitMap(active: LensKind | null): string {
+export function renderLensDigitMap(active: LensKind | null, pinnedKind: LensKind | null = null): string {
   const items = LENS_ORDER.map((kind) => {
     const meta = LENS_META[kind];
     const digit = lensDigit(kind);
     const on = kind === active ? " is-active" : "";
+    const isPinned = kind === active && kind === pinnedKind;
+    const pinnedCls = isPinned ? " is-pinned" : "";
     const current = kind === active ? ' aria-current="true"' : "";
-    const title = kind === active ? `Clear the ${meta.label} lens` : `Show only ${meta.label} (key ${digit})`;
-    return `<button type="button" class="lens-legend-item${on}" data-lens-legend="${kind}"${current} title="${escapeHTML(title)}"><kbd>${digit}</kbd> ${meta.glyph} ${escapeHTML(meta.label)}</button>`;
+    const star = isPinned ? ` <span class="lens-legend-pin" aria-hidden="true">\u2605</span>` : "";
+    const title = kind === active
+      ? isPinned
+        ? `Clear the ${meta.label} lens (pinned)`
+        : `Clear the ${meta.label} lens`
+      : `Show only ${meta.label} (key ${digit})`;
+    return `<button type="button" class="lens-legend-item${on}${pinnedCls}" data-lens-legend="${kind}"${current} title="${escapeHTML(title)}"><kbd>${digit}</kbd> ${meta.glyph} ${escapeHTML(meta.label)}${star}</button>`;
   }).join('<span class="lens-legend-sep" aria-hidden="true"> &middot; </span>');
   return `<div class="lens-legend">${items}</div>`;
 }

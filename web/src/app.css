@@ -1772,6 +1772,22 @@ button.lens-legend-item:focus-visible {
   font-style: italic;
   font-weight: 400;
 }
+/* F120: the "★ pinned" marker on the help overlay's active-lens line — shown
+   when the active lens has a pure-lens saved view (the F110 chip star is filled,
+   the F115 palette command reads "Recall pinned lens"). The accent star echoes
+   the filled chip star so the keyboard-only `?` summary reports the pin state
+   the same way the mouse surfaces do. The matching digit-map entry (below) also
+   gains the star, so all three surfaces agree. */
+.help-lens-pinned {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.lens-legend-item.is-pinned {
+  color: var(--color-accent);
+}
+.lens-legend-pin {
+  color: var(--color-accent);
+}
 /* F110: the one-click "pin this lens" star beside the active-lens chip. Hollow
    ☆ when the lens isn't pinned yet (click to save a pure-lens view named after
    the lens); filled ★ in the amber accent when it IS pinned (click to recall).
