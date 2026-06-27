@@ -248,6 +248,24 @@ export function activeViewWithLens(
   return views.find((v) => viewMatches(v, filter, liveLens)) ?? null;
 }
 
+/**
+ * F109: the provenance of the active render-pipeline lens — the NAME of the
+ * recalled view that re-applied it, or null when the live lens didn't come from
+ * a view. A lens can be set three ways: a digit key, a stat tile, or recalling a
+ * lensed view (F104). Only the third has a "source view" to name, so when you
+ * recall "Sprint (overdue)" and later wonder "why is the overdue lens on?", this
+ * answers it. Returns the recalled view's name ONLY when that view captured a
+ * lens AND it equals the live lens (so a digit-key lens, or a lens changed after
+ * recall, reports no provenance — the view no longer explains it). Pure →
+ * unit-tested; main.ts renders the returned name into a small readout beside the
+ * active-lens chip.
+ */
+export function lensProvenanceNote(recalled: SavedView | null, liveLens: string | null): string | null {
+  if (!recalled || liveLens === null) return null;
+  if ((recalled.lens ?? null) !== liveLens) return null;
+  return recalled.name;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

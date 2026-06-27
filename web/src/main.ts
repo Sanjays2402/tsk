@@ -214,6 +214,7 @@ import {
   updateView,
   moveView,
   activeViewWithLens,
+  lensProvenanceNote,
   renderViewChips,
   filterIsEmpty,
   filtersEqual,
@@ -279,6 +280,7 @@ root.innerHTML = `
         <div class="filter-prios" data-filter-prios role="group" aria-label="Filter by priority"></div>
         <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
         <button class="fpill lens-blocked" data-filter-blocked type="button" aria-pressed="false" title="Showing only blocked tasks — click to clear" hidden>&#9211; blocked <span class="lens-x" aria-hidden="true">&times;</span></button>
+        <span class="lens-from" data-filter-lens-from hidden></span>
         <button class="fpill lens-blocked cohort-chip" data-filter-cohort type="button" aria-pressed="false" title="Showing only the tasks waiting on a chokepoint — click to clear" hidden></button>
       </div>
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
@@ -329,6 +331,7 @@ const els = {
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
   filterBlocked: must<HTMLButtonElement>("[data-filter-blocked]"),
+  filterLensFrom: must<HTMLElement>("[data-filter-lens-from]"),
   filterCohort: must<HTMLButtonElement>("[data-filter-cohort]"),
   viewsRow: must<HTMLElement>("[data-views-row]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
@@ -563,10 +566,27 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
     els.filterBlocked.classList.toggle("lens-hue-neutral", hue === "neutral");
     els.filterBlocked.setAttribute("aria-pressed", "true");
     els.filterBlocked.title = `Showing only ${lensMeta(activeLens).label} tasks — click to clear`;
+    // F109: when the active lens was re-applied by recalling a lensed view
+    // (F104), surface a "from <view>" provenance readout beside the chip so
+    // "why is this lens on?" is answerable. lensProvenanceNote returns the
+    // recalled view's name only while that view still equals the live lens (a
+    // digit-key lens, or a lens changed after recall, reports nothing).
+    const recalled = recalledViewId ? views.find((v) => v.id === recalledViewId) ?? null : null;
+    const provenance = lensProvenanceNote(recalled, activeLens);
+    if (provenance !== null) {
+      els.filterLensFrom.hidden = false;
+      els.filterLensFrom.textContent = `from ${provenance}`;
+      els.filterLensFrom.title = `The ${lensMeta(activeLens).label} lens came from the saved view “${provenance}”`;
+    } else {
+      els.filterLensFrom.hidden = true;
+      els.filterLensFrom.textContent = "";
+    }
   } else {
     els.filterBlocked.hidden = true;
     els.filterBlocked.classList.remove("is-active", "lens-hue-alert", "lens-hue-today", "lens-hue-neutral");
     els.filterBlocked.setAttribute("aria-pressed", "false");
+    els.filterLensFrom.hidden = true; // F109: no lens, no provenance
+    els.filterLensFrom.textContent = "";
   }
   // F96: the cohort-focus chip (hidden unless a chokepoint cohort is focused).
   // It reads "↑ N waiting on #M ×" and clears the focus on click — the

@@ -1676,6 +1676,17 @@ button.lens-legend-item:focus-visible {
 .fpill.cohort-chip .cohort-back:hover {
   background: rgba(255, 255, 255, 0.34);
 }
+/* F109: the lens provenance readout — a faint "from <view>" note beside the
+   active-lens chip, shown only when the live lens was re-applied by recalling a
+   lensed saved view (F104). Answers "why is this lens on?" without competing
+   with the chip itself (muted, smaller, no border). */
+.lens-from {
+  font-size: var(--fs-sm);
+  color: var(--color-text-dim);
+  font-style: italic;
+  white-space: nowrap;
+  align-self: center;
+}
 .fchip {
   display: inline-flex;
   align-items: center;

@@ -13,6 +13,7 @@ import {
   moveView,
   activeView,
   activeViewWithLens,
+  lensProvenanceNote,
   viewMatches,
   describeView,
   renderViewChips,
@@ -307,4 +308,31 @@ test("updateView can re-capture or strip the lens", () => {
   // Update without a lens -> stripped.
   v = updateView(v, v[0].id, { ...EMPTY, priorities: ["high"] });
   assert.equal("lens" in v[0], false);
+});
+
+// --- F109: lens provenance --------------------------------------------------
+
+test("lensProvenanceNote names the recalled view when its lens equals the live lens", () => {
+  const recalled = addView([], "Sprint", { ...EMPTY, priorities: ["urgent"] }, "overdue")[0];
+  assert.equal(lensProvenanceNote(recalled, "overdue"), "Sprint");
+});
+
+test("lensProvenanceNote is null when the recalled view captured no lens", () => {
+  // A filter-only view doesn't explain a lens even if one is live (it came from
+  // a digit key / stat tile, not this view).
+  const recalled = addView([], "Work", { ...EMPTY, tags: ["work"] })[0];
+  assert.equal(lensProvenanceNote(recalled, "overdue"), null);
+});
+
+test("lensProvenanceNote is null when the live lens diverged from the view's", () => {
+  // You recalled "Sprint (overdue)" then switched the lens to blocked — the
+  // view no longer explains the live lens.
+  const recalled = addView([], "Sprint", { ...EMPTY, priorities: ["urgent"] }, "overdue")[0];
+  assert.equal(lensProvenanceNote(recalled, "blocked"), null);
+});
+
+test("lensProvenanceNote is null with no recalled view or no live lens", () => {
+  const recalled = addView([], "Sprint", { ...EMPTY, priorities: ["urgent"] }, "overdue")[0];
+  assert.equal(lensProvenanceNote(null, "overdue"), null); // nothing recalled
+  assert.equal(lensProvenanceNote(recalled, null), null); // no lens on
 });
