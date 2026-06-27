@@ -156,6 +156,7 @@ import {
   renderDisabledReason,
   clearLensCommand,
   pinLensCommand,
+  unpinLensCommand,
   clearCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
@@ -637,7 +638,7 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
     els.filterLensPin.textContent = pinned !== null ? "\u2605" : "\u2606"; // ★ / ☆
     els.filterLensPin.title =
       pinned !== null
-        ? `“${pinned.name}” is pinned — click to recall it`
+        ? `“${pinned.name}” is pinned — click to recall it, right-click to unpin`
         : `Pin the ${lensMeta(activeLens).label} lens as a saved view`;
   } else {
     els.filterBlocked.hidden = true;
@@ -3315,6 +3316,30 @@ function pinCurrentLens(): void {
 }
 
 /**
+ * F125: unpin the active lens — the inverse of pinCurrentLens (F110/F115). Drops
+ * the pure-lens saved view for the active lens via the same removeView the chip
+ * × delete drives, so the pin lifecycle is symmetric and reachable keyboard-only
+ * (the Cmd-K "Unpin lens" command) and by mouse (right-click / long-press the
+ * star). A no-op when no lens is active OR the active lens isn't actually pinned
+ * (there's nothing to remove) — the command + star affordance are gated on the
+ * pinned state anyway, so this just guards the direct callers. The lens itself
+ * stays ON (unpinning removes the bookmark, not the active narrowing); only the
+ * saved view goes. refreshStats so the F120 "★ pinned" markers update if the
+ * panel is open.
+ */
+function unpinCurrentLens(): void {
+  if (activeLens === null) return;
+  const existing = findPureLensView(views, activeLens);
+  if (!existing) return; // not pinned — nothing to unpin
+  views = removeView(views, existing.id);
+  saveViews();
+  render();
+  refreshStats();
+  setStatus(`unpinned lens "${existing.name}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
  * F104: a sensible default name for a lens+facet view — the facet priorities
  * (if any) with the lens label in parentheses, e.g. "urgent (overdue)" or just
  * "(blocked)" for a pure-lens view. Keeps the saved-view name self-describing so
@@ -3453,6 +3478,10 @@ els.filterBlocked.addEventListener("click", () => {
 // F110: the "pin this lens" star — one click saves a pure-lens view named after
 // the lens (no prompt), or recalls the existing pinned view if the lens is
 // already pinned. Never creates a duplicate.
+// F125: right-click (or long-press, below) an already-pinned star to UNPIN it —
+// the mouse sister of the "Unpin lens" palette command, so the pin lifecycle is
+// symmetric without hunting for the chip's × delete. A right-click on an unpinned
+// star falls through to the default menu (nothing to unpin).
 els.filterLensPin.addEventListener("click", () => {
   pinCurrentLens();
 });
@@ -3468,6 +3497,39 @@ els.filterCohort.addEventListener("click", (e) => {
   }
   clearCohort();
 });
+els.filterLensPin.addEventListener("contextmenu", (e) => {
+  if (activeLens !== null && findPureLensView(views, activeLens) !== null) {
+    e.preventDefault();
+    unpinCurrentLens();
+  }
+});
+// F125: touch long-press on the star unpins a pinned lens (no right-click on
+// touch). Reuses the F28 long-press threshold; a tap still pins/recalls via the
+// click handler above. Cancels if the finger moves (a scroll) or lifts early.
+{
+  let pinPressTimer: number | null = null;
+  const clearPinPress = (): void => {
+    if (pinPressTimer !== null) {
+      window.clearTimeout(pinPressTimer);
+      pinPressTimer = null;
+    }
+  };
+  els.filterLensPin.addEventListener(
+    "touchstart",
+    () => {
+      clearPinPress();
+      if (activeLens === null || findPureLensView(views, activeLens) === null) return;
+      pinPressTimer = window.setTimeout(() => {
+        pinPressTimer = null;
+        unpinCurrentLens();
+      }, LONG_PRESS_MS);
+    },
+    { passive: true },
+  );
+  els.filterLensPin.addEventListener("touchmove", clearPinPress, { passive: true });
+  els.filterLensPin.addEventListener("touchend", clearPinPress);
+  els.filterLensPin.addEventListener("touchcancel", clearPinPress);
+}
 
 // Clear-all affordance resets every facet.
 els.filterClear.addEventListener("click", () => {
@@ -4754,6 +4816,14 @@ function buildCommands(): Command[] {
       activeLens ? lensMeta(activeLens).label : null,
       activeLens !== null && findPureLensView(views, activeLens) !== null,
     ),
+    // F125: the inverse of F115's pin — "Unpin lens (<label>)" removes the
+    // pure-lens saved view keyboard-only (the sister of right-clicking the star).
+    // Enabled only when the active lens is actually pinned; commandDisabledReason
+    // explains "no lens active" vs "lens not pinned" in the preview slot.
+    unpinLensCommand(
+      activeLens ? lensMeta(activeLens).label : null,
+      activeLens !== null && findPureLensView(views, activeLens) !== null,
+    ),
     // F103: the cohort-focus sisters of clearLensCommand — the keyboard-only
     // "Clear cohort focus (<summary>)" readout + a "Focus biggest chokepoint"
     // into the biggest chokepoint's cohort (naming it, "#N"). F96's sidebar
@@ -4876,6 +4946,12 @@ function runCommand(id: string): void {
       // pinned), keyboard-only — the sister of F110's mouse pin star. No-op when
       // no lens is active (the command is disabled then anyway).
       pinCurrentLens();
+      break;
+    case "lens-unpin":
+      // F125: drop the active lens's pure-lens saved view, keyboard-only — the
+      // sister of right-clicking / long-pressing the star. No-op when no lens is
+      // active or it isn't pinned (the command is disabled in those cases).
+      unpinCurrentLens();
       break;
     case "cohort-clear":
       // F103: drop the active cohort focus (keyboard-only sister of the
@@ -5071,6 +5147,7 @@ function paintPaletteDuePreview(): void {
           hasTasks: !els.filterbar.hidden,
           onTag: route.kind === "tag",
           hasLens: activeLens !== null,
+          lensPinned: activeLens !== null && findPureLensView(views, activeLens) !== null,
           hasCohort: focusCohort !== null,
           hasChokepoint: currentChokepointId() !== null,
         })

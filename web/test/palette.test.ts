@@ -18,6 +18,7 @@ import {
   clearLensCommand,
   clearCohortCommand,
   pinLensCommand,
+  unpinLensCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -383,7 +384,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, hasCohort: true, hasChokepoint: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -491,6 +492,53 @@ test("pinLensCommand is fuzzy-findable by 'pin' and 'lens'", () => {
   // And by 'recall' once pinned, so the recall affordance is discoverable.
   const byRecall = filterCommands([pinLensCommand("today", true)], "recall");
   assert.equal(byRecall.length, 1);
+});
+
+// --- F125: the "Unpin lens" palette command --------------------------------
+
+test("unpinLensCommand reads 'Unpin lens (<label>)' and is enabled only when pinned", () => {
+  const c = unpinLensCommand("overdue", true);
+  assert.equal(c.id, "lens-unpin");
+  assert.equal(c.title, "Unpin lens (overdue)");
+  assert.equal(c.disabled, false);
+  assert.equal(c.group, "View");
+});
+
+test("unpinLensCommand is disabled when the active lens isn't pinned", () => {
+  const c = unpinLensCommand("blocked", false);
+  assert.equal(c.title, "Unpin lens (blocked)");
+  assert.equal(c.disabled, true); // nothing to unpin yet
+});
+
+test("unpinLensCommand reads plainly and is disabled with no lens", () => {
+  for (const pinned of [false, true]) {
+    const c = unpinLensCommand(null, pinned);
+    assert.equal(c.title, "Unpin lens");
+    assert.equal(c.disabled, true);
+  }
+});
+
+test("commandDisabledReason: unpin-lens distinguishes no-lens from not-pinned", () => {
+  // No lens at all.
+  assert.equal(commandDisabledReason("lens-unpin", { ...FULL_CTX, hasLens: false }), "no lens active");
+  // A lens, but it isn't pinned -> a distinct reason so the user knows why.
+  assert.equal(commandDisabledReason("lens-unpin", { ...FULL_CTX, lensPinned: false }), "lens not pinned");
+  // A pinned lens -> not disabled, no reason.
+  assert.equal(commandDisabledReason("lens-unpin", FULL_CTX), null);
+});
+
+test("unpinLensCommand is fuzzy-findable by 'unpin' and 'remove'", () => {
+  const byUnpin = filterCommands([unpinLensCommand("today", true)], "unpin");
+  assert.equal(byUnpin.length, 1);
+  assert.equal(byUnpin[0].id, "lens-unpin");
+  // 'remove' is a keyword so the command surfaces for that search too.
+  const byRemove = filterCommands([unpinLensCommand("today", true)], "remove");
+  assert.equal(byRemove.length, 1);
+  assert.equal(byRemove[0].id, "lens-unpin");
+});
+
+test("unpin and pin commands never share an id (distinct dispatch)", () => {
+  assert.notEqual(unpinLensCommand("today", true).id, pinLensCommand("today", true).id);
 });
 
 test("pinLensCommand id is distinct from the clear-lens command", () => {

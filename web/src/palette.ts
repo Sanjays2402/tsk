@@ -336,6 +336,8 @@ export interface CommandReasonContext {
   onTag: boolean;
   /** F98: is a render-pipeline lens currently active (so "clear lens" is meaningful)? */
   hasLens: boolean;
+  /** F125: is the active lens currently pinned (so "unpin lens" is meaningful)? */
+  lensPinned: boolean;
   /** F103: is a cohort focus currently active (so "clear cohort" is meaningful)? */
   hasCohort: boolean;
   /** F103: is there a chokepoint to focus (so "focus biggest chokepoint" is meaningful)? */
@@ -391,6 +393,33 @@ export function pinLensCommand(lensLabel: string | null, pinned: boolean): Comma
     group: "View",
     keywords: ["lens", "pin", "bookmark", "save", "view", "star", "recall", "blocked", "overdue", "today", "week", "due"],
     disabled: lensLabel === null,
+  };
+}
+
+/**
+ * F125: build the context-aware "Unpin lens (<label>)" command — the missing
+ * inverse of F110/F115's pin. You can pin a lens (the star / "Pin lens" command)
+ * and recall it ("Recall pinned lens"), but removing the pin was mouse-only:
+ * find the chip in the Views row and hit its × delete. This closes the pin
+ * lifecycle, routing through the same removeView the chip × drives so the
+ * pure-lens bookmark is dropped keyboard-only.
+ *
+ * The label names the active lens ("Unpin lens (overdue)") so the palette reads
+ * as a "which lens would I unpin?" prompt, mirroring pinLensCommand. The command
+ * is meaningful ONLY when the active lens is actually pinned (it has a pure-lens
+ * saved view), so it's disabled when no lens is active OR the active lens isn't
+ * pinned — `commandDisabledReason` then explains which. With no lens it reads
+ * plainly. Pure → unit-tested. `lensLabel` is the active lens's human label (or
+ * null when none); `pinned` is whether that lens currently has a saved pure-lens
+ * view (the same findPureLensView state the star + pin command read).
+ */
+export function unpinLensCommand(lensLabel: string | null, pinned: boolean): Command {
+  return {
+    id: "lens-unpin",
+    title: lensLabel ? `Unpin lens (${lensLabel})` : "Unpin lens",
+    group: "View",
+    keywords: ["lens", "unpin", "remove", "bookmark", "delete", "forget", "star", "blocked", "overdue", "today", "week", "due"],
+    disabled: lensLabel === null || !pinned,
   };
 }
 
@@ -522,6 +551,7 @@ export function focusShiftedChokepointCommand(
  *   - "Go to all tasks" when already there     -> "already on all tasks";
  *   - "Clear lens" with no lens active (F98)   -> "no lens active";
  *   - "Pin lens" with no lens active (F115)    -> "no lens active";
+ *   - "Unpin lens" with no lens / not pinned (F125) -> "no lens active" / "lens not pinned";
  *   - "Clear cohort focus" with none (F103)    -> "no cohort active";
  *   - "Focus biggest chokepoint" on a flat board (F103) -> "no chokepoint".
  * Returns null for a command with no known disabled-reason (the slot hides).
@@ -539,6 +569,13 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   if (id === "alltasks" && !ctx.onTag) return "already on all tasks";
   if (id === "lens-clear" && !ctx.hasLens) return "no lens active";
   if (id === "lens-pin" && !ctx.hasLens) return "no lens active";
+  if (id === "lens-unpin") {
+    // F125: two distinct disabled reasons — no lens at all, vs a lens that
+    // simply isn't pinned yet (nothing to unpin). The command is enabled only
+    // when both hold, so the caller consults this for whichever is missing.
+    if (!ctx.hasLens) return "no lens active";
+    if (!ctx.lensPinned) return "lens not pinned";
+  }
   if (id === "cohort-clear" && !ctx.hasCohort) return "no cohort active";
   if (id === "cohort-focus-biggest" && !ctx.hasChokepoint) return "no chokepoint";
   return null;
