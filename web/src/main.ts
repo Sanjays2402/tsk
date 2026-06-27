@@ -83,6 +83,7 @@ import {
   renderCohortFocusButton,
   cohortSummary,
   renderCohortHelp,
+  renderCohortPanelLine,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -1439,6 +1440,14 @@ async function refreshStats(): Promise<void> {
     const trendPrev = chokepointTrend(prevBiggestChokepoint, currBiggest);
     prevBiggestChokepoint = currBiggest;
     let html = renderStatsPanel(stats, dep, sched, choke, chokes, trendPrev);
+    // F126: when a cohort is focused, lead the panel with a "Focused: N waiting
+    // on #M" line — the mouse-surface sibling of F117's `?`-overlay breadcrumb,
+    // so the active cohort is visible on the panel too (not just in the filter
+    // bar / help). Reuses cohortSummary so it can't drift from the chip / Cmd-K
+    // command / help line; it carries data-cohort-clear for click-to-clear. "" on
+    // an unfocused board, so the line collapses cleanly.
+    const cohortLine = renderCohortPanelLine(focusCohort);
+    if (cohortLine !== "") html = `<div class="stats-cohort">${cohortLine}</div>` + html;
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
     // not just whole-board totals. Computed over the same not-deleted pool the
@@ -3071,6 +3080,7 @@ function setCohort(sourceId: number): void {
     persistLens();
   }
   render();
+  refreshStats(); // F126: keep the panel's "Focused: …" line in sync
   setStatus(`focused ${cohort.ids.length} waiting on #${sourceId}`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
 }
@@ -3081,6 +3091,7 @@ function clearCohort(): void {
   focusCohort = null;
   cohortHistory = []; // F108: dropping the focus drops its history
   render();
+  refreshStats(); // F126: the panel's "Focused: …" line collapses with the focus
 }
 
 /**
@@ -3105,6 +3116,7 @@ function cohortBack(): boolean {
   }
   setTimeout(() => setStatus("ready", false), 2_000);
   render();
+  refreshStats(); // F126: keep the panel's "Focused: …" line in sync with the step-back
   return true;
 }
 
@@ -3485,18 +3497,6 @@ els.filterBlocked.addEventListener("click", () => {
 els.filterLensPin.addEventListener("click", () => {
   pinCurrentLens();
 });
-
-// F96: the cohort-focus chip clears the focus when clicked.
-// F108: …unless the click landed on the leading ‹ back glyph, which steps back
-// to the previous cohort in the drill instead of clearing outright.
-els.filterCohort.addEventListener("click", (e) => {
-  const target = e.target as HTMLElement | null;
-  if (target?.closest("[data-cohort-back]")) {
-    cohortBack();
-    return;
-  }
-  clearCohort();
-});
 els.filterLensPin.addEventListener("contextmenu", (e) => {
   if (activeLens !== null && findPureLensView(views, activeLens) !== null) {
     e.preventDefault();
@@ -3530,6 +3530,18 @@ els.filterLensPin.addEventListener("contextmenu", (e) => {
   els.filterLensPin.addEventListener("touchend", clearPinPress);
   els.filterLensPin.addEventListener("touchcancel", clearPinPress);
 }
+
+// F96: the cohort-focus chip clears the focus when clicked.
+// F108: …unless the click landed on the leading ‹ back glyph, which steps back
+// to the previous cohort in the drill instead of clearing outright.
+els.filterCohort.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("[data-cohort-back]")) {
+    cohortBack();
+    return;
+  }
+  clearCohort();
+});
 
 // Clear-all affordance resets every facet.
 els.filterClear.addEventListener("click", () => {
@@ -3619,6 +3631,13 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F126: the "Focused: N waiting on #M" cohort line clears the focus on click —
+  // the panel sibling of the filter-bar cohort chip's clear. Checked before the
+  // focus buttons so a click on the line itself doesn't fall through to a walk.
+  if (target?.closest("[data-cohort-clear]")) {
+    clearCohort();
+    return;
+  }
   // F96: the chokepoint "focus" button narrows the board to exactly the undone
   // tasks waiting on #N (a cohort focus), so you can act on the blocked cohort.
   const cohortBtn = target?.closest<HTMLElement>("[data-cohort-focus]");

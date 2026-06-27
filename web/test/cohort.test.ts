@@ -10,6 +10,7 @@ import {
   renderCohortFocusButton,
   cohortSummary,
   renderCohortHelp,
+  renderCohortPanelLine,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -325,4 +326,32 @@ test("renderCohortHelp emits no button when there's no history to step back to",
   // Depth 0 -> plain "Cohort focus: …" with no actionable back button.
   assert.doesNotMatch(html, /data-cohort-back/);
   assert.doesNotMatch(html, /<button/);
+});
+
+// --- F126: the stats-panel active-cohort line --------------------------------
+
+test("renderCohortPanelLine summarizes the focus and reuses cohortSummary", () => {
+  const focus: CohortFocus = { sourceId: 1, ids: [2, 3, 4] };
+  const html = renderCohortPanelLine(focus);
+  assert.match(html, /Focused/);
+  // Reuses cohortSummary so the panel line can't drift from the chip / help / Cmd-K.
+  assert.match(html, new RegExp(cohortSummary(focus)));
+  assert.match(html, /3 waiting on #1/);
+});
+
+test("renderCohortPanelLine carries the data-cohort-clear hook + a clear glyph", () => {
+  const html = renderCohortPanelLine({ sourceId: 7, ids: [8] });
+  // The line is a button that clears the focus on click (panel sibling of the chip ×).
+  assert.match(html, /<button/);
+  assert.match(html, /data-cohort-clear/);
+  assert.match(html, /&times;/);
+});
+
+test("renderCohortPanelLine reads naturally for one vs many waiters in its title", () => {
+  assert.match(renderCohortPanelLine({ sourceId: 4, ids: [1] }), /the task waiting on #4/);
+  assert.match(renderCohortPanelLine({ sourceId: 4, ids: [1, 2] }), /the tasks waiting on #4/);
+});
+
+test("renderCohortPanelLine is empty for a null focus", () => {
+  assert.equal(renderCohortPanelLine(null), "");
 });

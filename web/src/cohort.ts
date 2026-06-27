@@ -155,6 +155,24 @@ export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): s
 }
 
 /**
+ * F126: render the stats panel's "active cohort" line — the mouse-surface
+ * sibling of F117's `?`-overlay cohort breadcrumb. The stats panel shows the
+ * biggest-chokepoint line but never the ACTIVE cohort focus, so when you've
+ * dropped the board onto "3 waiting on #1" the panel doesn't reflect it. This
+ * adds a small "Focused: <summary>" readout (reusing cohortSummary so it can't
+ * drift from the chip / Cmd-K command / help line) as a button carrying
+ * `data-cohort-clear` — a click clears the focus through the existing clearCohort
+ * wiring (the panel sibling of the filter-bar clear chip). Returns "" for a null
+ * focus so the line collapses on an unfocused board. Pure → unit-tested.
+ */
+export function renderCohortPanelLine(focus: CohortFocus | null): string {
+  if (focus === null) return "";
+  const summary = escapeHTML(cohortSummary(focus));
+  const title = `Focused on the ${focus.ids.length === 1 ? "task" : "tasks"} waiting on #${focus.sourceId} — click to clear`;
+  return `<button type="button" class="stat-cohort-line" data-cohort-clear title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}"><span class="stat-cohort-label">Focused</span> <span class="stat-cohort-val">${summary}</span> <span class="stat-cohort-x" aria-hidden="true">&times;</span></button>`;
+}
+
+/**
  * F101: the outcome of re-deriving a cohort focus against a fresh task list.
  * A cohort's `ids` are a snapshot of who waited on #sourceId at click time; an
  * external edit (CLI / TUI / hand / another tab) can complete those waiters,
