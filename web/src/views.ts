@@ -266,6 +266,29 @@ export function lensProvenanceNote(recalled: SavedView | null, liveLens: string 
   return recalled.name;
 }
 
+/**
+ * F110: the default name for a one-click "pin this lens" quick view — the human
+ * lens label as-is (e.g. "overdue", "due this week"). Kept tiny + pure so the
+ * pin path and the dup-check agree on the name without the caller re-deriving
+ * it. main.ts passes lensMeta(kind).label so the saved chip reads exactly like
+ * the lens it pins.
+ */
+export function pureLensViewName(lensLabel: string): string {
+  return lensLabel;
+}
+
+/**
+ * F110: find the existing PURE-lens view for a lens kind — a saved view whose
+ * filter is empty and whose captured lens equals `lens`. Returns it (so the pin
+ * affordance can read as "already pinned" + recall instead of re-saving) or null
+ * when this lens isn't pinned yet. Distinct from activeViewWithLens, which also
+ * requires the live FILTER to match: a pin is a pure-lens bookmark, so only the
+ * lens + an empty filter define it. Pure → unit-tested.
+ */
+export function findPureLensView(views: SavedView[], lens: string): SavedView | null {
+  return views.find((v) => (v.lens ?? null) === lens && filterIsEmpty(v.filter)) ?? null;
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>

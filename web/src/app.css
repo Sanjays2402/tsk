@@ -1687,6 +1687,28 @@ button.lens-legend-item:focus-visible {
   white-space: nowrap;
   align-self: center;
 }
+/* F110: the one-click "pin this lens" star beside the active-lens chip. Hollow
+   ☆ when the lens isn't pinned yet (click to save a pure-lens view named after
+   the lens); filled ★ in the amber accent when it IS pinned (click to recall).
+   Chrome-free so it reads as an inline affordance, not a competing button. */
+.lens-pin {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: var(--fs-md);
+  line-height: 1;
+  color: var(--color-text-dim);
+  align-self: center;
+  transition: color 0.12s ease, transform 0.12s ease;
+}
+.lens-pin:hover {
+  color: var(--color-accent);
+  transform: scale(1.12);
+}
+.lens-pin.is-pinned {
+  color: var(--color-accent);
+}
 .fchip {
   display: inline-flex;
   align-items: center;

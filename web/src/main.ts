@@ -215,6 +215,8 @@ import {
   moveView,
   activeViewWithLens,
   lensProvenanceNote,
+  pureLensViewName,
+  findPureLensView,
   renderViewChips,
   filterIsEmpty,
   filtersEqual,
@@ -280,6 +282,7 @@ root.innerHTML = `
         <div class="filter-prios" data-filter-prios role="group" aria-label="Filter by priority"></div>
         <button class="fpill toggle-done" data-filter-hidedone type="button" aria-pressed="false" title="Hide completed tasks">hide done</button>
         <button class="fpill lens-blocked" data-filter-blocked type="button" aria-pressed="false" title="Showing only blocked tasks — click to clear" hidden>&#9211; blocked <span class="lens-x" aria-hidden="true">&times;</span></button>
+        <button class="lens-pin" data-filter-lens-pin type="button" hidden aria-label="Pin this lens as a saved view"></button>
         <span class="lens-from" data-filter-lens-from hidden></span>
         <button class="fpill lens-blocked cohort-chip" data-filter-cohort type="button" aria-pressed="false" title="Showing only the tasks waiting on a chokepoint — click to clear" hidden></button>
       </div>
@@ -331,6 +334,7 @@ const els = {
   filterTags: must<HTMLElement>("[data-filter-tags]"),
   filterHideDone: must<HTMLButtonElement>("[data-filter-hidedone]"),
   filterBlocked: must<HTMLButtonElement>("[data-filter-blocked]"),
+  filterLensPin: must<HTMLButtonElement>("[data-filter-lens-pin]"),
   filterLensFrom: must<HTMLElement>("[data-filter-lens-from]"),
   filterCohort: must<HTMLButtonElement>("[data-filter-cohort]"),
   viewsRow: must<HTMLElement>("[data-views-row]"),
@@ -581,12 +585,28 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
       els.filterLensFrom.hidden = true;
       els.filterLensFrom.textContent = "";
     }
+    // F110: the one-click "pin this lens" affordance — saves a pure-lens view
+    // named after the lens (no prompt) so a frequently-used lens becomes a
+    // recallable chip in one click. When the lens is ALREADY pinned the button
+    // flips to a filled "pinned" state that recalls the saved view instead of
+    // re-saving (and never creates a duplicate). Reflects + acts in the click
+    // handler below via findPureLensView.
+    const pinned = findPureLensView(views, activeLens);
+    els.filterLensPin.hidden = false;
+    els.filterLensPin.classList.toggle("is-pinned", pinned !== null);
+    els.filterLensPin.textContent = pinned !== null ? "\u2605" : "\u2606"; // ★ / ☆
+    els.filterLensPin.title =
+      pinned !== null
+        ? `“${pinned.name}” is pinned — click to recall it`
+        : `Pin the ${lensMeta(activeLens).label} lens as a saved view`;
   } else {
     els.filterBlocked.hidden = true;
     els.filterBlocked.classList.remove("is-active", "lens-hue-alert", "lens-hue-today", "lens-hue-neutral");
     els.filterBlocked.setAttribute("aria-pressed", "false");
     els.filterLensFrom.hidden = true; // F109: no lens, no provenance
     els.filterLensFrom.textContent = "";
+    els.filterLensPin.hidden = true; // F110: no lens, no pin affordance
+    els.filterLensPin.classList.remove("is-pinned");
   }
   // F96: the cohort-focus chip (hidden unless a chokepoint cohort is focused).
   // It reads "↑ N waiting on #M ×" and clears the focus on click — the
@@ -3168,6 +3188,32 @@ function saveCurrentView(): void {
 }
 
 /**
+ * F110: one-click "pin this lens" — save the active render-pipeline lens as a
+ * pure-lens view (empty filter + the lens), named after the lens, with NO
+ * prompt. The common case (a frequently-used lens you want as a recallable chip)
+ * shouldn't need the F104 name dialog. Idempotent: if this lens is already
+ * pinned (findPureLensView), recall that view instead of saving a duplicate, so
+ * the star doubles as a quick "jump to my pinned lens". A no-op when no lens is
+ * active (the button is hidden then anyway).
+ */
+function pinCurrentLens(): void {
+  if (activeLens === null) return;
+  const existing = findPureLensView(views, activeLens);
+  if (existing) {
+    recallView(existing.id); // already pinned — recall it (no duplicate)
+    return;
+  }
+  const name = pureLensViewName(lensMeta(activeLens).label);
+  // Pin = a pure-lens view: empty filter, the lens captured. addView allows an
+  // empty filter precisely because a lens is supplied (F104).
+  views = addView(views, name, emptyFilter(), activeLens);
+  saveViews();
+  render();
+  setStatus(`pinned lens "${name}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
  * F104: a sensible default name for a lens+facet view — the facet priorities
  * (if any) with the lens label in parentheses, e.g. "urgent (overdue)" or just
  * "(blocked)" for a pure-lens view. Keeps the saved-view name self-describing so
@@ -3301,6 +3347,13 @@ els.filterHideDone.addEventListener("click", () => {
 // F66: the active-lens chip clears the lens when clicked.
 els.filterBlocked.addEventListener("click", () => {
   setLens(null);
+});
+
+// F110: the "pin this lens" star — one click saves a pure-lens view named after
+// the lens (no prompt), or recalls the existing pinned view if the lens is
+// already pinned. Never creates a duplicate.
+els.filterLensPin.addEventListener("click", () => {
+  pinCurrentLens();
 });
 
 // F96: the cohort-focus chip clears the focus when clicked.

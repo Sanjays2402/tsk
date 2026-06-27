@@ -14,6 +14,8 @@ import {
   activeView,
   activeViewWithLens,
   lensProvenanceNote,
+  pureLensViewName,
+  findPureLensView,
   viewMatches,
   describeView,
   renderViewChips,
@@ -335,4 +337,39 @@ test("lensProvenanceNote is null with no recalled view or no live lens", () => {
   const recalled = addView([], "Sprint", { ...EMPTY, priorities: ["urgent"] }, "overdue")[0];
   assert.equal(lensProvenanceNote(null, "overdue"), null); // nothing recalled
   assert.equal(lensProvenanceNote(recalled, null), null); // no lens on
+});
+
+// --- F110: pin a lens as a pure-lens quick view -----------------------------
+
+test("pureLensViewName is the lens label verbatim", () => {
+  assert.equal(pureLensViewName("overdue"), "overdue");
+  assert.equal(pureLensViewName("due this week"), "due this week");
+});
+
+test("findPureLensView matches an empty-filter view with the given lens", () => {
+  const views = addView([], "overdue", EMPTY, "overdue");
+  const hit = findPureLensView(views, "overdue");
+  assert.notEqual(hit, null);
+  assert.equal(hit!.lens, "overdue");
+  assert.equal(findPureLensView(views, "blocked"), null); // different lens
+});
+
+test("findPureLensView ignores a lensed view that ALSO has a filter facet", () => {
+  // "urgent (overdue)" is a lens+facet combo, NOT a pure-lens pin — so the pin
+  // affordance treats the lens as unpinned and a fresh pure-lens view is savable.
+  const views = addView([], "urgent (overdue)", { ...EMPTY, priorities: ["urgent"] }, "overdue");
+  assert.equal(findPureLensView(views, "overdue"), null);
+});
+
+test("findPureLensView pin round-trip: addView with empty filter + lens is found", () => {
+  // Mirrors what main.ts pinCurrentLens does — addView(EMPTY, lens) creates a
+  // pure-lens view (allowed because a lens is supplied), and findPureLensView
+  // then locates it so a second pin recalls instead of duplicating.
+  let views = addView([], pureLensViewName("blocked"), EMPTY, "blocked");
+  assert.equal(views.length, 1);
+  const found = findPureLensView(views, "blocked");
+  assert.equal(found!.name, "blocked");
+  // A same-name re-pin overwrites (addView's name-collision rule) — still one.
+  views = addView(views, pureLensViewName("blocked"), EMPTY, "blocked");
+  assert.equal(views.length, 1);
 });
