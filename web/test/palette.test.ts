@@ -18,6 +18,7 @@ import {
   clearLensCommand,
   clearCohortCommand,
   focusChokepointCommand,
+  buildChokepointFocusCommands,
   SELECTION_GATED_COMMANDS,
   renderDisabledReason,
   type Command,
@@ -492,5 +493,50 @@ test("cohort commands are fuzzy-findable by 'cohort' and 'chokepoint'", () => {
   const cmds = [clearCohortCommand("2 on #5"), focusChokepointCommand(5)];
   assert.equal(filterCommands(cmds, "cohort").length, 2);
   assert.equal(filterCommands(cmds, "chokepoint")[0].id, "cohort-focus-biggest");
+});
+
+// --- F107: per-chokepoint focus commands for the runners-up ----------------
+
+test("buildChokepointFocusCommands skips the biggest and emits one per runner-up", () => {
+  const cmds = buildChokepointFocusCommands([
+    { id: 1, count: 4 }, // biggest — owned by focusChokepointCommand, skipped
+    { id: 2, count: 2 },
+    { id: 5, count: 1 },
+  ]);
+  assert.equal(cmds.length, 2);
+  assert.deepEqual(
+    cmds.map((c) => c.id),
+    ["cohort-focus-2", "cohort-focus-5"],
+  );
+  assert.equal(cmds[0].title, "Focus chokepoint #2 (2 waiting)");
+  assert.equal(cmds[1].title, "Focus chokepoint #5 (1 waiting)");
+  assert.equal(cmds[0].group, "View");
+});
+
+test("buildChokepointFocusCommands returns [] when there are no runners-up", () => {
+  assert.deepEqual(buildChokepointFocusCommands([]), []); // flat board
+  assert.deepEqual(buildChokepointFocusCommands([{ id: 1, count: 3 }]), []); // only the biggest
+});
+
+test("buildChokepointFocusCommands ids never collide with cohort-focus-biggest", () => {
+  // The decoder in main.ts routes "cohort-focus-biggest" to the static command
+  // and "cohort-focus-<N>" to setCohort(N); a numeric id can never spell
+  // "biggest", so the two dispatch paths stay disjoint.
+  const cmds = buildChokepointFocusCommands([
+    { id: 1, count: 9 },
+    { id: 42, count: 3 },
+  ]);
+  assert.ok(cmds.every((c) => c.id !== "cohort-focus-biggest"));
+  assert.equal(cmds[0].id, "cohort-focus-42");
+});
+
+test("buildChokepointFocusCommands rows are fuzzy-findable by id and 'bottleneck'", () => {
+  const cmds = buildChokepointFocusCommands([
+    { id: 1, count: 4 },
+    { id: 8, count: 2 },
+  ]);
+  // The "#8" keyword lets you jump straight to a known chokepoint by id.
+  assert.equal(filterCommands(cmds, "#8")[0].id, "cohort-focus-8");
+  assert.equal(filterCommands(cmds, "bottleneck").length, 1);
 });
 

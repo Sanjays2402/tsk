@@ -396,6 +396,36 @@ export function focusChokepointCommand(chokepointId: number | null): Command {
   };
 }
 
+/** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
+export interface ChokepointLike {
+  id: number;
+  count: number;
+}
+
+/**
+ * F107: build one "Focus chokepoint #N (K waiting)" command per RUNNER-UP
+ * chokepoint, so every bottleneck — not just the single biggest one — is
+ * reachable keyboard-only from Cmd-K. F106 lists the runners-up in the sidebar
+ * with mouse-only `data-cohort-focus` hooks; F103's focusChokepointCommand
+ * already covers the biggest one. This fills the gap for the rest.
+ *
+ * `chokes` is the ranked list from topChokepoints (biggest first); this SKIPS
+ * the first element (the biggest, owned by focusChokepointCommand so the two
+ * never emit duplicate commands for the same id) and emits a focus command for
+ * each remaining chokepoint. Each id is `cohort-focus-<id>` so runCommand can
+ * decode the target id and route through the same setCohort path the sidebar
+ * focus buttons use — zero new dispatch surface. Returns [] on a flat board or
+ * a board with a single chokepoint (no runners-up). Pure → unit-tested.
+ */
+export function buildChokepointFocusCommands(chokes: ChokepointLike[]): Command[] {
+  return chokes.slice(1).map((c) => ({
+    id: `cohort-focus-${c.id}`,
+    title: `Focus chokepoint #${c.id} (${c.count} waiting)`,
+    group: "View",
+    keywords: ["cohort", "focus", "chokepoint", "bottleneck", "waiting", "blocked", "stuck", `#${c.id}`],
+  }));
+}
+
 /**
  * F89: the human reason ANY disabled palette command is greyed — the general
  * form of F83, which only covered the Set due/priority group. So every greyed

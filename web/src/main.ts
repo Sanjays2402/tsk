@@ -12,7 +12,7 @@
 
 import { api, ApiError, type Task } from "./api";
 import { renderSections, summarize } from "./render";
-import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, biggestChokepoint, topChokepoints, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode } from "./deps";
+import { doneIndex, needsBlockedConfirm, blockedToggleConfirm, computeDepStats, biggestChokepoint, topChokepoints, newlyUnblocked, unblockedMessage, longestChainPath, deepestChainFrom, hasWalkableChain, deepestDependentChainFrom, hasWalkableDependents, renderChainDrill, renderUnblockedPicker, blockedInBulkToggle, bulkBlockedConfirm, type DepTask, type DepStatsTask, type ChainNode, type Chokepoint } from "./deps";
 import { nextPriority, prevPriority, floorPriority, ceilPriority, type Priority as CyclePriority } from "./priority";
 import { renderPriorityPicker } from "./prioritypicker";
 import {
@@ -154,6 +154,7 @@ import {
   clearLensCommand,
   clearCohortCommand,
   focusChokepointCommand,
+  buildChokepointFocusCommands,
   type Command,
 } from "./palette";
 import {
@@ -2973,6 +2974,21 @@ function currentChokepointId(): number | null {
   return choke ? choke.id : null;
 }
 
+/**
+ * F107: the ranked top-N chokepoints (biggest first), over the same live list +
+ * whole-list done-index the F92 sidebar line + F106 "Other bottlenecks" list
+ * use, so the Cmd-K "Focus chokepoint #N" commands target exactly what the
+ * sidebar shows. Capped to match refreshStats' sidebar cap (6) so the palette
+ * never offers a focus command for a chokepoint the sidebar doesn't list.
+ */
+function currentChokepoints(): Chokepoint[] {
+  return topChokepoints(
+    currentTasks as DepStatsTask[],
+    doneIndex(currentTasks as DepStatsTask[]),
+    6,
+  );
+}
+
 /** F93: mirror the active lens (or its absence) into sessionStorage.
  *
  * F97: also persist the priority FACET drilled on top of the lens (the F81
@@ -4447,6 +4463,11 @@ function buildCommands(): Command[] {
     // precondition is absent (no cohort focused / a flat board).
     clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null),
     focusChokepointCommand(currentChokepointId()),
+    // F107: a "Focus chokepoint #N (K waiting)" command per RUNNER-UP
+    // chokepoint, so every bottleneck the F106 sidebar lists is reachable
+    // keyboard-only (not just the biggest, which focusChokepointCommand covers).
+    // The ids are "cohort-focus-<id>"; runCommand decodes + routes to setCohort.
+    ...buildChokepointFocusCommands(currentChokepoints()),
     { id: "theme", title: "Cycle theme (auto/light/dark)", group: "View", keywords: ["dark", "light", "color"], hint: "t" },
     { id: "settings", title: "Open settings", group: "View", keywords: ["preferences", "density", "compact", "options", "config"], hint: "," },
     { id: "refresh", title: "Refresh from disk", group: "View", keywords: ["reload", "sync"], hint: "r" },
@@ -4578,6 +4599,14 @@ function runCommand(id: string): void {
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
   if (id.startsWith("view:")) {
     recallView(id.slice("view:".length));
+  }
+  // F107: dynamic per-chokepoint focus commands (id shaped "cohort-focus-<id>",
+  // distinct from the static "cohort-focus-biggest"). Decode the target id and
+  // route through the same setCohort path the sidebar focus buttons + the
+  // biggest-chokepoint command use — so every bottleneck is keyboard-reachable.
+  if (id.startsWith("cohort-focus-") && id !== "cohort-focus-biggest") {
+    const focusId = Number(id.slice("cohort-focus-".length));
+    if (Number.isFinite(focusId) && focusId > 0) setCohort(focusId);
   }
   // F67: dynamic "Set due: <preset>" commands (id shaped "due-set-<token>").
   // The clear case is handled in the switch above; the rest carry their NL
