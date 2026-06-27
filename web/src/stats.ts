@@ -264,6 +264,32 @@ export function chokepointShiftMessage(prev: number | null, curr: number | null)
 }
 
 /**
+ * F123: the view-model for the F121 chokepoint-shift toast, upgraded from a bare
+ * message to a message + an optional FOCUS target. F121's toast is purely
+ * informational ("Biggest chokepoint moved: #M -> #N"); F114 already leads Cmd-K
+ * with the same shift, but a shift you notice via the toast still costs a trip to
+ * the palette to act on. This bundles the new chokepoint's id alongside the
+ * message so main.ts can hang a "Focus" action button (reusing showInfoToast's
+ * F42 action slot) that drops straight into the new bottleneck's cohort
+ * (setCohort) — the toast sibling of F114's keyboard lead.
+ *
+ * Returns `{ message: "", focusId: null }` when there's no genuine shift to
+ * announce (the same `prev`/`curr`-null/equal guard chokepointShiftMessage uses),
+ * so the caller skips both the toast AND the action. On a real shift, `focusId`
+ * is the CURRENT biggest chokepoint (#N) — the task you'd want to focus, not the
+ * one that left. Pure → unit-tested.
+ */
+export interface ChokepointShiftToast {
+  message: string;
+  focusId: number | null;
+}
+
+export function chokepointShiftToast(prev: number | null, curr: number | null): ChokepointShiftToast {
+  const message = chokepointShiftMessage(prev, curr);
+  return { message, focusId: message === "" ? null : curr };
+}
+
+/**
  * F106: render the "Other bottlenecks" list — the runner-up chokepoints below
  * the single biggest one F92/renderChokepoint surfaces. On a board with several
  * bottlenecks, the second/third worst are invisible without scanning every row

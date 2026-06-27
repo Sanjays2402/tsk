@@ -54,7 +54,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
-import { renderStatsPanel, chokepointTrend, chokepointShiftMessage } from "./stats";
+import { renderStatsPanel, chokepointTrend, chokepointShiftToast } from "./stats";
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
@@ -5201,11 +5201,22 @@ async function liveRefresh(deferred: boolean): Promise<void> {
   const before = currentChokepointId();
   await refresh();
   const after = currentChokepointId();
-  const shiftMsg = chokepointShiftMessage(before, after);
+  // F123: the shift toast now carries a FOCUS action — the message + the new
+  // chokepoint id to drop into. chokepointShiftToast applies the same "genuine
+  // shift only" guard chokepointShiftMessage uses, so an empty message means no
+  // toast (and no action). When it fires, the "Focus" button routes through the
+  // same setCohort path F114's Cmd-K lead uses — so a shift you notice via the
+  // toast is one click from acting on, not a trip to the palette.
+  const shift = chokepointShiftToast(before, after);
   const now = Date.now();
-  if (shiftMsg !== "" && now - lastShiftToastAt > SHIFT_TOAST_THROTTLE_MS) {
+  if (shift.message !== "" && now - lastShiftToastAt > SHIFT_TOAST_THROTTLE_MS) {
     lastShiftToastAt = now;
-    showInfoToast(shiftMsg);
+    const focusId = shift.focusId;
+    showInfoToast(
+      shift.message,
+      6,
+      focusId !== null ? { label: "Focus", run: () => setCohort(focusId) } : undefined,
+    );
   } else {
     showInfoToast(liveChangeMessage(deferred));
   }

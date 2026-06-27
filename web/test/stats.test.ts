@@ -12,6 +12,7 @@ import {
   renderChokepoint,
   chokepointTrend,
   chokepointShiftMessage,
+  chokepointShiftToast,
   renderChokepointTrend,
   renderOtherChokepoints,
   renderScheduleStats,
@@ -321,6 +322,36 @@ test("chokepointShiftMessage agrees with chokepointTrend on WHEN to fire", () =>
     const trended = chokepointTrend(prev, curr) !== null;
     const toasted = chokepointShiftMessage(prev, curr) !== "";
     assert.equal(toasted, trended, `mismatch for prev=${prev} curr=${curr}`);
+  }
+});
+
+// --- F123: chokepoint-shift toast view-model (message + focus target) --------
+
+test("chokepointShiftToast bundles the message with the NEW chokepoint to focus", () => {
+  const vm = chokepointShiftToast(7, 3);
+  // Same message as F121 — reused, so they can't drift.
+  assert.equal(vm.message, chokepointShiftMessage(7, 3));
+  // focusId is the CURRENT biggest (#3) — the one you'd want to act on, not #7.
+  assert.equal(vm.focusId, 3);
+});
+
+test("chokepointShiftToast yields no focus when there's no genuine shift", () => {
+  // Same guard as chokepointShiftMessage: empty message AND a null focus, so the
+  // caller skips both the toast and the action.
+  for (const [prev, curr] of [[7, 7], [null, 3], [3, null], [null, null]] as Array<[number | null, number | null]>) {
+    const vm = chokepointShiftToast(prev, curr);
+    assert.equal(vm.message, "");
+    assert.equal(vm.focusId, null);
+  }
+});
+
+test("chokepointShiftToast focus target tracks chokepointShiftMessage's fire condition", () => {
+  // Whenever there's a message there's a focusId, and vice-versa — they're driven
+  // by the same shift, so a "Focus" action never appears on a no-op toast.
+  const cases: Array<[number | null, number | null]> = [[7, 3], [7, 7], [null, 3], [1, 2]];
+  for (const [prev, curr] of cases) {
+    const vm = chokepointShiftToast(prev, curr);
+    assert.equal(vm.focusId !== null, vm.message !== "", `prev=${prev} curr=${curr}`);
   }
 });
 
