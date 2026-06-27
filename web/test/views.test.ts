@@ -427,3 +427,37 @@ test("findPureLensView pin round-trip: addView with empty filter + lens is found
   views = addView(views, pureLensViewName("blocked"), EMPTY, "blocked");
   assert.equal(views.length, 1);
 });
+
+// --- F119: flash the just-pinned chip --------------------------------------
+
+test("renderViewChips flashes only the chip whose id matches flashId", () => {
+  const a: SavedView = { id: "a", name: "alpha", filter: { ...EMPTY, tags: ["x"] } };
+  const b: SavedView = { id: "b", name: "beta", filter: { ...EMPTY, tags: ["y"] } };
+  const html = renderViewChips([a, b], EMPTY, { flashId: "b" });
+  // The flashed chip carries is-flash; the other does not.
+  assert.match(html, /data-view-id="b"[^>]*?/);
+  const bChip = html.slice(html.indexOf('data-view-id="b"') - 60, html.indexOf('data-view-id="b"'));
+  assert.match(bChip, /is-flash/);
+  const aChip = html.slice(html.indexOf('data-view-id="a"') - 60, html.indexOf('data-view-id="a"'));
+  assert.doesNotMatch(aChip, /is-flash/);
+});
+
+test("renderViewChips adds no is-flash class when flashId is absent or unknown", () => {
+  const a: SavedView = { id: "a", name: "alpha", filter: { ...EMPTY, tags: ["x"] } };
+  assert.doesNotMatch(renderViewChips([a], EMPTY, {}), /is-flash/);
+  assert.doesNotMatch(renderViewChips([a], EMPTY, { flashId: null }), /is-flash/);
+  assert.doesNotMatch(renderViewChips([a], EMPTY, { flashId: "nope" }), /is-flash/);
+});
+
+test("renderViewChips flash composes with the pure-lens-pin classes", () => {
+  // The chip a pin creates is a pure-lens bookmark, so the flash must ride
+  // alongside is-lens-pin (the F112 marker) on the same chip.
+  const pin: SavedView = { id: "p", name: "overdue", filter: EMPTY, lens: "overdue" };
+  const html = renderViewChips([pin], EMPTY, {
+    liveLens: null,
+    lensGlyph: () => "\u26A0",
+    flashId: "p",
+  });
+  assert.match(html, /is-lens-pin/);
+  assert.match(html, /is-flash/);
+});

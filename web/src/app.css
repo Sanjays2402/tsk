@@ -1531,6 +1531,36 @@ button.lens-legend-item:focus-visible {
 .view-chip.is-lens-pin.is-active .view-chip-lens-glyph {
   opacity: 1;
 }
+
+/* F119: a one-shot flash on a freshly-pinned chip (F110/F115's one-click pin)
+   so the user sees WHERE the pin landed in the Views row — the spatial
+   confirmation the status line can't give. main.ts sets the class for exactly
+   one render then clears it, so the keyframe plays once. A soft amber pulse +
+   a brief scale, matching the accent the pin glyph already wears. Respects
+   reduced-motion by collapsing to a single static highlight frame. */
+@keyframes view-chip-flash {
+  0% {
+    background: var(--color-amber-200, var(--color-accent));
+    border-color: var(--color-accent);
+    transform: scale(1.06);
+  }
+  60% {
+    border-color: var(--color-accent);
+  }
+  100% {
+    background: transparent;
+    transform: scale(1);
+  }
+}
+.view-chip.is-flash {
+  animation: view-chip-flash 0.9s ease-out 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .view-chip.is-flash {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--color-accent);
+  }
+}
 .view-chip-name {
   font-family: var(--font-sans);
   font-size: var(--fs-xs);

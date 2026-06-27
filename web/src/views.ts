@@ -355,6 +355,15 @@ export function describeView(v: SavedView): string {
  *     lensMeta(kind).glyph) so views.ts stays decoupled from the lens module; a
  *     resolver that returns "" (unknown/garbage lens) degrades to no glyph. Only
  *     pure-lens views get the glyph; a lens+facet drill stays a normal chip.
+ *
+ * F119:
+ *   - flashId: the id of a view to flash once (a one-shot `is-flash` highlight
+ *     class). F110/F115 pin a lens as a new pure-lens view but the only feedback
+ *     is a status line — you can't see WHERE the pin landed in the row. Tagging
+ *     the freshly-created chip with `is-flash` lets main.ts run a brief CSS
+ *     highlight so the spatial "it went here" confirmation the status line can't
+ *     give is obvious. main.ts clears the slot on the next render so the flash is
+ *     a one-shot. An unknown/null id flashes nothing.
  */
 export interface ViewChipOpts {
   draggable?: boolean;
@@ -362,6 +371,8 @@ export interface ViewChipOpts {
   liveLens?: string | null;
   /** F112: lens kind -> leading glyph for pure-lens chips ("" = no glyph). */
   lensGlyph?: (lens: string) => string;
+  /** F119: id of a view to flash once with an `is-flash` highlight class. */
+  flashId?: string | null;
 }
 
 export function renderViewChips(
@@ -382,6 +393,10 @@ export function renderViewChips(
         : filtersEqual(v.filter, filter);
       const active = isActive ? " is-active" : "";
       const lensed = v.lens ? " is-lensed" : "";
+      // F119: flash a freshly-pinned chip once so the user sees WHERE the pin
+      // landed in the row. main.ts sets flashId after a pin and clears it on the
+      // next render, so the class rides exactly one paint.
+      const flash = opts.flashId && opts.flashId === v.id ? " is-flash" : "";
       // F112: a pure-lens bookmark (lens + empty filter) wears the lens's own
       // glyph + an is-lens-pin class so it reads as a "lens bookmark" distinct
       // from a filter bookmark. A lens+facet drill keeps the plain chip.
@@ -395,7 +410,7 @@ export function renderViewChips(
         opts.updatableId && opts.updatableId === v.id
           ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
           : "";
-      return `<span class="view-chip${active}${lensed}${pinClass}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      return `<span class="view-chip${active}${lensed}${pinClass}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

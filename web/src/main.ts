@@ -427,6 +427,16 @@ try {
 let recalledViewId: string | null = null;
 
 /**
+ * F119: the id of a saved view to flash once on the NEXT render — set by
+ * pinCurrentLens (F110/F115) right after it creates a pure-lens pin, so the
+ * freshly-created Views chip briefly highlights and the user sees WHERE the pin
+ * landed in the row (the spatial confirmation the status line can't give).
+ * renderViewsRow passes it to renderViewChips as `flashId` and clears it, so the
+ * `is-flash` class rides exactly one paint. Null when there's no pending flash.
+ */
+let pendingPinFlashViewId: string | null = null;
+
+/**
  * F66: the single active render-pipeline LENS, or null. A lens narrows the
  * visible list to a derived subset the stats sidebar drives — `blocked`
  * (cross-task: depends on other tasks' done state) or one of the time-relative
@@ -3207,7 +3217,13 @@ function renderViewsRow(): void {
       const k = parseLens(kind);
       return k ? lensMeta(k).glyph : "";
     },
+    // F119: flash a just-pinned chip once so the user sees where the pin landed.
+    flashId: pendingPinFlashViewId,
   });
+  // F119: the flash is a one-shot — consume the slot now that this paint carries
+  // the `is-flash` class, so the next render (or a re-render for any other
+  // reason) doesn't keep re-triggering the highlight.
+  pendingPinFlashViewId = null;
   // Disable "save view" when there's nothing to save, or the exact filter+lens
   // combo is already saved (activeViewWithLens non-null means an identical
   // view, lens included, exists).
@@ -3266,6 +3282,12 @@ function pinCurrentLens(): void {
   // empty filter precisely because a lens is supplied (F104).
   views = addView(views, name, emptyFilter(), activeLens);
   saveViews();
+  // F119: flash the freshly-created chip on the next render so the user sees
+  // WHERE the pin landed in the Views row — the spatial confirmation the status
+  // line can't give. The new view is the pure-lens view for this lens (found
+  // post-add via findPureLensView, robust to addView's name-collision merge).
+  const pinned = findPureLensView(views, activeLens);
+  pendingPinFlashViewId = pinned ? pinned.id : null;
   render();
   setStatus(`pinned lens "${name}"`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
