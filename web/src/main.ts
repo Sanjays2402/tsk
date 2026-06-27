@@ -54,7 +54,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
-import { renderStatsPanel } from "./stats";
+import { renderStatsPanel, chokepointTrend } from "./stats";
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
@@ -464,6 +464,15 @@ let focusCohort: CohortFocus | null = null;
  * snapshots, so their history is too. Cleared whenever the cohort is dropped.
  */
 let cohortHistory: number[] = [];
+
+/**
+ * F111: the biggest chokepoint id at the LAST stats paint, so refreshStats can
+ * show a quiet "was #M" delta when the worst bottleneck shifts across a refresh
+ * (a live-reload after an external edit, or completing the current chokepoint).
+ * null before the first paint (no comparison yet). Updated to the fresh id after
+ * each paint so the hint shows for exactly the one render where it changed.
+ */
+let prevBiggestChokepoint: number | null = null;
 
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
@@ -1376,7 +1385,14 @@ async function refreshStats(): Promise<void> {
       doneIndex(currentTasks as DepStatsTask[]),
       6,
     );
-    let html = renderStatsPanel(stats, dep, sched, choke, chokes);
+    // F111: a "was #M" trend hint when the biggest chokepoint CHANGED since the
+    // last paint (e.g. an external edit completed the old one and F101 shifted
+    // the worst bottleneck). Compare the fresh id against the slot, then update
+    // the slot so the hint shows for exactly the one render where it moved.
+    const currBiggest = choke ? choke.id : null;
+    const trendPrev = chokepointTrend(prevBiggestChokepoint, currBiggest);
+    prevBiggestChokepoint = currBiggest;
+    let html = renderStatsPanel(stats, dep, sched, choke, chokes, trendPrev);
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
     // not just whole-board totals. Computed over the same not-deleted pool the

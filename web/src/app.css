@@ -2458,6 +2458,17 @@ button.stat-metric:focus-visible .lens-key {
   color: var(--color-accent);
   font-variant-numeric: tabular-nums;
 }
+/* F111: the "was #M" trend hint — a quiet inline note when the biggest
+   chokepoint shifted across a refresh (e.g. the old one was completed and F101
+   moved the worst bottleneck). Muted + smaller so it reads as a passive "heads
+   up", not a competing metric. */
+.chokepoint-trend {
+  margin-left: var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
 /* F96: the chokepoint line + a secondary "focus" button that narrows the board
    to exactly the tasks waiting on #N (a cohort focus). The walk button keeps its
    full-width feel; the focus button is a compact pill beside it. */

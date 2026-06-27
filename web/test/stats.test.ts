@@ -10,6 +10,8 @@ import {
   renderTopTags,
   renderDepStats,
   renderChokepoint,
+  chokepointTrend,
+  renderChokepointTrend,
   renderOtherChokepoints,
   renderScheduleStats,
   renderStatsPanel,
@@ -267,6 +269,40 @@ test("renderChokepoint collapses to empty for null / zero", () => {
   assert.equal(renderChokepoint(null), "");
   assert.equal(renderChokepoint(undefined), "");
   assert.equal(renderChokepoint({ id: 1, count: 0 }), "");
+});
+
+// --- F111: biggest-chokepoint trend hint -----------------------------------
+
+test("chokepointTrend surfaces the prior id only when it changed", () => {
+  assert.equal(chokepointTrend(7, 3), 7); // shifted #7 -> #3: hint "was #7"
+  assert.equal(chokepointTrend(7, 7), null); // unchanged: no hint
+  assert.equal(chokepointTrend(null, 3), null); // first paint: nothing to compare
+  assert.equal(chokepointTrend(7, null), null); // board went flat: line hides anyway
+  assert.equal(chokepointTrend(null, null), null);
+});
+
+test("renderChokepointTrend shows 'was #M' only with a prior id", () => {
+  assert.equal(renderChokepointTrend(null), "");
+  const html = renderChokepointTrend(7);
+  assert.match(html, /was #7/);
+  assert.match(html, /chokepoint-trend/);
+});
+
+test("renderChokepoint embeds the trend hint when the chokepoint changed", () => {
+  // When the worst bottleneck shifts to #3 from #7, the line carries the delta.
+  const html = renderChokepoint({ id: 3, count: 2 }, 7);
+  assert.match(html, /#3/);
+  assert.match(html, /was #7/);
+  // No trend arg -> byte-identical to the steady-state line (no hint).
+  assert.doesNotMatch(renderChokepoint({ id: 3, count: 2 }), /was #/);
+});
+
+test("renderStatsPanel threads the trend hint down to the chokepoint line", () => {
+  const dep = { blocked: 2, pinned: 0, longestChain: 1 };
+  const html = renderStatsPanel(stats(), dep, undefined, { id: 3, count: 2 }, undefined, 7);
+  assert.match(html, /was #7/);
+  // Omitting the trend arg keeps the panel free of the hint (back-compat).
+  assert.doesNotMatch(renderStatsPanel(stats(), dep, undefined, { id: 3, count: 2 }), /was #/);
 });
 
 test("renderDepStats appends the chokepoint line only when one is passed", () => {

@@ -149,7 +149,7 @@ export function renderTopTags(stats: Stats): string {
  * flat graph) so the section collapses on simple boards. The blocked tile
  * lights up as an alert when anything is blocked.
  */
-export function renderDepStats(dep: DepStats, choke?: Chokepoint | null): string {
+export function renderDepStats(dep: DepStats, choke?: Chokepoint | null, trendPrev: number | null = null): string {
   if (dep.blocked === 0 && dep.pinned === 0 && dep.longestChain === 0) return "";
   const blockedAlert = dep.blocked > 0 ? " is-alert" : "";
   // F64/F66: when anything is blocked, the Blocked tile becomes a button that
@@ -184,7 +184,7 @@ export function renderDepStats(dep: DepStats, choke?: Chokepoint | null): string
       </div>
       ${chainTile}
     </div>
-    ${renderChokepoint(choke)}`;
+    ${renderChokepoint(choke, trendPrev)}`;
 }
 
 /**
@@ -204,7 +204,7 @@ export function renderDepStats(dep: DepStats, choke?: Chokepoint | null): string
  * affordance answers "what waits?"; the focus affordance lets you DO something
  * about it.
  */
-export function renderChokepoint(choke?: Chokepoint | null): string {
+export function renderChokepoint(choke?: Chokepoint | null, trendPrev: number | null = null): string {
   if (!choke || choke.count === 0) return "";
   const noun = choke.count === 1 ? "task waits" : "tasks wait";
   const walkTitle = `#${choke.id} is the biggest chokepoint — ${choke.count} ${noun} on it; click to see what`;
@@ -212,10 +212,40 @@ export function renderChokepoint(choke?: Chokepoint | null): string {
   return `<div class="stat-chokepoint-row">
       <button type="button" class="stat-chokepoint" data-waiting-walk="${choke.id}" title="${escapeHTML(walkTitle)}" aria-label="${escapeHTML(walkTitle)}">
         <span class="chokepoint-label">Biggest chokepoint</span>
-        <span class="chokepoint-val">#${choke.id} <span class="chokepoint-n">&#8593; ${choke.count} waiting</span></span>
+        <span class="chokepoint-val">#${choke.id} <span class="chokepoint-n">&#8593; ${choke.count} waiting</span>${renderChokepointTrend(trendPrev)}</span>
       </button>
       <button type="button" class="stat-chokepoint-focus" data-cohort-focus="${choke.id}" title="${escapeHTML(focusTitle)}" aria-label="${escapeHTML(focusTitle)}">focus</button>
     </div>`;
+}
+
+/**
+ * F111: decide whether the biggest chokepoint CHANGED across a live-reload, so
+ * the sidebar can show a quiet "was #M" delta instead of the bottleneck shifting
+ * silently. Pure → unit-tested. `prev` is the previous refresh's biggest-
+ * chokepoint id (held in a module slot in main.ts); `curr` is the fresh one.
+ * Returns the prior id to surface ONLY when both exist and they differ — the
+ * one case worth a hint:
+ *   - no previous id (first paint)        -> null (nothing to compare)
+ *   - no current chokepoint (board flat)  -> null (renderChokepoint hides anyway)
+ *   - same id                             -> null (no change, no noise)
+ *   - changed (#7 -> #3)                  -> 7   (so the hint reads "was #7")
+ * A completed chokepoint (F101 reconcile) that shifts the worst bottleneck to
+ * another task is exactly the shift this makes visible.
+ */
+export function chokepointTrend(prev: number | null, curr: number | null): number | null {
+  if (prev === null || curr === null) return null;
+  return prev === curr ? null : prev;
+}
+
+/**
+ * F111: render the "was #M" trend hint appended to the biggest-chokepoint line.
+ * Returns "" when there's nothing to show (trendPrev null), so the line stays
+ * byte-identical on a steady board. A small muted note — it's a passive "heads
+ * up the bottleneck moved", not an action. Pure → unit-tested.
+ */
+export function renderChokepointTrend(trendPrev: number | null): string {
+  if (trendPrev === null) return "";
+  return ` <span class="chokepoint-trend" title="The biggest chokepoint changed since the last refresh (was #${trendPrev})">was #${trendPrev}</span>`;
 }
 
 /**
@@ -310,6 +340,7 @@ export function renderStatsPanel(
   sched?: ScheduleStats,
   choke?: Chokepoint | null,
   chokes?: Chokepoint[],
+  trendPrev: number | null = null,
 ): string {
   return `
     <div class="stats-top">
@@ -327,7 +358,7 @@ export function renderStatsPanel(
       ${renderLensMetric(stats.overdue, "Overdue", "overdue", "overdue")}
     </div>
     ${sched ? renderScheduleStats(sched) : ""}
-    ${dep ? renderDepStats(dep, choke) : ""}
+    ${dep ? renderDepStats(dep, choke, trendPrev) : ""}
     ${chokes ? renderOtherChokepoints(chokes) : ""}
     <div class="stats-section-label">Top tags</div>
     ${renderTopTags(stats)}`;
