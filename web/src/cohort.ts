@@ -164,12 +164,46 @@ export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): s
  * `data-cohort-clear` — a click clears the focus through the existing clearCohort
  * wiring (the panel sibling of the filter-bar clear chip). Returns "" for a null
  * focus so the line collapses on an unfocused board. Pure → unit-tested.
+ *
+ * F127: when the cohort has back-history (`historyDepth` > 0, from F108/F113's
+ * back-stack), a leading ‹ back button (data-cohort-back) is prepended — the
+ * SAME hook the chip's ‹ glyph, Escape, and the F122 help breadcrumb drive — so
+ * a mouse user can step back through the drill from the panel too, not only
+ * clear it. Mirroring the chip, the depth is shown as a tiny "‹N" badge once
+ * the stack is more than one deep; a single level shows the bare ‹. The button
+ * is emitted ONLY when there's history (depth 0 renders no back affordance).
+ *
+ * F128: a trailing "walk" button (data-waiting-walk="<sourceId>") jumps from the
+ * active-cohort readout straight into the F85 dependent chain-drill for the
+ * chokepoint — the panel sibling of the chip's implicit "what waits?" question,
+ * reusing the SAME data-waiting-walk hook the sidebar chokepoint rows use (so it
+ * routes through main.ts's existing openChainDrill(sourceId, "dependent") with
+ * zero new dispatch). Present whenever a cohort is focused.
+ *
+ * The three affordances are sibling buttons inside a flex row (a button can't
+ * nest another button), so each click target is disjoint — back / clear / walk
+ * never overlap. main.ts wraps the whole return in the `.stats-cohort` block.
  */
-export function renderCohortPanelLine(focus: CohortFocus | null): string {
+export function renderCohortPanelLine(focus: CohortFocus | null, historyDepth = 0): string {
   if (focus === null) return "";
   const summary = escapeHTML(cohortSummary(focus));
   const title = `Focused on the ${focus.ids.length === 1 ? "task" : "tasks"} waiting on #${focus.sourceId} — click to clear`;
-  return `<button type="button" class="stat-cohort-line" data-cohort-clear title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}"><span class="stat-cohort-label">Focused</span> <span class="stat-cohort-val">${summary}</span> <span class="stat-cohort-x" aria-hidden="true">&times;</span></button>`;
+  // F127: a back-step button, only when there's history to step back through.
+  // The depth badge mirrors the chip (bare ‹ at depth 1, ‹N once deeper).
+  let back = "";
+  if (historyDepth > 0) {
+    const depthBadge = historyDepth > 1 ? `${historyDepth}` : "";
+    const backTitle =
+      historyDepth > 1
+        ? `Step back to the previous cohort (${historyDepth} in history)`
+        : "Step back to the previous cohort";
+    back = `<button type="button" class="stat-cohort-back" data-cohort-back title="${escapeHTML(backTitle)}" aria-label="${escapeHTML(backTitle)}">&#8249;${depthBadge}</button>`;
+  }
+  const clear = `<button type="button" class="stat-cohort-line" data-cohort-clear title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}"><span class="stat-cohort-label">Focused</span> <span class="stat-cohort-val">${summary}</span> <span class="stat-cohort-x" aria-hidden="true">&times;</span></button>`;
+  // F128: the walk affordance — open the dependent chain-drill for the chokepoint.
+  const walkTitle = `Walk the tasks waiting on #${focus.sourceId}`;
+  const walk = `<button type="button" class="stat-cohort-walk" data-waiting-walk="${focus.sourceId}" title="${escapeHTML(walkTitle)}" aria-label="${escapeHTML(walkTitle)}">walk</button>`;
+  return `<div class="stat-cohort-row">${back}${clear}${walk}</div>`;
 }
 
 /**

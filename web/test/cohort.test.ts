@@ -354,4 +354,54 @@ test("renderCohortPanelLine reads naturally for one vs many waiters in its title
 
 test("renderCohortPanelLine is empty for a null focus", () => {
   assert.equal(renderCohortPanelLine(null), "");
+  assert.equal(renderCohortPanelLine(null, 3), ""); // depth is irrelevant with no focus
+});
+
+// --- F127: the panel cohort line gains a back-step when history exists --------
+
+test("renderCohortPanelLine omits the back button at depth 0", () => {
+  const html = renderCohortPanelLine({ sourceId: 1, ids: [2, 3] }, 0);
+  assert.doesNotMatch(html, /data-cohort-back/);
+  assert.doesNotMatch(html, /stat-cohort-back/);
+  // Byte-identical to the no-history default-arg form so a flat drill reads plainly.
+  assert.equal(html, renderCohortPanelLine({ sourceId: 1, ids: [2, 3] }));
+});
+
+test("renderCohortPanelLine grows a ‹ back button when the cohort has history", () => {
+  const html = renderCohortPanelLine({ sourceId: 1, ids: [2, 3] }, 1);
+  // A real button carrying the SAME hook the chip's ‹ glyph + Escape + help drive.
+  assert.match(html, /<button[^>]*class="stat-cohort-back"/);
+  assert.match(html, /data-cohort-back/);
+  assert.match(html, /&#8249;/); // the ‹ glyph
+  // The back button sits BEFORE the clear readout in the row.
+  assert.ok(html.indexOf("stat-cohort-back") < html.indexOf("stat-cohort-line"));
+});
+
+test("renderCohortPanelLine badges the back depth once the stack is deeper than one", () => {
+  const html = renderCohortPanelLine({ sourceId: 5, ids: [6] }, 3);
+  assert.match(html, /&#8249;3/); // "‹3" depth badge mirrors the F113 chip badge
+  assert.match(html, /3 in history/); // and the title spells it out
+});
+
+// --- F128: the panel cohort line gains a "walk" into the chain-drill ----------
+
+test("renderCohortPanelLine carries a walk button on the shared data-waiting-walk hook", () => {
+  const html = renderCohortPanelLine({ sourceId: 7, ids: [8, 9] });
+  // The walk button reuses the SAME hook the sidebar chokepoint rows use, so it
+  // routes through openChainDrill(sourceId, "dependent") with zero new dispatch.
+  assert.match(html, /<button[^>]*class="stat-cohort-walk"/);
+  assert.match(html, /data-waiting-walk="7"/);
+  // The walk button sits AFTER the clear readout in the row.
+  assert.ok(html.indexOf("stat-cohort-line") < html.indexOf("stat-cohort-walk"));
+});
+
+test("renderCohortPanelLine row holds disjoint back / clear / walk buttons in order", () => {
+  const html = renderCohortPanelLine({ sourceId: 2, ids: [3] }, 2);
+  assert.match(html, /<div class="stat-cohort-row">/);
+  // Each affordance is its own button (a button can't nest another), in order.
+  const back = html.indexOf("data-cohort-back");
+  const clear = html.indexOf("data-cohort-clear");
+  const walk = html.indexOf("data-waiting-walk");
+  assert.ok(back >= 0 && clear >= 0 && walk >= 0);
+  assert.ok(back < clear && clear < walk);
 });

@@ -2640,11 +2640,51 @@ button.stat-metric:focus-visible .lens-key {
 .stats-cohort {
   margin-bottom: var(--sp-3, 12px);
 }
+/* F127/F128: the active-cohort line is a flex row of disjoint buttons — an
+   optional leading ‹ back step (when the cohort has history), the clear
+   readout (flex-grows to fill), and a trailing "walk" into the dependent
+   chain-drill. Siblings, not nested, so each click target is distinct. */
+.stat-cohort-row {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-1, 4px);
+}
+.stat-cohort-back,
+.stat-cohort-walk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1, 4px) var(--sp-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface, transparent);
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.stat-cohort-back {
+  font-style: italic;
+  flex: 0 0 auto;
+}
+.stat-cohort-back:hover,
+.stat-cohort-walk:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.stat-cohort-back:focus-visible,
+.stat-cohort-walk:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
 .stat-cohort-line {
   display: flex;
   align-items: center;
   gap: var(--sp-1, 4px);
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: var(--sp-1, 4px) var(--sp-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 6px);

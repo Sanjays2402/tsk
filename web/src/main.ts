@@ -1446,7 +1446,11 @@ async function refreshStats(): Promise<void> {
     // bar / help). Reuses cohortSummary so it can't drift from the chip / Cmd-K
     // command / help line; it carries data-cohort-clear for click-to-clear. "" on
     // an unfocused board, so the line collapses cleanly.
-    const cohortLine = renderCohortPanelLine(focusCohort);
+    // F127: pass the back-stack depth so the panel line grows a ‹ back button
+    // (sibling of the clear) when the cohort has history — the panel sibling of
+    // the chip's ‹ glyph and the F122 help breadcrumb, so a mouse user can step
+    // back through the drill from the panel too.
+    const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length);
     if (cohortLine !== "") html = `<div class="stats-cohort">${cohortLine}</div>` + html;
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
@@ -3631,9 +3635,19 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F127: the panel cohort line's leading ‹ back button steps back one level
+  // through the cohort drill (the SAME cohortBack the chip's ‹ glyph, Escape,
+  // and the F122 help breadcrumb drive) instead of clearing — checked FIRST so
+  // a click on the back button never falls through to clear or walk.
+  if (target?.closest("[data-cohort-back]")) {
+    cohortBack();
+    return;
+  }
   // F126: the "Focused: N waiting on #M" cohort line clears the focus on click —
   // the panel sibling of the filter-bar cohort chip's clear. Checked before the
   // focus buttons so a click on the line itself doesn't fall through to a walk.
+  // (The F128 "walk" button on the same line carries data-waiting-walk, handled
+  // by the existing chokepoint-walk branch below.)
   if (target?.closest("[data-cohort-clear]")) {
     clearCohort();
     return;
