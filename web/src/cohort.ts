@@ -135,12 +135,21 @@ export function cohortSummary(focus: CohortFocus): string {
  * overlay reports the drill depth too. Returns "" for a null focus so the line
  * collapses (mirroring renderActiveLensHelp). Pure → unit-tested; the ‹ glyph
  * matches the chip's back affordance so the two readouts read consistently.
+ *
+ * F122: the history note is a real `<button data-cohort-back>` (not inert text),
+ * so the keyboard user can step back through the drill from the `?` summary
+ * itself — a delegated click in the overlay runs the SAME cohortBack the chip's
+ * ‹ glyph and Escape already drive (zero new dispatch path, mirroring F91's
+ * actionable legend). The button keeps the F117 `help-cohort-history` class +
+ * the "‹K in history" text/glyph so existing styling and tests carry over; only
+ * a null/zero history renders no button (nothing to step back to). The button is
+ * emitted only when there's history, so a depth-0 cohort line stays plain text.
  */
 export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): string {
   if (focus === null) return "";
   const history =
     historyDepth > 0
-      ? ` <span class="help-cohort-history">(&#8249;${historyDepth} in history)</span>`
+      ? ` <button type="button" class="help-cohort-history" data-cohort-back title="Step back to the previous cohort">(&#8249;${historyDepth} in history)</button>`
       : "";
   return `Cohort focus: <strong>${escapeHTML(cohortSummary(focus))}</strong>${history}`;
 }

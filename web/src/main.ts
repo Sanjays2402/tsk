@@ -4519,6 +4519,17 @@ function ensureHelpEl(): HTMLElement {
       }
       return;
     }
+    // F122: the cohort breadcrumb's "‹K in history" segment is now a real button
+    // — clicking it steps back one level through the cohort drill (the SAME
+    // cohortBack the chip's ‹ glyph and Escape drive), then re-populates the
+    // overlay in place so the line reflects the shallower depth (or collapses
+    // when the drill is exhausted). The overlay stays open so you can keep
+    // stepping back keyboard-only from the `?` summary itself.
+    if (target?.closest("[data-cohort-back]")) {
+      cohortBack();
+      toggleHelp(true);
+      return;
+    }
     if (e.target === el) toggleHelp(false);
   });
   document.body.appendChild(el);

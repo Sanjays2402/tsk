@@ -305,3 +305,24 @@ test("renderCohortHelp escapes nothing injectable but keeps the summary intact a
   assert.match(html, /<strong>1 waiting on #9<\/strong>/);
   assert.match(html, /1 in history/);
 });
+
+// --- F122: the help breadcrumb history note is an actionable button ----------
+
+test("renderCohortHelp history note is a button carrying the shared data-cohort-back hook", () => {
+  const focus: CohortFocus = { sourceId: 1, ids: [2, 3] };
+  const html = renderCohortHelp(focus, 2);
+  // It's a real <button> (not an inert span) so the `?` overlay can step back.
+  assert.match(html, /<button[^>]*class="help-cohort-history"/);
+  // Same hook the chip's ‹ glyph + Escape drive, so the existing cohortBack wiring fires.
+  assert.match(html, /data-cohort-back/);
+  // The visible text + glyph are unchanged from F117 so styling/readout carry over.
+  assert.match(html, /&#8249;2 in history/);
+});
+
+test("renderCohortHelp emits no button when there's no history to step back to", () => {
+  const focus: CohortFocus = { sourceId: 5, ids: [6] };
+  const html = renderCohortHelp(focus, 0);
+  // Depth 0 -> plain "Cohort focus: …" with no actionable back button.
+  assert.doesNotMatch(html, /data-cohort-back/);
+  assert.doesNotMatch(html, /<button/);
+});

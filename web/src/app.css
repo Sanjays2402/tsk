@@ -1274,6 +1274,31 @@ kbd {
   font-weight: 400;
   font-style: italic;
 }
+/* F122: the history note is now an actionable button (step back through the
+   cohort drill from the `?` summary). Strip the native button chrome so it still
+   reads as the quiet italic note F117 shipped, then add a hover/focus accent so
+   it's discoverably clickable. */
+button.help-cohort-history {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-style: italic;
+  cursor: pointer;
+  text-decoration: underline dotted transparent;
+  transition: color var(--duration-fast) var(--ease-out),
+    text-decoration-color var(--duration-fast) var(--ease-out);
+}
+button.help-cohort-history:hover {
+  color: var(--color-accent);
+  text-decoration-color: var(--color-accent);
+}
+button.help-cohort-history:focus-visible {
+  outline: none;
+  color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+  border-radius: var(--radius-sm, 4px);
+}
 
 /* F90: the lens digit-map mini-legend in the help overlay — every lens with its
    number-key shortcut inline, so the whole keyboard map is discoverable at a
