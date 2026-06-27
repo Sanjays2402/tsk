@@ -363,6 +363,38 @@ export function clearLensCommand(lensLabel: string | null): Command {
 }
 
 /**
+ * F115: build the context-aware "Pin lens (<label>)" command — the keyboard-only
+ * sister of F110's mouse-only pin star on the active-lens chip. The digit keys /
+ * stat tiles SET a lens and F98's clearLensCommand CLEARS one, but pinning a
+ * frequently-used lens as a recallable view was mouse-only. This closes that
+ * loop, routing through the same pinCurrentLens path the star drives (idempotent:
+ * pinning an already-pinned lens recalls it instead of duplicating).
+ *
+ * The label names the active lens ("Pin lens (overdue)") so the palette doubles
+ * as a "which lens would I pin?" readout, mirroring clearLensCommand. When the
+ * lens is ALREADY pinned the title flips to "Recall pinned lens (<label>)" so the
+ * command reads honestly about what it'll do — exactly like the star's filled
+ * (recall) vs hollow (pin) state. With no lens it reads plainly and is disabled
+ * (F89 then explains "no lens active" in the preview slot). Pure → unit-tested.
+ * `lensLabel` is the active lens's human label, or null when none; `pinned` is
+ * whether that lens already has a saved pure-lens view.
+ */
+export function pinLensCommand(lensLabel: string | null, pinned: boolean): Command {
+  const title = lensLabel
+    ? pinned
+      ? `Recall pinned lens (${lensLabel})`
+      : `Pin lens (${lensLabel})`
+    : "Pin lens";
+  return {
+    id: "lens-pin",
+    title,
+    group: "View",
+    keywords: ["lens", "pin", "bookmark", "save", "view", "star", "recall", "blocked", "overdue", "today", "week", "due"],
+    disabled: lensLabel === null,
+  };
+}
+
+/**
  * F103: the two cohort-focus palette commands — the keyboard-only sisters of
  * F96's sidebar focus button + filter-bar clear chip (which are mouse-only):
  *   - "Clear cohort focus (<summary>)" — shown context-aware, routing through
@@ -477,6 +509,7 @@ export function focusShiftedChokepointCommand(
  *   - "Focus filter / search" with no tasks   -> "no tasks to filter";
  *   - "Go to all tasks" when already there     -> "already on all tasks";
  *   - "Clear lens" with no lens active (F98)   -> "no lens active";
+ *   - "Pin lens" with no lens active (F115)    -> "no lens active";
  *   - "Clear cohort focus" with none (F103)    -> "no cohort active";
  *   - "Focus biggest chokepoint" on a flat board (F103) -> "no chokepoint".
  * Returns null for a command with no known disabled-reason (the slot hides).
@@ -493,6 +526,7 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   if (id === "filter" && !ctx.hasTasks) return "no tasks to filter";
   if (id === "alltasks" && !ctx.onTag) return "already on all tasks";
   if (id === "lens-clear" && !ctx.hasLens) return "no lens active";
+  if (id === "lens-pin" && !ctx.hasLens) return "no lens active";
   if (id === "cohort-clear" && !ctx.hasCohort) return "no cohort active";
   if (id === "cohort-focus-biggest" && !ctx.hasChokepoint) return "no chokepoint";
   return null;

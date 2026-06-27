@@ -154,6 +154,7 @@ import {
   commandDisabledReason,
   renderDisabledReason,
   clearLensCommand,
+  pinLensCommand,
   clearCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
@@ -4656,6 +4657,15 @@ function buildCommands(): Command[] {
     // there was no palette CLEAR). Shown always so it's discoverable; disabled
     // (with a "no lens active" reason via F89) when no lens is on.
     clearLensCommand(activeLens ? lensMeta(activeLens).label : null),
+    // F115: the keyboard-only sister of F110's mouse pin star — "Pin lens
+    // (<label>)" (or "Recall pinned lens (<label>)" when already pinned) routes
+    // through the same pinCurrentLens path. Disabled (with "no lens active" via
+    // F89) when no lens is on. `pinned` reflects findPureLensView so the title
+    // matches the star's pin-vs-recall state.
+    pinLensCommand(
+      activeLens ? lensMeta(activeLens).label : null,
+      activeLens !== null && findPureLensView(views, activeLens) !== null,
+    ),
     // F103: the cohort-focus sisters of clearLensCommand — the keyboard-only
     // way to clear a cohort focus (naming it, "3 waiting on #1") and to drop
     // into the biggest chokepoint's cohort (naming it, "#N"). F96's sidebar
@@ -4770,6 +4780,12 @@ function runCommand(id: string): void {
     case "lens-clear":
       // F98: drop the active render-pipeline lens (the keyboard-only exit).
       setLens(null);
+      break;
+    case "lens-pin":
+      // F115: pin the active lens as a recallable view (or recall it if already
+      // pinned), keyboard-only — the sister of F110's mouse pin star. No-op when
+      // no lens is active (the command is disabled then anyway).
+      pinCurrentLens();
       break;
     case "cohort-clear":
       // F103: drop the active cohort focus (keyboard-only sister of the

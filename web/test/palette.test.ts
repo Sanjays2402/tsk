@@ -17,6 +17,7 @@ import {
   commandDisabledReason,
   clearLensCommand,
   clearCohortCommand,
+  pinLensCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -450,6 +451,52 @@ test("clearLensCommand is fuzzy-findable by 'lens' and 'clear'", () => {
   const list = filterCommands([clearLensCommand("blocked")], "clear lens");
   assert.equal(list.length, 1);
   assert.equal(list[0].id, "lens-clear");
+});
+
+// --- F115: the "Pin lens" palette command ----------------------------------
+
+test("pinLensCommand reads 'Pin lens (<label>)' when a lens is active + not pinned", () => {
+  const c = pinLensCommand("overdue", false);
+  assert.equal(c.id, "lens-pin");
+  assert.equal(c.title, "Pin lens (overdue)");
+  assert.equal(c.disabled, false);
+  assert.equal(c.group, "View");
+});
+
+test("pinLensCommand flips to 'Recall pinned lens (<label>)' when already pinned", () => {
+  const c = pinLensCommand("blocked", true);
+  assert.equal(c.id, "lens-pin");
+  assert.equal(c.title, "Recall pinned lens (blocked)");
+  assert.equal(c.disabled, false);
+});
+
+test("pinLensCommand reads plainly and is disabled with no lens (pinned irrelevant)", () => {
+  for (const pinned of [false, true]) {
+    const c = pinLensCommand(null, pinned);
+    assert.equal(c.title, "Pin lens");
+    assert.equal(c.disabled, true);
+  }
+});
+
+test("commandDisabledReason: pin-lens with no lens -> 'no lens active'", () => {
+  assert.equal(commandDisabledReason("lens-pin", { ...FULL_CTX, hasLens: false }), "no lens active");
+  // With a lens active it isn't disabled -> no reason.
+  assert.equal(commandDisabledReason("lens-pin", FULL_CTX), null);
+});
+
+test("pinLensCommand is fuzzy-findable by 'pin' and 'lens'", () => {
+  const byPin = filterCommands([pinLensCommand("today", false)], "pin lens");
+  assert.equal(byPin.length, 1);
+  assert.equal(byPin[0].id, "lens-pin");
+  // And by 'recall' once pinned, so the recall affordance is discoverable.
+  const byRecall = filterCommands([pinLensCommand("today", true)], "recall");
+  assert.equal(byRecall.length, 1);
+});
+
+test("pinLensCommand id is distinct from the clear-lens command", () => {
+  // The two share the same lens context but route to opposite actions
+  // (pinCurrentLens vs setLens(null)), so their ids must not collide.
+  assert.notEqual(pinLensCommand("overdue", false).id, clearLensCommand("overdue").id);
 });
 
 // --- F103: the cohort-focus palette commands -------------------------------
