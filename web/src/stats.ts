@@ -249,6 +249,21 @@ export function renderChokepointTrend(trendPrev: number | null): string {
 }
 
 /**
+ * F121: the one-shot toast message for a biggest-chokepoint SHIFT on a live
+ * reload. F114 leads Cmd-K with the shift and F111 shows a sidebar "was #M"
+ * hint, but with BOTH the palette closed AND the stats panel closed, a shifting
+ * bottleneck moves silently. This builds the "Biggest chokepoint moved: #M ->
+ * #N" notice main.ts shows as an info toast so the shift is noticed even with
+ * every panel closed. Returns "" when there's no real shift to announce (`prev`
+ * or `curr` null, or they're equal) so the caller can skip toasting — the same
+ * "only on a genuine change" guard chokepointTrend uses. Pure → unit-tested.
+ */
+export function chokepointShiftMessage(prev: number | null, curr: number | null): string {
+  if (prev === null || curr === null || prev === curr) return "";
+  return `Biggest chokepoint moved: #${prev} \u2192 #${curr}`;
+}
+
+/**
  * F106: render the "Other bottlenecks" list — the runner-up chokepoints below
  * the single biggest one F92/renderChokepoint surfaces. On a board with several
  * bottlenecks, the second/third worst are invisible without scanning every row

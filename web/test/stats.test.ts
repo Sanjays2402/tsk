@@ -11,6 +11,7 @@ import {
   renderDepStats,
   renderChokepoint,
   chokepointTrend,
+  chokepointShiftMessage,
   renderChokepointTrend,
   renderOtherChokepoints,
   renderScheduleStats,
@@ -286,6 +287,41 @@ test("renderChokepointTrend shows 'was #M' only with a prior id", () => {
   const html = renderChokepointTrend(7);
   assert.match(html, /was #7/);
   assert.match(html, /chokepoint-trend/);
+});
+
+// --- F121: chokepoint-shift toast message ----------------------------------
+
+test("chokepointShiftMessage announces a genuine shift with both ids", () => {
+  const msg = chokepointShiftMessage(7, 3);
+  assert.match(msg, /Biggest chokepoint moved/);
+  assert.match(msg, /#7/);
+  assert.match(msg, /#3/);
+  assert.match(msg, /\u2192/); // the -> arrow
+});
+
+test("chokepointShiftMessage is empty when there's nothing to announce", () => {
+  assert.equal(chokepointShiftMessage(7, 7), ""); // unchanged
+  assert.equal(chokepointShiftMessage(null, 3), ""); // first paint
+  assert.equal(chokepointShiftMessage(7, null), ""); // board went flat
+  assert.equal(chokepointShiftMessage(null, null), "");
+});
+
+test("chokepointShiftMessage agrees with chokepointTrend on WHEN to fire", () => {
+  // The toast (F121) and the sidebar hint (F111) must announce a shift on the
+  // exact same condition, so they can't disagree about whether one happened.
+  const cases: Array<[number | null, number | null]> = [
+    [7, 3],
+    [7, 7],
+    [null, 3],
+    [3, null],
+    [null, null],
+    [1, 2],
+  ];
+  for (const [prev, curr] of cases) {
+    const trended = chokepointTrend(prev, curr) !== null;
+    const toasted = chokepointShiftMessage(prev, curr) !== "";
+    assert.equal(toasted, trended, `mismatch for prev=${prev} curr=${curr}`);
+  }
 });
 
 test("renderChokepoint embeds the trend hint when the chokepoint changed", () => {

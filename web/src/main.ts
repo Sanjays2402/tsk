@@ -54,7 +54,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
-import { renderStatsPanel, chokepointTrend } from "./stats";
+import { renderStatsPanel, chokepointTrend, chokepointShiftMessage } from "./stats";
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
@@ -5165,6 +5165,42 @@ function updateOfflineBanner(): void {
 let liveConnStatus: LiveStatus = "connecting";
 
 /**
+ * F121: throttle window (ms) for the chokepoint-shift toast, so a rapid series
+ * of external edits that keep moving the biggest bottleneck doesn't spam a toast
+ * per frame. Within the window a shift falls back to the generic live-change
+ * notice (still visible, just not the shift-specific one).
+ */
+const SHIFT_TOAST_THROTTLE_MS = 8_000;
+/** F121: timestamp of the last chokepoint-shift toast shown (throttle guard). */
+let lastShiftToastAt = 0;
+
+/**
+ * F121: refresh on a LIVE reload and surface the right toast. F114 leads Cmd-K
+ * with a biggest-chokepoint shift and F111 shows a sidebar "was #M" hint, but
+ * with both the palette AND the stats panel closed a shifting bottleneck moves
+ * silently. This wraps the live-path refresh: it snapshots the biggest
+ * chokepoint before + after the fetch and, when it genuinely moved (and we're
+ * outside the throttle window), shows a one-shot "Biggest chokepoint moved: #M
+ * -> #N" toast instead of the generic "file changed" notice — so the shift is
+ * noticed with every panel closed. No shift (or throttled) falls back to the
+ * generic live-change toast, so an external edit is never completely silent.
+ * Only the two live-reload paths call this; a manual refresh() never toasts.
+ */
+async function liveRefresh(deferred: boolean): Promise<void> {
+  const before = currentChokepointId();
+  await refresh();
+  const after = currentChokepointId();
+  const shiftMsg = chokepointShiftMessage(before, after);
+  const now = Date.now();
+  if (shiftMsg !== "" && now - lastShiftToastAt > SHIFT_TOAST_THROTTLE_MS) {
+    lastShiftToastAt = now;
+    showInfoToast(shiftMsg);
+  } else {
+    showInfoToast(liveChangeMessage(deferred));
+  }
+}
+
+/**
  * Handle a fingerprint frame (ready or change). The first frame only seeds the
  * baseline; subsequent frames whose fingerprint moved trigger a silent refresh
  * so external CLI/TUI/hand edits flow into the open tab without a manual reload.
@@ -5183,10 +5219,12 @@ function onLiveFrame(data: string): void {
       liveRefreshPending = true;
       return;
     }
-    refresh();
-    // F33: surface a subtle toast so an external edit landing is visible, not
-    // a silent jump.
-    showInfoToast(liveChangeMessage(false));
+    // F33/F121: refresh and surface the right toast. liveRefresh snapshots the
+    // biggest chokepoint BEFORE the fetch (currentTasks still holds the pre-edit
+    // state), re-fetches, then shows either a "Biggest chokepoint moved" toast
+    // (F121) when the bottleneck shifted with every panel closed, or the generic
+    // "file changed" notice. Single fetch — liveRefresh owns the refresh.
+    void liveRefresh(false);
   } else {
     liveFingerprint = fp;
   }
@@ -5215,8 +5253,9 @@ function flushPendingLiveRefresh(): void {
   if (liveRefreshPending && !editing && !duePicking) {
     liveRefreshPending = false;
     if (livePaused) return; // F33: don't auto-pull while paused
-    refresh();
-    showInfoToast(liveChangeMessage(true));
+    // F121: route through liveRefresh so a chokepoint shift that landed while
+    // you were mid-edit still surfaces its toast when the edit settles.
+    void liveRefresh(true);
   }
 }
 
