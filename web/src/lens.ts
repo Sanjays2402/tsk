@@ -321,6 +321,26 @@ export function renderActiveLensHelp(
 }
 
 /**
+ * F131: the action a "toggle pin on the active lens" keyboard shortcut should
+ * take, given the active lens and whether it's already pinned. The whole pin
+ * lifecycle (pin F110/F115, recall, unpin F125) was reachable by mouse (the chip
+ * star) and Cmd-K, but there was no DIRECT key. This makes the binding's decision
+ * a pure, unit-tested function so main.ts's keydown handler stays declarative:
+ *   - no active lens   -> "none"   (nothing to pin; the key is a no-op)
+ *   - active + unpinned -> "pin"    (route through pinCurrentLens)
+ *   - active + pinned   -> "unpin"  (route through unpinCurrentLens)
+ * Pure → unit-tested; mirrors the star's pin-vs-recall/unpin state so the key,
+ * the star, and the palette commands can't disagree about what a toggle does.
+ */
+export function lensPinToggleAction(
+  kind: LensKind | null,
+  pinned: boolean,
+): "none" | "pin" | "unpin" {
+  if (kind === null) return "none";
+  return pinned ? "unpin" : "pin";
+}
+
+/**
  * F90: render the FULL lens digit map as a live mini-legend for the help
  * overlay — every lens with its number-key shortcut inline ("1 ⛔ blocked ·
  * 2 ⚠ overdue · …"), in LENS_ORDER so it can't drift from the keyboard map.

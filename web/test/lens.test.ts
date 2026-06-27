@@ -9,6 +9,7 @@ import {
   lensDigit,
   activeLensSummary,
   renderActiveLensHelp,
+  lensPinToggleAction,
   renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
@@ -265,6 +266,23 @@ test("renderActiveLensHelp omits the pinned marker by default and when unpinned"
   // unpinned lens reads exactly as before.
   assert.equal(renderActiveLensHelp("overdue", null), renderActiveLensHelp("overdue", null, false));
   assert.doesNotMatch(renderActiveLensHelp("overdue", null, false), /help-lens-pinned/);
+});
+
+// --- F131: the keyboard pin-toggle action -----------------------------------
+
+test("lensPinToggleAction is a no-op when no lens is active", () => {
+  // Nothing to pin -> the * key does nothing (main.ts shows a hint).
+  assert.equal(lensPinToggleAction(null, false), "none");
+  assert.equal(lensPinToggleAction(null, true), "none"); // pinned is irrelevant with no lens
+});
+
+test("lensPinToggleAction pins an active, unpinned lens", () => {
+  assert.equal(lensPinToggleAction("overdue", false), "pin");
+});
+
+test("lensPinToggleAction unpins an active, already-pinned lens", () => {
+  // Mirrors the star's pin-vs-unpin state, so the key + star + commands agree.
+  assert.equal(lensPinToggleAction("blocked", true), "unpin");
 });
 
 test("renderActiveLensHelp shows BOTH provenance and pinned when both apply", () => {

@@ -62,6 +62,7 @@ import {
   lensMeta,
   lensForDigit,
   renderActiveLensHelp,
+  lensPinToggleAction,
   renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
@@ -4521,6 +4522,26 @@ document.addEventListener("keydown", (e) => {
         setPriority(nav.selectedId, floorPriority());
       }
       break;
+    case "*":
+      // F131: toggle pin/unpin on the ACTIVE lens, keyboard-only — the direct-key
+      // sister of the chip star (F110 pin / F125 right-click unpin) and the Cmd-K
+      // pin/unpin commands, so the whole pin lifecycle is reachable without the
+      // mouse or the palette. The * mnemonic echoes the star glyph the pin wears.
+      // lensPinToggleAction decides from the same findPureLensView pin-state the
+      // star + commands read, so the three surfaces can't disagree; a no-op (with
+      // a hint) when no lens is active (nothing to pin).
+      {
+        e.preventDefault();
+        const pinned = activeLens !== null && findPureLensView(views, activeLens) !== null;
+        const action = lensPinToggleAction(activeLens, pinned);
+        if (action === "pin") pinCurrentLens();
+        else if (action === "unpin") unpinCurrentLens();
+        else {
+          setStatus("no lens to pin", false);
+          setTimeout(() => setStatus("ready", false), 2_000);
+        }
+      }
+      break;
     case "u":
       if (pending) {
         e.preventDefault();
@@ -4602,6 +4623,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["[ / ]", "Lower / raise the selected task's priority"],
   ["shift [ / ]", "Jump priority to the floor (low) / ceiling (urgent)"],
   ["1 \u2026 5", "Toggle a stats lens (blocked / overdue / today / week / no-due)"],
+  ["*", "Pin / unpin the active lens"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
