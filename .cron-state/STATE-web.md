@@ -1989,38 +1989,158 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T21 pure-lens-glyph / cohort-depth-badge / chokepoint-shift-lead /
 pin-lens-command / help-provenance cluster:
 
-- [ ] **F117** Cohort history breadcrumb in the `?` help overlay: F108/F113
+- [x] **F117** Cohort history breadcrumb in the `?` help overlay: F108/F113
       track a per-session cohort back-stack with a chip depth badge, but the
       keyboard-only `?` summary doesn't mention the cohort at all. Add a "Cohort
       focus: N waiting on #M (‹K in history)" line to the help overlay (sister of
       F116's active-lens line), so the keyboard summary reports the cohort + its
-      drill depth. Reuse cohortSummary + cohortHistory.length.
-- [ ] **F118** "Clear cohort" depth-aware label: F103's clearCohortCommand names
+      drill depth. Reuse cohortSummary + cohortHistory.length. (tick T22 2026-06-27)
+- [x] **F118** "Clear cohort" depth-aware label: F103's clearCohortCommand names
       the active cohort ("3 waiting on #1"); when a back-stack exists, the command
       could read "Clear cohort + N-step history" so the keyboard user knows clearing
       drops the whole drill, not just the current level. Pure: thread the history
       depth into the command label; the action is unchanged (clearCohort already
-      resets the stack).
-- [ ] **F119** Pin-lens success surfaces the new chip: F110/F115 save a pure-lens
+      resets the stack). (tick T22 2026-06-27)
+- [x] **F119** Pin-lens success surfaces the new chip: F110/F115 save a pure-lens
       view but the only feedback is a status line. After a pin, briefly flash the
       newly-created Views chip (a one-shot highlight class) so the user sees WHERE
       the pin landed in the row — the spatial confirmation the status line can't
       give. Reuse the F112 is-lens-pin chip + a transient class cleared on the next
-      render.
-- [ ] **F120** "Recall pinned lens" from a digit-key collision guard: F115's
+      render. (tick T22 2026-06-27)
+- [x] **F120** "Recall pinned lens" from a digit-key collision guard: F115's
       pin/recall command + the F71 digit keys can both target the same lens; when a
       pinned lens is recalled via the palette, ensure the digit-key state stays in
       sync (the chip's pin star + the help digit map both reflect "this lens is
       active AND pinned"). Mostly a wiring/test slice confirming the three surfaces
       (star, palette, digit map) never disagree after a recall.
-- [ ] **F121** Chokepoint-shift toast: F114 leads Cmd-K with the shift and F111
+      Shipped as a real readout: the pin state now surfaces in the help overlay's
+      active-lens line AND the digit map, all driven by the SAME findPureLensView
+      the star + palette read, so the four surfaces agree by construction. (tick T22 2026-06-27)
+- [x] **F121** Chokepoint-shift toast: F114 leads Cmd-K with the shift and F111
       shows a sidebar "was #M" hint, but with both the palette closed AND the stats
       panel closed, a shifting bottleneck is silent. On a live-reload where the
       biggest chokepoint changes (chokepointShiftFrom set), show a one-shot info
       toast ("Biggest chokepoint moved: #M -> #N") so the shift is noticed even
       with every panel closed. Reuse showInfoToast + the F114 shift slot; throttle
-      so a rapid series of edits doesn't spam.
+      so a rapid series of edits doesn't spam. (tick T22 2026-06-27)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
 import/export, a per-tag saved-view group, etc.).
+
+---
+
+## TICK LOG — T22 (2026-06-27 ~06:35 PT)
+
+Shipped 5/5 web slices on `main` (F117-F121), gated once, pushed clean
+(b9926ae..15152de). 21 net-new web tests (747 -> 768), Go gates green
+(gofmt clean / vet clean / build clean / `go test ./...` all ok — commands
+pkg 66.3s, serve re-run clean against the fresh bundle 2.6s, store/model/
+dateparse/tui/util cached-green), both tsc configs clean, bundle rebuilt +
+embedded (41 modules, JS 39.08KB gz, CSS 10.46KB gz), live `tsk serve`
+smoke-tested. Canonical workdir `/Volumes/Projects/tsk` WAS mounted (HEAD at
+b9926ae, node_modules present).
+
+This batch finishes the T22 queue exactly as written (no deferrals): the five
+fresh follow-ons appended in T21 after the pure-lens-glyph / cohort-depth-badge
+/ chokepoint-shift-lead / pin-lens-command / help-provenance cluster. Every
+slice closes a "the readout/action exists on ONE surface but not its sibling"
+gap the T15-T21 work opened (cohort known to the chip but not the `?` overlay;
+clear-cohort named but silent about the drill it drops; pin saved but
+spatially invisible; pin state on the mouse surfaces only; chokepoint shift
+visible only with a panel open).
+
+- **F117** `d8fb270` Cohort breadcrumb in the help overlay. cohort.ts:
+  renderCohortHelp(focus, historyDepth=0) bolds the summary (reusing
+  cohortSummary so the overlay line, the Cmd-K command label, and the chip
+  can't drift) + a muted "(<K in history)" note echoing the F113 chip depth
+  badge; "" for a null focus. main.ts: a [data-help-cohort] slot populated in
+  toggleHelp from focusCohort + cohortHistory.length. app.css:
+  .help-foot[data-help-cohort] + .help-cohort-history. +6 tests.
+- **F118** `39361ee` Depth-aware Clear cohort label. palette.ts:
+  clearCohortCommand(summary, historyDepth=0) appends " + N-step history" only
+  when a cohort is active AND depth > 0; default 0 is byte-identical so
+  existing snapshots/call sites are unchanged; added history/drill keywords.
+  main.ts passes cohortHistory.length. +5 tests.
+- **F119** `190e3f0` Flash the just-pinned chip. views.ts: ViewChipOpts.flashId
+  -> a one-shot is-flash class on the matching chip (composes with the F112
+  is-lens-pin marker). main.ts: a pendingPinFlashViewId slot set in
+  pinCurrentLens (the new pure-lens view's id via findPureLensView),
+  renderViewsRow passes it then clears it so the class rides one paint.
+  app.css: @keyframes view-chip-flash amber-pulse + scale, reduced-motion
+  fallback to a static box-shadow. +3 tests.
+- **F120** `fed4326` Pinned-lens state synced across help line + digit map.
+  lens.ts: renderActiveLensHelp(kind, provenance, pinned=false) appends a
+  "★ pinned" marker; renderLensDigitMap(active, pinnedKind=null) marks the
+  active+pinned legend entry. main.ts: toggleHelp computes lensPinned ONCE via
+  the same findPureLensView that drives the F110 star + F115 command and feeds
+  both surfaces, so star/command/line/legend agree by construction. app.css:
+  .help-lens-pinned + .lens-legend-item.is-pinned + .lens-legend-pin. +6 tests.
+- **F121** `88e217f` Chokepoint-shift toast on live reload. stats.ts:
+  chokepointShiftMessage(prev, curr) -> "Biggest chokepoint moved: #M -> #N",
+  "" on no genuine shift (same guard as chokepointTrend, so the toast + the
+  F111 sidebar hint fire on the same condition). main.ts: a liveRefresh(deferred)
+  wrapper the TWO live-reload paths route through (single fetch, snapshots the
+  biggest chokepoint before/after, shows the shift toast OR the generic notice),
+  throttled to one shift-toast per 8s. A manual refresh() never toasts. +3 tests.
+- `15152de` bundle rebuild (41 modules, JS 39.08KB gz, CSS 10.46KB gz).
+
+Live proof: built /tmp/t22.tsk.md via the CLI (--file) — #1 (Ship release)
+with 2 waiters (#3,#4) and #2 (Deploy infra) with 1 (#5), so #1 is the
+biggest chokepoint — then `tsk serve --addr 127.0.0.1:7922`. GET / -> 200; the
+served bundle (app-uesrDKoT.js) carried every hook: data-help-cohort + "Cohort
+focus:" (F117), "step history" (F118), is-flash (F119), help-lens-pinned
+(F120), "Biggest chokepoint moved" (F121); CSS carried help-cohort-history,
+view-chip-flash, help-lens-pinned, lens-legend-pin. Toggling #1 done via POST
+/api/tasks/1/toggle (which completes the biggest chokepoint -> shift to #2, the
+exact F121 scenario) round-tripped to .tsk.md preserving every depends: link +
+adding completed:; `tsk show 3` read depends:#1 back. The raw .tsk.md stayed
+plain hand-editable markdown — the CLI/TUI storage contract is intact. Cleaned
+up the /tmp fixture + the built binary after.
+
+Deferred: nothing. F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu) remain the
+standing long-carries. T23 backlog (F122-F126) appended below so the loop
+never starves.
+
+### T23 — depth (appended T22 2026-06-27 so the loop never starves)
+
+Standing unstarted: F48 (context-menu submenus), F49 (autocomplete in edit +
+filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
+the T22 cohort-breadcrumb / depth-aware-clear / pin-flash / pin-state-sync /
+shift-toast cluster:
+
+- [ ] **F122** Cohort breadcrumb is clickable in the help overlay: F117 renders
+      the "Cohort focus: N waiting on #M (‹K in history)" line as static text. Make
+      the "‹K in history" segment a real button that runs cohortBack one step (the
+      same Escape / chip-glyph path), so the keyboard user can step back through the
+      drill from the `?` summary itself, then it re-renders the line. Reuse the
+      existing cohortBack + a delegated click in ensureHelpEl like the F91 legend.
+- [ ] **F123** Shift-toast "focus it" action: F121's "Biggest chokepoint moved:
+      #M -> #N" toast is informational only. Add a "Focus" action button (reusing
+      showInfoToast's F42 action slot) that drops into the new chokepoint's cohort
+      (setCohort(after)) — the toast sibling of F114's Cmd-K lead, so a shift you
+      notice via the toast is one click from acting on.
+- [ ] **F124** Pin-flash also scrolls the chip into view: F119 flashes the
+      freshly-pinned chip, but if the Views row has overflowed horizontally the new
+      chip may be off-screen when the flash plays. After setting pendingPinFlashViewId,
+      scrollIntoView({inline: "nearest"}) the flashed chip so the spatial
+      confirmation is actually visible. Guard for jsdom-less/test env (no-op when
+      scrollIntoView is absent).
+- [ ] **F125** "Unpin lens" from the chip star + palette: F110/F115 pin a lens
+      and recall it, but there's no one-click UNPIN — you have to find the chip and
+      hit its × delete. When a lens is already pinned, a long-press / right-click on
+      the star (and a "Unpin lens (<label>)" palette command) removes the pure-lens
+      view via removeView, so the pin lifecycle is symmetric. Reuse findPureLensView
+      to locate the view + the existing removeView.
+- [ ] **F126** Active-cohort line in the stats sidebar: F117 put the cohort in the
+      `?` overlay; the stats panel (the mouse surface) shows the biggest-chokepoint
+      line but not the ACTIVE cohort focus. Add a small "Focused: N waiting on #M"
+      readout to the stats panel when a cohort is active (sister of F117), with a
+      click-to-clear, so the cohort state is visible on the panel too — reuse
+      cohortSummary + the existing clearCohort wiring.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
+import/export, a per-tag saved-view group, a cohort-history breadcrumb trail in
+the sidebar, etc.).
