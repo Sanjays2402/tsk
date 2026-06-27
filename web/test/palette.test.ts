@@ -516,6 +516,37 @@ test("clearCohortCommand reads plainly and is disabled when no cohort is active"
   assert.equal(c.disabled, true);
 });
 
+// --- F118: depth-aware "Clear cohort" label --------------------------------
+
+test("clearCohortCommand warns about the drill depth when a back-stack exists", () => {
+  const c = clearCohortCommand("3 waiting on #1", 2);
+  assert.equal(c.title, "Clear cohort focus (3 waiting on #1) + 2-step history");
+  assert.equal(c.disabled, false);
+});
+
+test("clearCohortCommand at depth 0 is byte-identical to the no-depth form", () => {
+  // The default arg keeps existing call sites + snapshots unchanged.
+  assert.equal(
+    clearCohortCommand("2 on #5", 0).title,
+    clearCohortCommand("2 on #5").title,
+  );
+  assert.doesNotMatch(clearCohortCommand("2 on #5", 0).title, /history/);
+});
+
+test("clearCohortCommand ignores depth when no cohort is active", () => {
+  // No cohort summary means nothing to clear, so a stray depth must not leak a
+  // "+ N-step history" suffix onto the plain disabled label.
+  const c = clearCohortCommand(null, 4);
+  assert.equal(c.title, "Clear cohort focus");
+  assert.equal(c.disabled, true);
+});
+
+test("clearCohortCommand is fuzzy-findable by 'history' and 'drill'", () => {
+  const c = clearCohortCommand("3 waiting on #1", 2);
+  assert.equal(filterCommands([c], "history").length, 1);
+  assert.equal(filterCommands([c], "drill").length, 1);
+});
+
 test("focusChokepointCommand names the chokepoint and is enabled when one exists", () => {
   const c = focusChokepointCommand(7);
   assert.equal(c.id, "cohort-focus-biggest");

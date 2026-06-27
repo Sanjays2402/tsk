@@ -407,13 +407,25 @@ export function pinLensCommand(lensLabel: string | null, pinned: boolean): Comma
  *     reaching for the sidebar. Disabled ("no chokepoint") on a flat board.
  * Pure → unit-tested. `cohortSummary` is the active cohort's summary (or null);
  * `chokepointId` is the biggest chokepoint's id (or null when the board is flat).
+ *
+ * F118: when a cohort back-stack exists (`historyDepth` > 0 — you drilled in via
+ * F108/F113), the clear label warns that clearing drops the WHOLE drill, not
+ * just the current level: "Clear cohort focus (3 waiting on #1) + 2-step
+ * history". clearCohort already resets the stack (the action is unchanged); this
+ * just makes the keyboard user aware of the consequence before they run it, the
+ * command-label sibling of the F113 chip depth badge. A depth of 0 (or the
+ * default) reads exactly as before, keeping existing snapshots byte-identical.
  */
-export function clearCohortCommand(cohortSummary: string | null): Command {
+export function clearCohortCommand(cohortSummary: string | null, historyDepth = 0): Command {
+  const history =
+    cohortSummary !== null && historyDepth > 0
+      ? ` + ${historyDepth}-step history`
+      : "";
   return {
     id: "cohort-clear",
-    title: cohortSummary ? `Clear cohort focus (${cohortSummary})` : "Clear cohort focus",
+    title: cohortSummary ? `Clear cohort focus (${cohortSummary})${history}` : "Clear cohort focus",
     group: "View",
-    keywords: ["cohort", "focus", "reset", "unfilter", "waiting", "chokepoint", "bottleneck"],
+    keywords: ["cohort", "focus", "reset", "unfilter", "waiting", "chokepoint", "bottleneck", "history", "drill"],
     disabled: cohortSummary === null,
   };
 }

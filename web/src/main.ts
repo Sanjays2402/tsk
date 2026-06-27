@@ -4689,12 +4689,14 @@ function buildCommands(): Command[] {
       activeLens !== null && findPureLensView(views, activeLens) !== null,
     ),
     // F103: the cohort-focus sisters of clearLensCommand — the keyboard-only
-    // way to clear a cohort focus (naming it, "3 waiting on #1") and to drop
+    // "Clear cohort focus (<summary>)" readout + a "Focus biggest chokepoint"
     // into the biggest chokepoint's cohort (naming it, "#N"). F96's sidebar
     // focus button + filter-bar clear chip are mouse-only; these reach the same
     // setCohort path from Cmd-K. Each disabled (with a reason via F89) when its
     // precondition is absent (no cohort focused / a flat board).
-    clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null),
+    // F118: pass the back-stack depth so the clear label warns when clearing
+    // drops a multi-step drill (the command-label sibling of the F113 chip badge).
+    clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null, cohortHistory.length),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
