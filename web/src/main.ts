@@ -54,7 +54,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
-import { renderStatsPanel, chokepointTrend, chokepointShiftToast } from "./stats";
+import { renderStatsPanel, chokepointTrend, chokepointShiftToast, shouldRevealStatsOnFocus } from "./stats";
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
@@ -5368,7 +5368,20 @@ async function liveRefresh(deferred: boolean): Promise<void> {
     showInfoToast(
       shift.message,
       6,
-      focusId !== null ? { label: "Focus", run: () => setCohort(focusId) } : undefined,
+      focusId !== null
+        ? {
+            label: "Focus",
+            // F123: drop into the new chokepoint's cohort. F130: ALSO reveal the
+            // stats panel (when closed) so the F126 "Focused" line + the
+            // breakdown for the cohort you just focused are immediately legible —
+            // chaining the focus to its readout. shouldRevealStatsOnFocus guards
+            // the toggle so an already-open panel isn't needlessly flipped shut.
+            run: () => {
+              setCohort(focusId);
+              if (shouldRevealStatsOnFocus(statsOpen)) toggleStats(true);
+            },
+          }
+        : undefined,
     );
   } else {
     showInfoToast(liveChangeMessage(deferred));

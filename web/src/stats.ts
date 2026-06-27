@@ -290,6 +290,19 @@ export function chokepointShiftToast(prev: number | null, curr: number | null): 
 }
 
 /**
+ * F130: should the shift-toast's "Focus" action (F123) ALSO open the stats panel?
+ * The action drops into the new chokepoint's cohort (setCohort), but if the panel
+ * is closed the F126 "Focused" line + the breakdown aren't visible — so the
+ * cohort you just focused isn't legible where it matters. This returns true only
+ * when the panel is currently CLOSED, so the action opens it exactly once and an
+ * already-open panel isn't needlessly re-toggled (which would close it). Pure →
+ * unit-tested; main.ts chains setCohort + a guarded toggleStats(true) on this.
+ */
+export function shouldRevealStatsOnFocus(statsOpen: boolean): boolean {
+  return !statsOpen;
+}
+
+/**
  * F106: render the "Other bottlenecks" list — the runner-up chokepoints below
  * the single biggest one F92/renderChokepoint surfaces. On a board with several
  * bottlenecks, the second/third worst are invisible without scanning every row

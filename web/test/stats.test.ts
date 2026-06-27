@@ -13,6 +13,7 @@ import {
   chokepointTrend,
   chokepointShiftMessage,
   chokepointShiftToast,
+  shouldRevealStatsOnFocus,
   renderChokepointTrend,
   renderOtherChokepoints,
   renderScheduleStats,
@@ -353,6 +354,15 @@ test("chokepointShiftToast focus target tracks chokepointShiftMessage's fire con
     const vm = chokepointShiftToast(prev, curr);
     assert.equal(vm.focusId !== null, vm.message !== "", `prev=${prev} curr=${curr}`);
   }
+});
+
+// --- F130: the Focus action also reveals the stats panel ---------------------
+
+test("shouldRevealStatsOnFocus opens the panel only when it's currently closed", () => {
+  // Panel closed -> the Focus action should open it so the F126 line is legible.
+  assert.equal(shouldRevealStatsOnFocus(false), true);
+  // Panel already open -> don't re-toggle (that would close it).
+  assert.equal(shouldRevealStatsOnFocus(true), false);
 });
 
 test("renderChokepoint embeds the trend hint when the chokepoint changed", () => {
