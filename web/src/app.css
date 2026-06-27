@@ -1256,6 +1256,25 @@ kbd {
   display: none;
 }
 
+/* F117: the "active cohort" readout line in the help overlay — the cohort
+   sibling of the F71 active-lens line above it. Same tight, accented treatment
+   so it reads as live focus state; the back-stack-depth note is muted so the
+   primary "N waiting on #M" summary leads. Hidden when no cohort is focused. */
+.help-foot[data-help-cohort] {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  color: var(--color-amber-600);
+  font-weight: 600;
+}
+.help-foot[data-help-cohort][hidden] {
+  display: none;
+}
+.help-cohort-history {
+  color: var(--color-text-dim);
+  font-weight: 400;
+  font-style: italic;
+}
+
 /* F90: the lens digit-map mini-legend in the help overlay — every lens with its
    number-key shortcut inline, so the whole keyboard map is discoverable at a
    glance. Faint by default; the active lens entry brightens to the amber accent

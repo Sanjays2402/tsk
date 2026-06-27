@@ -82,6 +82,7 @@ import {
   reconcileCohort,
   renderCohortFocusButton,
   cohortSummary,
+  renderCohortHelp,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -4477,6 +4478,7 @@ function ensureHelpEl(): HTMLElement {
         }).join("")}
       </dl>
       <div class="help-foot" data-help-active></div>
+      <div class="help-foot" data-help-cohort></div>
       <div class="help-foot" data-help-legend></div>
       <div class="help-foot">Press <kbd>?</kbd> or <kbd>esc</kbd> to close</div>
     </div>`;
@@ -4520,6 +4522,18 @@ function toggleHelp(open: boolean): void {
     const html = renderActiveLensHelp(activeLens, provenance);
     activeEl.hidden = html === "";
     activeEl.innerHTML = html;
+  }
+  // F117: reflect the active COHORT focus (if any) as the cohort sibling of the
+  // active-lens line, so the keyboard-only `?` summary answers "what am I
+  // focused on, and how deep did I drill?" without looking at the filter bar.
+  // Reuses renderCohortHelp (which reuses cohortSummary) so the overlay line,
+  // the Cmd-K command label, and the chip can't drift; the back-stack depth
+  // echoes the F113 chip badge. Empty -> the line collapses.
+  const cohortEl = el.querySelector<HTMLElement>("[data-help-cohort]");
+  if (cohortEl) {
+    const html = renderCohortHelp(focusCohort, cohortHistory.length);
+    cohortEl.hidden = html === "";
+    cohortEl.innerHTML = html;
   }
   // F90: a live mini-legend of the WHOLE lens digit map ("1 blocked · 2
   // overdue · …"), with the active lens marked, so the overlay teaches every

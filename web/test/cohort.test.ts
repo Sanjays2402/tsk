@@ -9,6 +9,7 @@ import {
   reconcileCohort,
   renderCohortFocusButton,
   cohortSummary,
+  renderCohortHelp,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -260,4 +261,47 @@ test("renderCohortChipBody depth-1 keeps the single-level title", () => {
   const html = renderCohortChipBody(focus, 1);
   assert.match(html, /Back to the previous cohort"/); // no "(N in history)" suffix
   assert.doesNotMatch(html, /in history/);
+});
+
+// --- F117: cohort breadcrumb in the help (`?`) overlay ----------------------
+
+test("renderCohortHelp summarizes the active cohort and reuses cohortSummary", () => {
+  const focus: CohortFocus = { sourceId: 1, ids: [2, 3, 4] };
+  const html = renderCohortHelp(focus);
+  assert.match(html, /Cohort focus:/);
+  // It bolds the SAME summary the Cmd-K command + chip use, so they can't drift.
+  assert.match(html, new RegExp(`<strong>${cohortSummary(focus)}</strong>`));
+  assert.match(html, /<strong>3 waiting on #1<\/strong>/);
+});
+
+test("renderCohortHelp is empty with no active cohort", () => {
+  assert.equal(renderCohortHelp(null), "");
+  assert.equal(renderCohortHelp(null, 4), ""); // depth is irrelevant with no focus
+});
+
+test("renderCohortHelp appends the back-stack depth note when history is deep", () => {
+  const focus: CohortFocus = { sourceId: 5, ids: [6, 7] };
+  const html = renderCohortHelp(focus, 2);
+  assert.match(html, /help-cohort-history/);
+  assert.match(html, /2 in history/);
+  assert.match(html, /&#8249;2/); // the ‹ back glyph echoes the F113 chip badge
+});
+
+test("renderCohortHelp omits the history note at depth 0", () => {
+  const focus: CohortFocus = { sourceId: 5, ids: [6] };
+  const html = renderCohortHelp(focus, 0);
+  assert.doesNotMatch(html, /help-cohort-history/);
+  assert.doesNotMatch(html, /in history/);
+  // Byte-identical to the default-arg form so a no-history cohort reads plainly.
+  assert.equal(html, renderCohortHelp(focus));
+});
+
+test("renderCohortHelp escapes nothing injectable but keeps the summary intact at depth 1", () => {
+  // Depth 1 means a single back step exists but no multi-level badge note is
+  // shown (mirrors the chip, which only badges depth > 1) — the line still reads
+  // the plain summary plus the history note (any history is worth surfacing here).
+  const focus: CohortFocus = { sourceId: 9, ids: [10] };
+  const html = renderCohortHelp(focus, 1);
+  assert.match(html, /<strong>1 waiting on #9<\/strong>/);
+  assert.match(html, /1 in history/);
 });

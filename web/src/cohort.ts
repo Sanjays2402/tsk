@@ -122,6 +122,30 @@ export function cohortSummary(focus: CohortFocus): string {
 }
 
 /**
+ * F117: render the help (`?`) overlay's "active cohort" line as HTML — the
+ * cohort sibling of F116's active-lens line. F108/F113 track a per-session
+ * cohort back-stack with a chip depth badge, but the keyboard-only `?` summary
+ * never mentions the cohort at all, so a keyboard user can't answer "what am I
+ * focused on, and how deep did I drill?" without looking at the filter bar.
+ *
+ * Returns the cohort summary (reusing cohortSummary so it can't drift from the
+ * Cmd-K command label / chip) bolded, e.g. "Cohort focus: <strong>3 waiting on
+ * #1</strong>". When the back-stack is non-empty (`historyDepth` > 0) it appends
+ * a quiet "(‹K in history)" note echoing the F113 chip depth badge, so the
+ * overlay reports the drill depth too. Returns "" for a null focus so the line
+ * collapses (mirroring renderActiveLensHelp). Pure → unit-tested; the ‹ glyph
+ * matches the chip's back affordance so the two readouts read consistently.
+ */
+export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): string {
+  if (focus === null) return "";
+  const history =
+    historyDepth > 0
+      ? ` <span class="help-cohort-history">(&#8249;${historyDepth} in history)</span>`
+      : "";
+  return `Cohort focus: <strong>${escapeHTML(cohortSummary(focus))}</strong>${history}`;
+}
+
+/**
  * F101: the outcome of re-deriving a cohort focus against a fresh task list.
  * A cohort's `ids` are a snapshot of who waited on #sourceId at click time; an
  * external edit (CLI / TUI / hand / another tab) can complete those waiters,
