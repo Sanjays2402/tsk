@@ -1692,6 +1692,16 @@ button.lens-legend-item:focus-visible {
 .fpill.cohort-chip .cohort-back:hover {
   background: rgba(255, 255, 255, 0.34);
 }
+/* F113: the depth count inside the ‹ back glyph, shown only when the cohort
+   back-stack is more than one level deep — so a multi-step drill reveals how
+   deep you are. A tiny inset numeral riding the glyph; the back behaviour is
+   unchanged (Escape / click still steps exactly one level). */
+.fpill.cohort-chip .cohort-back-depth {
+  margin-left: 1px;
+  font-size: 0.78em;
+  font-weight: 700;
+  opacity: 0.85;
+}
 /* F109: the lens provenance readout — a faint "from <view>" note beside the
    active-lens chip, shown only when the live lens was re-applied by recalling a
    lensed saved view (F104). Answers "why is this lens on?" without competing

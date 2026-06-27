@@ -77,13 +77,30 @@ export function cohortCount(focus: CohortFocus): string {
  * to the previous cohort instead of clearing. The glyph is a non-interactive
  * span inside the chip button (mouse-only, mirroring the decorative × clear);
  * Escape is the keyboard path. Omitting / zero keeps the chip byte-identical.
+ *
+ * F113: when the back-stack is more than one deep (`historyDepth` > 1), the back
+ * glyph also shows the depth as a tiny superscript-ish count ("‹2") so a
+ * multi-step drill reveals HOW deep you are, not just that there's somewhere to
+ * go back to. The Escape / glyph behaviour is unchanged — it still steps exactly
+ * ONE level (popCohortHistory) regardless of the badge; the count is purely a
+ * readout. A depth of 0 or 1 renders the bare ‹ glyph as before.
  */
 export function renderCohortChipBody(focus: CohortFocus | null, historyDepth = 0): string {
   if (focus === null) return "";
-  const back =
-    historyDepth > 0
-      ? `<span class="cohort-back" data-cohort-back aria-hidden="true" title="Back to the previous cohort">&#8249;</span> `
-      : "";
+  let back = "";
+  if (historyDepth > 0) {
+    // F113: surface the stack depth once it's more than one level deep so a
+    // multi-step drill shows its depth. Single-level history stays the bare ‹.
+    const depthBadge =
+      historyDepth > 1
+        ? `<span class="cohort-back-depth" aria-hidden="true">${historyDepth}</span>`
+        : "";
+    const title =
+      historyDepth > 1
+        ? `Back to the previous cohort (${historyDepth} in history)`
+        : "Back to the previous cohort";
+    back = `<span class="cohort-back" data-cohort-back aria-hidden="true" title="${title}">&#8249;${depthBadge}</span> `;
+  }
   return `${back}&#8593; ${escapeHTML(cohortCount(focus))} on #${focus.sourceId} <span class="lens-x" aria-hidden="true">&times;</span>`;
 }
 

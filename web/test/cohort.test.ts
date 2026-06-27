@@ -230,3 +230,34 @@ test("renderCohortChipBody prepends a back glyph only when history is non-empty"
   assert.match(withBack, /data-cohort-back/);
   assert.ok(withBack.indexOf("data-cohort-back") < withBack.indexOf("2 waiting"));
 });
+
+// --- F113: cohort back-stack depth badge ------------------------------------
+
+test("renderCohortChipBody shows a depth badge only when history is >1 deep", () => {
+  const focus: CohortFocus = { sourceId: 7, ids: [2, 3] };
+  // Depth 0 / 1 render the bare ‹ glyph — no depth numeral.
+  assert.doesNotMatch(renderCohortChipBody(focus, 0), /cohort-back-depth/);
+  assert.doesNotMatch(renderCohortChipBody(focus, 1), /cohort-back-depth/);
+  // Depth 2+ surfaces the count so a multi-step drill shows how deep you are.
+  const deep = renderCohortChipBody(focus, 3);
+  assert.match(deep, /cohort-back-depth/);
+  assert.match(deep, /cohort-back-depth[^>]*>3</); // the numeral is the depth
+});
+
+test("renderCohortChipBody depth badge sits inside the back glyph, before the count", () => {
+  const focus: CohortFocus = { sourceId: 4, ids: [1, 2] };
+  const html = renderCohortChipBody(focus, 5);
+  // The depth numeral rides the back glyph (after data-cohort-back) and still
+  // precedes the "N waiting" count — purely a readout, not a new hit target.
+  assert.ok(html.indexOf("data-cohort-back") < html.indexOf("cohort-back-depth"));
+  assert.ok(html.indexOf("cohort-back-depth") < html.indexOf("2 waiting"));
+  // The title gains the depth so a hover explains the count.
+  assert.match(html, /5 in history/);
+});
+
+test("renderCohortChipBody depth-1 keeps the single-level title", () => {
+  const focus: CohortFocus = { sourceId: 4, ids: [1] };
+  const html = renderCohortChipBody(focus, 1);
+  assert.match(html, /Back to the previous cohort"/); // no "(N in history)" suffix
+  assert.doesNotMatch(html, /in history/);
+});
