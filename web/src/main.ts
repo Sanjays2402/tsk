@@ -82,6 +82,8 @@ import {
   reconcileCohort,
   renderCohortFocusButton,
   cohortSummary,
+  pushCohortHistory,
+  popCohortHistory,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -447,6 +449,15 @@ if (activeLens) {
  */
 let focusCohort: CohortFocus | null = null;
 
+/**
+ * F108: the cohort back-stack — the source ids you focused BEFORE the current
+ * cohort, most-recent last. setCohort pushes the outgoing focus's source here so
+ * "focus #1's cohort" then "focus #3's cohort" can step BACK to #1 (Escape or
+ * the chip's back glyph). Momentary + per-session (never persisted): cohorts are
+ * snapshots, so their history is too. Cleared whenever the cohort is dropped.
+ */
+let cohortHistory: number[] = [];
+
 /** Render the current state to the DOM, preserving keyboard selection. */
 function render(): void {
   const now = new Date();
@@ -563,7 +574,7 @@ function renderFilterBar(allTasks: Task[], visibleCount: number): void {
   // a chokepoint cohort is inherently a "what's stuck" view.
   if (focusCohort) {
     els.filterCohort.hidden = false;
-    els.filterCohort.innerHTML = renderCohortChipBody(focusCohort);
+    els.filterCohort.innerHTML = renderCohortChipBody(focusCohort, cohortHistory.length);
     els.filterCohort.classList.add("is-active", "lens-hue-alert");
     els.filterCohort.setAttribute("aria-pressed", "true");
     els.filterCohort.title = cohortChipTitle(focusCohort);
@@ -2923,7 +2934,10 @@ function setLens(kind: LensKind | null): void {
   activeLens = kind;
   // F96: a lens and a cohort focus are mutually exclusive narrowings — setting
   // a lens drops any active cohort so the two never stack confusingly.
-  if (kind !== null && focusCohort !== null) focusCohort = null;
+  if (kind !== null && focusCohort !== null) {
+    focusCohort = null;
+    cohortHistory = []; // F108: dropping the cohort drops its history
+  }
   persistLens();
   render();
 }
@@ -2942,6 +2956,13 @@ function setCohort(sourceId: number): void {
     setTimeout(() => setStatus("ready", false), 2_000);
     return;
   }
+  // F108: record the outgoing focus's source on the back-stack so a later "back"
+  // (Escape / the chip's ‹ glyph) returns to it. Re-focusing the SAME cohort
+  // (no change) doesn't push, and switching to the cohort we'd step back to
+  // anyway is de-duped by pushCohortHistory's top-of-stack guard.
+  if (focusCohort !== null && focusCohort.sourceId !== sourceId) {
+    cohortHistory = pushCohortHistory(cohortHistory, focusCohort.sourceId);
+  }
   focusCohort = cohort;
   if (activeLens !== null) {
     activeLens = null; // mutually exclusive with a lens
@@ -2956,7 +2977,33 @@ function setCohort(sourceId: number): void {
 function clearCohort(): void {
   if (focusCohort === null) return;
   focusCohort = null;
+  cohortHistory = []; // F108: dropping the focus drops its history
   render();
+}
+
+/**
+ * F108: step the cohort back-stack one level — return to the most recent
+ * ancestor cohort that still has live waiters (popCohortHistory skips ancestors
+ * whose chokepoint completed or whose waiters all finished). When the stack
+ * empties with no live ancestor, this clears the focus entirely (same as
+ * clearCohort). A no-op when there's no history to step back through, so the
+ * caller (Escape) can fall through to its other Escape behaviours. Returns true
+ * when it handled a back-step (focus changed), false when there was nothing to
+ * do — letting the keydown handler decide whether to consume the event.
+ */
+function cohortBack(): boolean {
+  if (focusCohort === null || cohortHistory.length === 0) return false;
+  const back = popCohortHistory(currentTasks as DepStatsTask[], cohortHistory);
+  cohortHistory = back.stack;
+  focusCohort = back.focus;
+  if (back.focus === null) {
+    setStatus("cohort history cleared", false);
+  } else {
+    setStatus(`back to ${back.focus.ids.length} waiting on #${back.focus.sourceId}`, false);
+  }
+  setTimeout(() => setStatus("ready", false), 2_000);
+  render();
+  return true;
 }
 
 /**
@@ -3237,7 +3284,14 @@ els.filterBlocked.addEventListener("click", () => {
 });
 
 // F96: the cohort-focus chip clears the focus when clicked.
-els.filterCohort.addEventListener("click", () => {
+// F108: …unless the click landed on the leading ‹ back glyph, which steps back
+// to the previous cohort in the drill instead of clearing outright.
+els.filterCohort.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("[data-cohort-back]")) {
+    cohortBack();
+    return;
+  }
   clearCohort();
 });
 
@@ -3247,6 +3301,7 @@ els.filterClear.addEventListener("click", () => {
   filter = emptyFilter();
   activeLens = null; // F66: clear the active lens too
   focusCohort = null; // F96: clear any cohort focus too
+  cohortHistory = []; // F108: and its back-stack
   persistLens(); // F93: forget the persisted lens on a full clear
   recalledViewId = null; // F32: dropping the filter forgets the active view
   render();
@@ -4017,6 +4072,7 @@ function jumpToTask(id: number): void {
     }
     if (focusCohort) {
       focusCohort = null; // F96: a jump that drops the cohort clears the focus
+      cohortHistory = []; // F108: and its back-stack
       needsRender = true;
     }
     if (isFilterActive(filter)) {
@@ -4208,6 +4264,15 @@ document.addEventListener("keydown", (e) => {
       toggleSettings(!settingsOpen);
       break;
     case "Escape":
+      // F108: when a cohort focus has back-history, Escape steps BACK one level
+      // (to the most recent still-live ancestor cohort) rather than clearing
+      // outright — so a multi-step chokepoint drill is reversible. cohortBack()
+      // returns false (and does nothing) when there's no history to step, so we
+      // fall through to the other Escape behaviours below.
+      if (cohortBack()) {
+        e.preventDefault();
+        break;
+      }
       // F16: a bulk selection is the first thing Escape clears.
       if (isBulkActive(bulk)) {
         e.preventDefault();

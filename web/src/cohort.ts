@@ -71,10 +71,20 @@ export function cohortCount(focus: CohortFocus): string {
  * lens chip (renderLensChipBody): an up-arrow glyph echoing the F87 "N waiting"
  * badge, the count + the chokepoint id, and a trailing × that signals a click
  * clears the focus. Returns "" for a null focus so the chip element hides.
+ *
+ * F108: when `historyDepth` > 0 (you drilled into this cohort FROM another), a
+ * leading ‹ back glyph (data-cohort-back) is prepended — clicking it steps back
+ * to the previous cohort instead of clearing. The glyph is a non-interactive
+ * span inside the chip button (mouse-only, mirroring the decorative × clear);
+ * Escape is the keyboard path. Omitting / zero keeps the chip byte-identical.
  */
-export function renderCohortChipBody(focus: CohortFocus | null): string {
+export function renderCohortChipBody(focus: CohortFocus | null, historyDepth = 0): string {
   if (focus === null) return "";
-  return `&#8593; ${escapeHTML(cohortCount(focus))} on #${focus.sourceId} <span class="lens-x" aria-hidden="true">&times;</span>`;
+  const back =
+    historyDepth > 0
+      ? `<span class="cohort-back" data-cohort-back aria-hidden="true" title="Back to the previous cohort">&#8249;</span> `
+      : "";
+  return `${back}&#8593; ${escapeHTML(cohortCount(focus))} on #${focus.sourceId} <span class="lens-x" aria-hidden="true">&times;</span>`;
 }
 
 /** The hover/aria title for the active cohort chip. */
@@ -143,4 +153,50 @@ export function reconcileCohort(
 export function renderCohortFocusButton(sourceId: number): string {
   const title = `Focus the board on the tasks waiting on #${sourceId}`;
   return `<button type="button" class="chain-pop-focus" data-cohort-focus="${sourceId}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">focus these</button>`;
+}
+
+/**
+ * F108: push a source id onto the cohort back-stack, returning a NEW stack.
+ * setCohort replaces the single focus slot; this records where you came FROM so
+ * a later "back" can return to it. De-dupes a no-op push (the same id already on
+ * top — re-focusing the current cohort shouldn't grow the stack) and caps the
+ * depth so a long focus chain can't grow unbounded over a session. Pure →
+ * unit-tested. The stack is momentary (per-session, never persisted) — cohorts
+ * are snapshots, so the history is too.
+ */
+export function pushCohortHistory(stack: readonly number[], sourceId: number, cap = 20): number[] {
+  if (stack.length > 0 && stack[stack.length - 1] === sourceId) return [...stack];
+  const next = [...stack, sourceId];
+  return next.length > cap ? next.slice(next.length - cap) : next;
+}
+
+/** F108: the outcome of stepping the cohort back-stack one level. */
+export interface CohortBack {
+  /** The remaining stack after the pop(s). */
+  stack: number[];
+  /** The rebuilt focus to land on, or null when no live ancestor remains. */
+  focus: CohortFocus | null;
+}
+
+/**
+ * F108: pop the cohort back-stack to the most recent ancestor that STILL has a
+ * live cohort. Pops ids off the END (most-recent-first), rebuilding each via
+ * buildCohort against the FRESH graph, until one holds (returns it + the
+ * remaining stack) or the stack empties (returns { stack: [], focus: null }).
+ * Skipping dead ancestors (the chokepoint completed, or all its waiters are
+ * done) means a back-step never lands on an empty focus — it transparently
+ * walks past stale history to the nearest still-meaningful cohort. Pure →
+ * unit-tested. main.ts calls this on Escape / the chip's back glyph.
+ */
+export function popCohortHistory(
+  tasks: DepStatsTask[],
+  stack: readonly number[],
+): CohortBack {
+  const next = [...stack];
+  while (next.length > 0) {
+    const id = next.pop()!;
+    const focus = buildCohort(tasks, id);
+    if (focus !== null) return { stack: next, focus };
+  }
+  return { stack: [], focus: null };
 }

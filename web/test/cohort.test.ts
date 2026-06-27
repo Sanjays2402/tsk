@@ -9,6 +9,8 @@ import {
   reconcileCohort,
   renderCohortFocusButton,
   cohortSummary,
+  pushCohortHistory,
+  popCohortHistory,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -167,4 +169,64 @@ test("renderCohortFocusButton names the source task in its title", () => {
 test("cohortSummary reads as 'N waiting on #M'", () => {
   assert.equal(cohortSummary({ sourceId: 1, ids: [2, 3, 4] }), "3 waiting on #1");
   assert.equal(cohortSummary({ sourceId: 5, ids: [9] }), "1 waiting on #5");
+});
+
+// --- F108: cohort back-stack -----------------------------------------------
+
+test("pushCohortHistory appends a source id and returns a new array", () => {
+  const a: number[] = [];
+  const b = pushCohortHistory(a, 1);
+  assert.deepEqual(b, [1]);
+  assert.notEqual(a, b); // new array, original untouched
+  assert.deepEqual(pushCohortHistory(b, 3), [1, 3]);
+});
+
+test("pushCohortHistory de-dupes a no-op push of the same top id", () => {
+  // Re-focusing the cohort already on top shouldn't grow the stack.
+  assert.deepEqual(pushCohortHistory([1, 3], 3), [1, 3]);
+  // But a non-top repeat IS pushed (you genuinely revisited it).
+  assert.deepEqual(pushCohortHistory([1, 3], 1), [1, 3, 1]);
+});
+
+test("pushCohortHistory caps the depth, dropping the oldest", () => {
+  const stack = pushCohortHistory([1, 2, 3], 4, 3);
+  assert.deepEqual(stack, [2, 3, 4]); // capped at 3, #1 evicted
+});
+
+test("popCohortHistory returns the most recent ancestor that still has waiters", () => {
+  // Stack: focused #1 then #4. Step back -> rebuild #4's cohort from the graph.
+  const back = popCohortHistory(graph(), [1, 4]);
+  assert.equal(back.focus!.sourceId, 4);
+  assert.deepEqual(back.focus!.ids, [5]); // #5 waits on #4 in the fixture
+  assert.deepEqual(back.stack, [1]); // #4 popped, #1 remains
+});
+
+test("popCohortHistory skips dead ancestors and lands on the nearest live one", () => {
+  // #3 has no dependents now (dead ancestor); #1 still has waiters. Stepping
+  // back from [1, 3] skips #3 and lands on #1's live cohort.
+  const back = popCohortHistory(graph(), [1, 3]);
+  assert.equal(back.focus!.sourceId, 1);
+  assert.deepEqual(back.focus!.ids, [2, 3, 4]);
+  assert.deepEqual(back.stack, []); // both popped to reach a live one
+});
+
+test("popCohortHistory clears when no ancestor still holds a cohort", () => {
+  // Neither #5 nor #3 has open dependents -> empties to a null focus.
+  const back = popCohortHistory(graph(), [5, 3]);
+  assert.deepEqual(back, { stack: [], focus: null });
+});
+
+test("popCohortHistory on an empty stack is a clean null", () => {
+  assert.deepEqual(popCohortHistory(graph(), []), { stack: [], focus: null });
+});
+
+test("renderCohortChipBody prepends a back glyph only when history is non-empty", () => {
+  const focus: CohortFocus = { sourceId: 7, ids: [2, 3] };
+  // No history -> no back glyph (byte-identical to the F96 chip).
+  assert.equal(renderCohortChipBody(focus, 0).includes("data-cohort-back"), false);
+  assert.equal(renderCohortChipBody(focus), renderCohortChipBody(focus, 0));
+  // With history -> a ‹ back affordance precedes the count.
+  const withBack = renderCohortChipBody(focus, 2);
+  assert.match(withBack, /data-cohort-back/);
+  assert.ok(withBack.indexOf("data-cohort-back") < withBack.indexOf("2 waiting"));
 });

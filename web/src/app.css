@@ -1660,6 +1660,22 @@ button.lens-legend-item:focus-visible {
   background: var(--color-overdue);
   color: #fff;
 }
+/* F108: the leading ‹ back glyph inside the cohort chip — present only when you
+   drilled into this cohort from another (the back-stack is non-empty). Clicking
+   it steps back to the previous cohort instead of clearing. A subtle inset pill
+   so it reads as a distinct hit target from the trailing × clear. */
+.fpill.cohort-chip .cohort-back {
+  font-weight: 700;
+  padding: 0 4px;
+  margin-right: 1px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+}
+.fpill.cohort-chip .cohort-back:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
 .fchip {
   display: inline-flex;
   align-items: center;
