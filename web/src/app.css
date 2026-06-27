@@ -1496,6 +1496,22 @@ button.lens-legend-item:focus-visible {
 .view-chip.is-lensed.is-active .view-chip-name::before {
   opacity: 0.9;
 }
+/* F112: a PURE-lens bookmark (F110's one-click pin: a lens + no filter) carries
+   the lens's OWN glyph instead of the generic ◈ diamond, so it reads as a "lens
+   bookmark" (recall the overdue lens) distinct from a lens+facet drill. Suppress
+   the .is-lensed ::before diamond on a pin so there's exactly one marker, and
+   tint the real glyph with the lens-alert hue to echo the stats lens chips. */
+.view-chip.is-lens-pin .view-chip-name::before {
+  content: none;
+}
+.view-chip-lens-glyph {
+  opacity: 0.7;
+  font-size: 0.9em;
+  color: var(--lens-alert, var(--accent));
+}
+.view-chip.is-lens-pin.is-active .view-chip-lens-glyph {
+  opacity: 1;
+}
 .view-chip-name {
   font-family: var(--font-sans);
   font-size: var(--fs-xs);

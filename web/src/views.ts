@@ -289,6 +289,20 @@ export function findPureLensView(views: SavedView[], lens: string): SavedView | 
   return views.find((v) => (v.lens ?? null) === lens && filterIsEmpty(v.filter)) ?? null;
 }
 
+/**
+ * F112: is this view a PURE-lens bookmark — a captured lens with no serializable
+ * filter narrowing it? F110's one-click pin saves exactly this shape (empty
+ * filter + a lens), so in the Views chip row such a chip is a "lens bookmark"
+ * (recall the overdue lens) rather than a "filter bookmark" (recall #work) or a
+ * lens+facet drill (F104's "Urgent (overdue)"). renderViewChips uses it to give
+ * pure-lens chips the lens's own glyph so the two read differently at a glance.
+ * A view with a lens AND a filter is a drill, not a pure pin, so it returns
+ * false. Pure → unit-tested.
+ */
+export function isPureLensView(view: SavedView): boolean {
+  return Boolean(view.lens) && filterIsEmpty(view.filter);
+}
+
 /** Escape strings before injecting into innerHTML. Local copy keeps this dependency-free. */
 function escapeHTML(s: string): string {
   return s.replace(/[&<>"']/g, (c) =>
@@ -332,11 +346,22 @@ export function describeView(v: SavedView): string {
  *     existing callers/tests are unaffected.
  *   - a view that captured a lens wears a small "lens" marker class so it's
  *     visually distinct from a plain filter view.
+ *
+ * F112:
+ *   - lensGlyph: an optional resolver (lens kind string -> a leading glyph) so a
+ *     PURE-lens bookmark (empty filter + a lens, F110's one-click pin) wears the
+ *     lens's OWN glyph and an `is-lens-pin` class — reading as a "lens bookmark"
+ *     vs a "filter bookmark" at a glance. main.ts supplies it (parseLens +
+ *     lensMeta(kind).glyph) so views.ts stays decoupled from the lens module; a
+ *     resolver that returns "" (unknown/garbage lens) degrades to no glyph. Only
+ *     pure-lens views get the glyph; a lens+facet drill stays a normal chip.
  */
 export interface ViewChipOpts {
   draggable?: boolean;
   updatableId?: string | null;
   liveLens?: string | null;
+  /** F112: lens kind -> leading glyph for pure-lens chips ("" = no glyph). */
+  lensGlyph?: (lens: string) => string;
 }
 
 export function renderViewChips(
@@ -357,11 +382,20 @@ export function renderViewChips(
         : filtersEqual(v.filter, filter);
       const active = isActive ? " is-active" : "";
       const lensed = v.lens ? " is-lensed" : "";
+      // F112: a pure-lens bookmark (lens + empty filter) wears the lens's own
+      // glyph + an is-lens-pin class so it reads as a "lens bookmark" distinct
+      // from a filter bookmark. A lens+facet drill keeps the plain chip.
+      const pin = isPureLensView(v);
+      const glyph = pin && opts.lensGlyph ? opts.lensGlyph(v.lens!) : "";
+      const pinClass = pin ? " is-lens-pin" : "";
+      const glyphSpan = glyph
+        ? `<span class="view-chip-lens-glyph" aria-hidden="true">${escapeHTML(glyph)}</span> `
+        : "";
       const update =
         opts.updatableId && opts.updatableId === v.id
           ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
           : "";
-      return `<span class="view-chip${active}${lensed}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      return `<span class="view-chip${active}${lensed}${pinClass}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

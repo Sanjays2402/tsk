@@ -3165,6 +3165,14 @@ function renderViewsRow(): void {
     draggable: true,
     updatableId,
     liveLens: lens, // F104: lens-aware active-chip highlight
+    // F112: give a pure-lens bookmark (F110's one-click pin) the lens's own
+    // glyph so it reads as a "lens bookmark" vs a filter bookmark. parseLens
+    // validates the stored kind (a stale/garbage lens -> no glyph) before
+    // lensMeta resolves it, keeping the chip robust to a hand-poked store.
+    lensGlyph: (kind) => {
+      const k = parseLens(kind);
+      return k ? lensMeta(k).glyph : "";
+    },
   });
   // Disable "save view" when there's nothing to save, or the exact filter+lens
   // combo is already saved (activeViewWithLens non-null means an identical

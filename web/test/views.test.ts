@@ -16,6 +16,7 @@ import {
   lensProvenanceNote,
   pureLensViewName,
   findPureLensView,
+  isPureLensView,
   viewMatches,
   describeView,
   renderViewChips,
@@ -300,6 +301,59 @@ test("renderViewChips lens-aware highlight + is-lensed marker", () => {
   const offHtml = renderViewChips([lensed], f, { liveLens: null });
   assert.doesNotMatch(offHtml, /is-active/);
   assert.match(offHtml, /is-lensed/);
+});
+
+// --- F112: pure-lens bookmarks read as lens chips, not filter chips ---------
+
+test("isPureLensView is true only for a lens with an empty filter", () => {
+  // F110's one-click pin: empty filter + a lens.
+  assert.equal(isPureLensView({ id: "1", name: "overdue", filter: EMPTY, lens: "overdue" }), true);
+  // A lens+facet drill (F104) is NOT a pure pin.
+  assert.equal(
+    isPureLensView({ id: "2", name: "UO", filter: { ...EMPTY, priorities: ["urgent"] }, lens: "overdue" }),
+    false,
+  );
+  // A plain filter view (no lens) is not a pure-lens view.
+  assert.equal(isPureLensView({ id: "3", name: "work", filter: { ...EMPTY, tags: ["work"] } }), false);
+  // A lens-less empty view is not a pure-lens view either.
+  assert.equal(isPureLensView({ id: "4", name: "empty", filter: EMPTY }), false);
+});
+
+test("renderViewChips gives a pure-lens chip its lens glyph + is-lens-pin", () => {
+  const pin: SavedView = { id: "1", name: "overdue", filter: EMPTY, lens: "overdue" };
+  const glyph = (k: string) => (k === "overdue" ? "\u26A0" : "");
+  const html = renderViewChips([pin], EMPTY, { liveLens: null, lensGlyph: glyph });
+  assert.match(html, /is-lens-pin/);
+  assert.match(html, /view-chip-lens-glyph/);
+  assert.match(html, /\u26A0/); // the lens's own glyph appears
+});
+
+test("renderViewChips: a lens+facet drill is NOT a lens-pin (no glyph)", () => {
+  const drill: SavedView = {
+    id: "1",
+    name: "UO",
+    filter: { ...EMPTY, priorities: ["urgent"] },
+    lens: "overdue",
+  };
+  const f: ViewFilter = { ...EMPTY, priorities: ["urgent"] };
+  const html = renderViewChips([drill], f, { liveLens: "overdue", lensGlyph: () => "\u26A0" });
+  assert.doesNotMatch(html, /is-lens-pin/);
+  assert.doesNotMatch(html, /view-chip-lens-glyph/);
+  assert.match(html, /is-lensed/); // still marked lensed (the drill diamond)
+});
+
+test("renderViewChips: a pin with no glyph resolver gets the class but no glyph", () => {
+  const pin: SavedView = { id: "1", name: "blocked", filter: EMPTY, lens: "blocked" };
+  const html = renderViewChips([pin], EMPTY, { liveLens: null });
+  assert.match(html, /is-lens-pin/);
+  assert.doesNotMatch(html, /view-chip-lens-glyph/);
+});
+
+test("renderViewChips: a garbage lens resolving to '' yields no glyph span", () => {
+  const pin: SavedView = { id: "1", name: "junk", filter: EMPTY, lens: "bogus" };
+  const html = renderViewChips([pin], EMPTY, { liveLens: null, lensGlyph: () => "" });
+  assert.match(html, /is-lens-pin/);
+  assert.doesNotMatch(html, /view-chip-lens-glyph/);
 });
 
 test("updateView can re-capture or strip the lens", () => {
