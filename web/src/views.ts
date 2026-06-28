@@ -692,6 +692,24 @@ export function peekViewLabel(view: SavedView, count: number | null | undefined)
 }
 
 /**
+ * F157: the title for a "Peek view (<name>)" command, with the live match-count
+ * folded in as a quiet trailing "·N" — so scanning the palette list shows every
+ * view's pile-up depth without highlighting each one to read F146's preview
+ * slot. F146 reveals the count + facets in the preview on highlight; this puts
+ * the bare count on the COMMAND TITLE itself, turning the whole Views group into
+ * an at-a-glance count column.
+ *
+ * A null/undefined count (count not meaningful yet) keeps the plain
+ * "Peek view (<name>)", so callers without a live count stay byte-identical. A
+ * zero count still renders "·0" — an empty view reads honestly rather than
+ * hiding. Pure → unit-tested; main.ts builds the peek commands' titles from it.
+ */
+export function peekCommandTitle(name: string, count: number | null | undefined): string {
+  const base = `Peek view (${name})`;
+  return typeof count === "number" ? `${base} \u00b7${count}` : base;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed

@@ -30,6 +30,7 @@ import {
   viewsRowSummary,
   describeViewsRowSummary,
   peekViewLabel,
+  peekCommandTitle,
   badgeHidesDone,
   addCohortView,
   chipClippedX,
@@ -988,6 +989,26 @@ test("peekViewLabel describes a cohort + a lens view by their kind", () => {
   assert.equal(peekViewLabel(cohort, 3), "3 tasks \u00b7 waiting on #5");
   const lensView: SavedView = { id: "l", name: "(overdue)", filter: emptyF(), lens: "overdue" };
   assert.equal(peekViewLabel(lensView, 7), "7 tasks \u00b7 lens: overdue");
+});
+
+// --- F157: peek-view command title carries the live count ------------------
+
+test("peekCommandTitle folds a quiet count suffix onto the peek title", () => {
+  assert.equal(peekCommandTitle("work", 12), "Peek view (work) \u00b712");
+  assert.equal(peekCommandTitle("urgent", 1), "Peek view (urgent) \u00b71");
+});
+
+test("peekCommandTitle renders 0 honestly rather than hiding it", () => {
+  assert.equal(peekCommandTitle("empty", 0), "Peek view (empty) \u00b70");
+});
+
+test("peekCommandTitle keeps the plain title for a null/undefined count", () => {
+  assert.equal(peekCommandTitle("work", null), "Peek view (work)");
+  assert.equal(peekCommandTitle("work", undefined), "Peek view (work)");
+});
+
+test("peekCommandTitle preserves a name with parens or unicode verbatim", () => {
+  assert.equal(peekCommandTitle("(overdue)", 4), "Peek view ((overdue)) \u00b74");
 });
 
 // --- F144: stale cohort-view bulk sweep ------------------------------------

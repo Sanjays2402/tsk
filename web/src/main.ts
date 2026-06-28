@@ -252,6 +252,7 @@ import {
   viewsRowSummary,
   describeViewsRowSummary,
   peekViewLabel,
+  peekCommandTitle,
   badgeHidesDone,
   addCohortView,
   renderViewChips,
@@ -5512,7 +5513,7 @@ function buildCommands(): Command[] {
   // jumping). Kept separate from viewCommands so the recall group stays clean.
   const peekCommands: Command[] = views.map((v) => ({
     id: `peek:${v.id}`,
-    title: `Peek view (${v.name})`,
+    title: peekCommandTitle(v.name, countViewMatches(v, viewMatchPool(), viewMatchCounters())),
     group: "Views",
     keywords: ["peek", "preview", "look", "inspect", "compare", "saved", "view", ...v.filter.tags],
   }));
