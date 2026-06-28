@@ -353,6 +353,30 @@ export function jumpCohortHistory(
 }
 
 /**
+ * F137: the cohort-history index a trail keyboard step should jump to — the
+ * keyboard sibling of F132's mouse-only breadcrumb trail (click a segment to
+ * leap to an ancestor). The trail renders ancestors oldest-first then the
+ * current cohort; a keyboard user couldn't walk that ancestry without the mouse.
+ *
+ * Given the back-stack length and a direction, return the index to hand to
+ * cohortJumpTo (which routes through jumpCohortHistory, skipping dead ancestors):
+ *   - "step" -> historyLength - 1: the MOST-RECENT ancestor, i.e. exactly one
+ *     level back (the same landing cohortBack/F108 produces — jumping to the top
+ *     of the stack pops just the last entry). Repeated steps walk back one
+ *     ancestor at a time because the stack trims on each jump.
+ *   - "root" -> 0: the OLDEST ancestor, the drill origin — a one-press leap all
+ *     the way back to where the cohort drill started.
+ * Both directions walk TOWARD the root (the only direction a back-stack
+ * supports — there's no redo once you've stepped back). An empty history returns
+ * -1 so the caller declines to act (nothing to step through). Pure → unit-tested;
+ * main.ts maps Alt+Left -> "step" and Alt+Right -> "root", then cohortJumpTo.
+ */
+export function cohortTrailKeyTarget(historyLength: number, dir: "step" | "root"): number {
+  if (historyLength <= 0) return -1;
+  return dir === "root" ? 0 : historyLength - 1;
+}
+
+/**
  * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
  * panel — the multi-step sibling of F127's single back-step button. F108/F113
  * track a per-session cohort history but the chip / F127 panel button only ever

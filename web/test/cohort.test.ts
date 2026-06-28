@@ -15,6 +15,7 @@ import {
   jumpCohortHistory,
   pushCohortHistory,
   popCohortHistory,
+  cohortTrailKeyTarget,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -522,4 +523,26 @@ test("renderCohortPanelLine pin star is the last disjoint sibling in the row", (
   const pin = html.indexOf("data-cohort-pin");
   assert.ok(back >= 0 && clear >= 0 && walk >= 0 && pin >= 0);
   assert.ok(back < clear && clear < walk && walk < pin);
+});
+
+// --- F137: cohort trail keyboard navigation --------------------------------
+
+test("cohortTrailKeyTarget steps to the most-recent ancestor (one level back)", () => {
+  // History [1, 4, 9] (3 ancestors) -> a single step back targets index 2 (the
+  // most-recent ancestor, #9 here), the same landing Escape/cohortBack gives.
+  assert.equal(cohortTrailKeyTarget(3, "step"), 2);
+  assert.equal(cohortTrailKeyTarget(1, "step"), 0);
+});
+
+test("cohortTrailKeyTarget leaps to the drill root (oldest ancestor)", () => {
+  // "root" always targets index 0 — the origin of the drill — regardless of depth.
+  assert.equal(cohortTrailKeyTarget(5, "root"), 0);
+  assert.equal(cohortTrailKeyTarget(1, "root"), 0);
+});
+
+test("cohortTrailKeyTarget returns -1 for an empty history (nothing to step)", () => {
+  // No back-stack -> the caller declines to act, in both directions.
+  assert.equal(cohortTrailKeyTarget(0, "step"), -1);
+  assert.equal(cohortTrailKeyTarget(0, "root"), -1);
+  assert.equal(cohortTrailKeyTarget(-1, "step"), -1);
 });

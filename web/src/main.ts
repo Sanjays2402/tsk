@@ -90,6 +90,7 @@ import {
   jumpCohortHistory,
   pushCohortHistory,
   popCohortHistory,
+  cohortTrailKeyTarget,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -4603,6 +4604,34 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
+  // F137: Alt+Left / Alt+Right walk the cohort drill ancestry keyboard-only —
+  // the keyboard sibling of F132's mouse-only breadcrumb trail. Alt+Left steps
+  // one ancestor back (cohortTrailKeyTarget "step" -> the most-recent ancestor,
+  // the same landing Escape/cohortBack gives); Alt+Right leaps to the drill
+  // ROOT ("root" -> index 0). Both route through cohortJumpTo so they share the
+  // skip-dead-ancestor walk. Handled BEFORE the modifier early-return below
+  // (which rejects altKey) so the combo reaches here; a no-op (falls through to
+  // that return) when no cohort has history, so Alt+Arrow is free otherwise.
+  // Skipped while typing / mid-edit so it never hijacks an input's caret keys.
+  if (
+    e.altKey &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    (e.key === "ArrowLeft" || e.key === "ArrowRight") &&
+    !isTypingTarget(e.target) &&
+    !editing &&
+    !duePicking &&
+    !notesEditing &&
+    focusCohort !== null &&
+    cohortHistory.length > 0
+  ) {
+    const target = cohortTrailKeyTarget(cohortHistory.length, e.key === "ArrowRight" ? "root" : "step");
+    if (target >= 0) {
+      e.preventDefault();
+      cohortJumpTo(target);
+      return;
+    }
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
   if (editing || duePicking || notesEditing) return; // inline edit / due picker / notes handle their own keys
@@ -4833,6 +4862,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["shift [ / ]", "Jump priority to the floor (low) / ceiling (urgent)"],
   ["1 \u2026 5", "Toggle a stats lens (blocked / overdue / today / week / no-due)"],
   ["*", "Pin / unpin the active lens"],
+  ["alt \u2190 / \u2192", "Step back / leap to root through the cohort drill"],
   ["f", "Focus the shifted chokepoint (while a shift toast is up)"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
