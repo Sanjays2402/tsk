@@ -94,6 +94,7 @@ import {
   popCohortHistory,
   cohortTrailKeyTarget,
   formatCohortTrailText,
+  formatCohortTrailMarkdown,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -3239,19 +3240,27 @@ function cohortJumpTo(index: number): void {
  * (or the write rejects) we degrade to a status hint that still shows the chain,
  * mirroring the F-style guarded clipboard fallback used elsewhere — the user
  * always at least SEES the chain even if the copy itself couldn't fire.
+ *
+ * F143: when `markdown` is true (Alt-click on the copy button), the SAME walk is
+ * lifted as a markdown task-link chain ("#1 → #4 → #9", arrows instead of ›) so
+ * a paste into an issue / PR renders live cross-links. Both formats share this
+ * one guarded-clipboard path; only the source string + the status verb differ.
  */
-function copyCohortChain(): void {
-  const chain = formatCohortTrailText(focusCohort, cohortHistory);
+function copyCohortChain(markdown = false): void {
+  const chain = markdown
+    ? formatCohortTrailMarkdown(focusCohort, cohortHistory)
+    : formatCohortTrailText(focusCohort, cohortHistory);
   if (chain === "") return;
+  const label = markdown ? "markdown chain" : "chain";
   const hint = (): void => {
-    setStatus(`chain: ${chain}`, false);
+    setStatus(`${label}: ${chain}`, false);
     setTimeout(() => setStatus("ready", false), 3_000);
   };
   const clip = (navigator as Navigator | undefined)?.clipboard;
   if (clip && typeof clip.writeText === "function") {
     clip.writeText(chain).then(
       () => {
-        setStatus(`copied chain ${chain}`, false);
+        setStatus(`copied ${label} ${chain}`, false);
         setTimeout(() => setStatus("ready", false), 2_000);
       },
       () => hint(), // write rejected (permissions / insecure context) — show it
@@ -3993,8 +4002,10 @@ els.statsPanel.addEventListener("click", (e) => {
   // note. Checked FIRST so a copy click never falls through to a jump. Routes
   // through copyCohortChain, which guards navigator.clipboard for the test /
   // no-API env (degrading to a status hint).
+  // F143: Alt-click copies the same walk as a markdown task-link chain
+  // ("#1 → #4 → #9") so a paste into an issue / PR renders live cross-links.
   if (target?.closest("[data-cohort-copy]")) {
-    copyCohortChain();
+    copyCohortChain(e.altKey);
     return;
   }
   // F132: a breadcrumb-trail segment jumps STRAIGHT to that ancestor cohort

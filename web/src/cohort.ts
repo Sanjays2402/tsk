@@ -396,6 +396,25 @@ export function formatCohortTrailText(focus: CohortFocus | null, history: readon
 }
 
 /**
+ * F143: format the cohort drill path as a MARKDOWN task-link chain — the richer
+ * sibling of F140's plain "#A › #B › #current". F140 copies bare text good for a
+ * quick paste; this lifts the same walk as a GitHub-flavoured chain of issue
+ * references joined by arrows ("#1 \u2192 #4 \u2192 #9"), so pasting into a
+ * markdown issue / PR / standup doc renders each segment as a live cross-link
+ * (GitHub auto-links bare #N), and the arrows survive as plain text. Mirrors
+ * formatCohortTrailText's segment order (ancestors oldest-first via `history`,
+ * then the current focus) and its empty conditions (no focus OR no history ->
+ * "") so F140's plain copy and F143's markdown copy appear/vanish together. The
+ * → glyph (U+2192) is intentionally distinct from F140's › (U+203A) so a reader
+ * can tell at a glance which format they pasted. Pure → unit-tested.
+ */
+export function formatCohortTrailMarkdown(focus: CohortFocus | null, history: readonly number[]): string {
+  if (focus === null || history.length === 0) return "";
+  const ids = [...history, focus.sourceId];
+  return ids.map((id) => `#${id}`).join(" \u2192 "); // → with surrounding spaces
+}
+
+/**
  * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
  * panel — the multi-step sibling of F127's single back-step button. F108/F113
  * track a per-session cohort history but the chip / F127 panel button only ever
@@ -435,8 +454,12 @@ export function renderCohortTrail(focus: CohortFocus | null, history: readonly n
   // F140: a copy-chain affordance after the current segment. Its hook carries
   // the full path text so the click handler doesn't re-derive it (single source
   // of truth = formatCohortTrailText, the same string this trail reads).
+  // F143: Alt-click copies the same walk as a markdown task-link chain
+  // ("#1 → #4 → #9") instead of the plain "›" text, so a paste into an issue /
+  // PR renders live cross-links. The title advertises both gestures; main.ts
+  // reads e.altKey to pick formatCohortTrailText vs formatCohortTrailMarkdown.
   const chainText = formatCohortTrailText(focus, history);
-  const copyTitle = `Copy the drill chain (${chainText})`;
+  const copyTitle = `Copy the drill chain (${chainText}) \u2014 Alt-click for markdown`;
   const copy = `<button type="button" class="cohort-trail-copy" data-cohort-copy title="${escapeHTML(copyTitle)}" aria-label="${escapeHTML(copyTitle)}">&#10697;</button>`;
   return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}${copy}</div>`;
 }

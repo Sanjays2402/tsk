@@ -17,6 +17,7 @@ import {
   popCohortHistory,
   cohortTrailKeyTarget,
   formatCohortTrailText,
+  formatCohortTrailMarkdown,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -579,10 +580,42 @@ test("renderCohortTrail appends a copy-chain button carrying the data-cohort-cop
   assert.ok(html.indexOf("cohort-trail-current") < html.indexOf("data-cohort-copy"));
   // Its title carries the full chain so a hover previews what'll be copied.
   assert.match(html, /Copy the drill chain \(#1 \u203a #4 \u203a #9\)/);
+  // F143: the title advertises the Alt-click markdown gesture.
+  assert.match(html, /Alt-click for markdown/);
 });
 
 test("renderCohortTrail emits no copy button when there's no trail to copy", () => {
   // No history -> no trail and therefore no copy affordance.
   assert.equal(renderCohortTrail({ sourceId: 3, ids: [4] }, []), "");
   assert.equal(renderCohortTrail(null, [1]), "");
+});
+
+// --- F143: copy the cohort drill chain as markdown -------------------------
+
+test("formatCohortTrailMarkdown renders the chain with arrow joins", () => {
+  const focus: CohortFocus = { sourceId: 9, ids: [10] };
+  // Same segment order as the plain text, but → (U+2192) joins instead of › .
+  assert.equal(formatCohortTrailMarkdown(focus, [1, 4]), "#1 \u2192 #4 \u2192 #9");
+});
+
+test("formatCohortTrailMarkdown uses a distinct glyph from the plain text", () => {
+  const focus: CohortFocus = { sourceId: 2, ids: [3] };
+  const md = formatCohortTrailMarkdown(focus, [1]);
+  const txt = formatCohortTrailText(focus, [1]);
+  // The two formats name the same ids in the same order...
+  assert.match(md, /#1.*#2/);
+  assert.match(txt, /#1.*#2/);
+  // ...but with different separators so a reader can tell which they pasted.
+  assert.ok(md.includes("\u2192"));
+  assert.ok(!md.includes("\u203a"));
+  assert.ok(txt.includes("\u203a"));
+  assert.ok(!txt.includes("\u2192"));
+});
+
+test("formatCohortTrailMarkdown is empty under the same conditions as the text form", () => {
+  // No focus OR no history -> "" so F140's plain copy + F143's markdown copy
+  // appear/vanish together.
+  assert.equal(formatCohortTrailMarkdown(null, [1, 2]), "");
+  assert.equal(formatCohortTrailMarkdown({ sourceId: 3, ids: [4] }, []), "");
+  assert.equal(formatCohortTrailMarkdown(null, []), "");
 });
