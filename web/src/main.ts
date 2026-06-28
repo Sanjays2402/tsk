@@ -165,6 +165,8 @@ import {
   pinLensCommand,
   unpinLensCommand,
   clearCohortCommand,
+  pinCohortCommand,
+  unpinCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -3264,22 +3266,22 @@ function copyCohortChain(): void {
 function togglePinCohort(): void {
   if (focusCohort === null) return;
   const sourceId = focusCohort.sourceId;
-  const existing = findCohortView(views, sourceId);
-  if (existing) {
-    // Already pinned — unpin it (drop the bookmark; the cohort stays focused).
-    // F134: fade the leaving chip out (shared with the lens unpin + chip × delete)
-    // so the removal gets the same spatial confirmation; synchronous in tests.
-    setStatus(`unpinned cohort "${existing.name}"`, false);
-    setTimeout(() => setStatus("ready", false), 2_000);
-    animateChipExitThenRemove(existing.id, () => {
-      views = removeView(views, existing.id);
-      if (recalledViewId === existing.id) recalledViewId = null;
-      saveViews();
-      render();
-      refreshStats(); // re-render the panel star as ☆ (now unpinned)
-    });
-    return;
-  }
+  if (findCohortView(views, sourceId)) unpinFocusedCohort();
+  else pinFocusedCohort();
+}
+
+/**
+ * F133/F139: pin the focused cohort's chokepoint as a saved cohort view. A no-op
+ * when nothing's focused. If it's already pinned this is a recall-style no-op on
+ * the store (addCohortView overwrites the same-chokepoint view, never
+ * duplicates) — the F139 "Recall pinned cohort" command relies on this being
+ * safe to call when already pinned. Flashes the freshly-created chip (F119).
+ * Split out of togglePinCohort so the Cmd-K pin command (F139) and the panel
+ * star (F133) share one pin path.
+ */
+function pinFocusedCohort(): void {
+  if (focusCohort === null) return;
+  const sourceId = focusCohort.sourceId;
   const name = `waiting on #${sourceId}`;
   views = addCohortView(views, name, sourceId);
   saveViews();
@@ -3290,6 +3292,29 @@ function togglePinCohort(): void {
   refreshStats(); // re-render the panel star as ★ (now pinned)
   setStatus(`pinned cohort "${name}"`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
+ * F133/F139: unpin the focused cohort's saved view (drop the bookmark; the
+ * cohort stays focused). A no-op when nothing's focused or the focused cohort
+ * isn't pinned. F134: fade the leaving chip out (shared with the lens unpin +
+ * chip × delete) so the removal gets the same spatial confirmation; synchronous
+ * in tests. Split out of togglePinCohort so the Cmd-K unpin command (F139) and
+ * the panel star (F133) share one unpin path.
+ */
+function unpinFocusedCohort(): void {
+  if (focusCohort === null) return;
+  const existing = findCohortView(views, focusCohort.sourceId);
+  if (!existing) return;
+  setStatus(`unpinned cohort "${existing.name}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+  animateChipExitThenRemove(existing.id, () => {
+    views = removeView(views, existing.id);
+    if (recalledViewId === existing.id) recalledViewId = null;
+    saveViews();
+    render();
+    refreshStats(); // re-render the panel star as ☆ (now unpinned)
+  });
 }
 
 /**
@@ -5216,6 +5241,19 @@ function buildCommands(): Command[] {
     // F118: pass the back-stack depth so the clear label warns when clearing
     // drops a multi-step drill (the command-label sibling of the F113 chip badge).
     clearCohortCommand(focusCohort ? cohortSummary(focusCohort) : null, cohortHistory.length),
+    // F139: the cohort-pin sisters of F115/F125's lens pin/unpin commands — the
+    // keyboard-first path to bookmark "the tasks waiting on #N" as a cohort view
+    // (or recall it when already pinned) + drop the bookmark, mirroring F133's
+    // mouse-only panel star. `pinned` reflects findCohortView so the pin title
+    // matches the star's pin-vs-recall state; unpin is enabled only when pinned.
+    pinCohortCommand(
+      focusCohort ? cohortSummary(focusCohort) : null,
+      focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
+    ),
+    unpinCohortCommand(
+      focusCohort ? cohortSummary(focusCohort) : null,
+      focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
+    ),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
@@ -5340,6 +5378,19 @@ function runCommand(id: string): void {
       // F103: drop the active cohort focus (keyboard-only sister of the
       // filter-bar clear chip).
       clearCohort();
+      break;
+    case "cohort-pin":
+      // F139: pin the focused cohort as a saved view (or recall it when already
+      // pinned — pinFocusedCohort is idempotent via addCohortView's overwrite),
+      // keyboard-only sister of F133's panel star. No-op when no cohort is
+      // focused (the command is disabled then anyway).
+      pinFocusedCohort();
+      break;
+    case "cohort-unpin":
+      // F139: drop the focused cohort's saved view, keyboard-only sister of
+      // right-clicking the star. No-op when no cohort is focused or it isn't
+      // pinned (the command is disabled in those cases).
+      unpinFocusedCohort();
       break;
     case "cohort-focus-biggest": {
       // F103: focus the biggest chokepoint's cohort keyboard-only (sister of
@@ -5533,6 +5584,8 @@ function paintPaletteDuePreview(): void {
           lensPinned: activeLens !== null && findPureLensView(views, activeLens) !== null,
           hasCohort: focusCohort !== null,
           hasChokepoint: currentChokepointId() !== null,
+          cohortPinned:
+            focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
         })
       : null;
   if (reason !== null) {

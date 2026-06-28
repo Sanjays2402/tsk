@@ -342,6 +342,8 @@ export interface CommandReasonContext {
   hasCohort: boolean;
   /** F103: is there a chokepoint to focus (so "focus biggest chokepoint" is meaningful)? */
   hasChokepoint: boolean;
+  /** F139: is the focused cohort currently pinned (so "unpin cohort" is meaningful)? */
+  cohortPinned: boolean;
 }
 
 /**
@@ -469,6 +471,55 @@ export function focusChokepointCommand(chokepointId: number | null): Command {
   };
 }
 
+/**
+ * F139: the two cohort-PIN palette commands — the keyboard-first sisters of
+ * F133's panel pin star (which is mouse-only). F133 lets you bookmark "the tasks
+ * waiting on #N" as a re-derivable cohort view by clicking the ★/☆ star on the
+ * stats-panel cohort line, but the keyboard path (Cmd-K) couldn't pin or unpin
+ * the focused cohort. These close that loop, mirroring F115/F125's lens pin/unpin
+ * commands so the whole cohort-pin lifecycle is reachable from the palette too.
+ *
+ *   - "Pin cohort (waiting on #N)" — saves the focused chokepoint as a cohort
+ *     view, routing through the same pinFocusedCohort path the star drives. When
+ *     the cohort is ALREADY pinned the title flips to "Recall pinned cohort
+ *     (waiting on #N)" so it reads honestly (idempotent: pinning an already-
+ *     pinned cohort recalls it, no duplicate) — exactly like the star's filled
+ *     vs hollow state. Disabled (with "no cohort active" via F89) when nothing's
+ *     focused.
+ *   - "Unpin cohort (waiting on #N)" — drops the saved cohort view keyboard-only
+ *     (the sister of right-clicking the star). Meaningful only when the focused
+ *     cohort is actually pinned, so it's disabled when no cohort is focused OR
+ *     the focused cohort isn't pinned (commandDisabledReason explains which).
+ *
+ * `cohortSummary` is the focused cohort's summary (e.g. "3 waiting on #1") or
+ * null when none; `pinned` is whether that chokepoint already has a saved cohort
+ * view (the same findCohortView state the star reads). Pure → unit-tested.
+ */
+export function pinCohortCommand(cohortSummary: string | null, pinned: boolean): Command {
+  const title = cohortSummary
+    ? pinned
+      ? `Recall pinned cohort (${cohortSummary})`
+      : `Pin cohort (${cohortSummary})`
+    : "Pin cohort";
+  return {
+    id: "cohort-pin",
+    title,
+    group: "View",
+    keywords: ["cohort", "pin", "bookmark", "save", "view", "star", "recall", "waiting", "chokepoint", "bottleneck"],
+    disabled: cohortSummary === null,
+  };
+}
+
+export function unpinCohortCommand(cohortSummary: string | null, pinned: boolean): Command {
+  return {
+    id: "cohort-unpin",
+    title: cohortSummary ? `Unpin cohort (${cohortSummary})` : "Unpin cohort",
+    group: "View",
+    keywords: ["cohort", "unpin", "remove", "bookmark", "delete", "forget", "star", "waiting", "chokepoint", "bottleneck"],
+    disabled: cohortSummary === null || !pinned,
+  };
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
@@ -553,7 +604,9 @@ export function focusShiftedChokepointCommand(
  *   - "Pin lens" with no lens active (F115)    -> "no lens active";
  *   - "Unpin lens" with no lens / not pinned (F125) -> "no lens active" / "lens not pinned";
  *   - "Clear cohort focus" with none (F103)    -> "no cohort active";
- *   - "Focus biggest chokepoint" on a flat board (F103) -> "no chokepoint".
+ *   - "Focus biggest chokepoint" on a flat board (F103) -> "no chokepoint";
+ *   - "Pin cohort" with no cohort focused (F139) -> "no cohort active";
+ *   - "Unpin cohort" with no cohort / not pinned (F139) -> "no cohort active" / "cohort not pinned".
  * Returns null for a command with no known disabled-reason (the slot hides).
  * Pure → unit-tested. Delegates to setCommandDisabledReason first so the F83
  * set-command behaviour is preserved exactly. The caller only consults this for
@@ -578,5 +631,13 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   }
   if (id === "cohort-clear" && !ctx.hasCohort) return "no cohort active";
   if (id === "cohort-focus-biggest" && !ctx.hasChokepoint) return "no chokepoint";
+  if (id === "cohort-pin" && !ctx.hasCohort) return "no cohort active";
+  if (id === "cohort-unpin") {
+    // F139: two distinct reasons — no cohort focused at all, vs a cohort that
+    // simply isn't pinned yet (nothing to unpin). The command is enabled only
+    // when both hold, mirroring the lens-unpin split.
+    if (!ctx.hasCohort) return "no cohort active";
+    if (!ctx.cohortPinned) return "cohort not pinned";
+  }
   return null;
 }

@@ -19,6 +19,8 @@ import {
   clearCohortCommand,
   pinLensCommand,
   unpinLensCommand,
+  pinCohortCommand,
+  unpinCohortCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -384,7 +386,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -614,6 +616,71 @@ test("commandDisabledReason: cohort commands explain their absent precondition",
   assert.equal(commandDisabledReason("cohort-clear", FULL_CTX), null);
   assert.equal(commandDisabledReason("cohort-focus-biggest", { ...FULL_CTX, hasChokepoint: false }), "no chokepoint");
   assert.equal(commandDisabledReason("cohort-focus-biggest", FULL_CTX), null);
+  // F139: pin/unpin cohort reasons.
+  assert.equal(commandDisabledReason("cohort-pin", { ...FULL_CTX, hasCohort: false }), "no cohort active");
+  assert.equal(commandDisabledReason("cohort-pin", FULL_CTX), null);
+  assert.equal(commandDisabledReason("cohort-unpin", { ...FULL_CTX, hasCohort: false }), "no cohort active");
+  assert.equal(commandDisabledReason("cohort-unpin", { ...FULL_CTX, cohortPinned: false }), "cohort not pinned");
+  assert.equal(commandDisabledReason("cohort-unpin", FULL_CTX), null);
+});
+
+// --- F139: cohort pin/unpin palette commands -------------------------------
+
+test("pinCohortCommand reads 'Pin cohort (<summary>)' when focused + not pinned", () => {
+  const c = pinCohortCommand("3 waiting on #1", false);
+  assert.equal(c.id, "cohort-pin");
+  assert.match(c.title, /Pin cohort \(3 waiting on #1\)/);
+  assert.equal(c.disabled, false);
+});
+
+test("pinCohortCommand flips to 'Recall pinned cohort (<summary>)' when already pinned", () => {
+  const c = pinCohortCommand("2 waiting on #4", true);
+  assert.equal(c.id, "cohort-pin");
+  assert.match(c.title, /Recall pinned cohort \(2 waiting on #4\)/);
+  assert.equal(c.disabled, false);
+});
+
+test("pinCohortCommand reads plainly and is disabled with no cohort (pinned irrelevant)", () => {
+  for (const pinned of [true, false]) {
+    const c = pinCohortCommand(null, pinned);
+    assert.equal(c.title, "Pin cohort");
+    assert.equal(c.disabled, true);
+  }
+  assert.equal(commandDisabledReason("cohort-pin", { ...FULL_CTX, hasCohort: false }), "no cohort active");
+});
+
+test("pinCohortCommand is fuzzy-findable by 'pin' and 'cohort'", () => {
+  const byPin = filterCommands([pinCohortCommand("1 waiting on #9", false)], "pin cohort");
+  assert.equal(byPin.length, 1);
+  assert.equal(byPin[0].id, "cohort-pin");
+  const byRecall = filterCommands([pinCohortCommand("1 waiting on #9", true)], "recall");
+  assert.equal(byRecall.length, 1);
+});
+
+test("unpinCohortCommand reads 'Unpin cohort (<summary>)' and is enabled only when pinned", () => {
+  const c = unpinCohortCommand("3 waiting on #1", true);
+  assert.equal(c.id, "cohort-unpin");
+  assert.match(c.title, /Unpin cohort \(3 waiting on #1\)/);
+  assert.equal(c.disabled, false);
+});
+
+test("unpinCohortCommand is disabled when the focused cohort isn't pinned", () => {
+  const c = unpinCohortCommand("3 waiting on #1", false);
+  assert.equal(c.disabled, true);
+});
+
+test("unpinCohortCommand reads plainly and is disabled with no cohort", () => {
+  for (const pinned of [true, false]) {
+    const c = unpinCohortCommand(null, pinned);
+    assert.equal(c.title, "Unpin cohort");
+    assert.equal(c.disabled, true);
+  }
+});
+
+test("unpinCohortCommand is fuzzy-findable by 'unpin' and 'forget'", () => {
+  const byUnpin = filterCommands([unpinCohortCommand("2 waiting on #4", true)], "unpin");
+  assert.equal(byUnpin.length, 1);
+  assert.equal(byUnpin[0].id, "cohort-unpin");
 });
 
 test("cohort commands are fuzzy-findable by 'cohort' and 'chokepoint'", () => {
