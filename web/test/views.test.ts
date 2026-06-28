@@ -30,6 +30,7 @@ import {
   viewsRowSummary,
   describeViewsRowSummary,
   peekViewLabel,
+  badgeHidesDone,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -885,6 +886,52 @@ test("describeViewsRowSummary drops the task half when nothing matches", () => {
   assert.equal(describeViewsRowSummary({ views: 3, tasks: 0 }), "3 views");
   // No views at all -> empty (the row + readout hide).
   assert.equal(describeViewsRowSummary({ views: 0, tasks: 0 }), "");
+});
+
+// --- F152: actionable hide-done count badge --------------------------------
+
+test("badgeHidesDone is true for a show-all view holding done tasks", () => {
+  const v: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  assert.equal(badgeHidesDone(v, { open: 12, done: 3 }), true);
+});
+
+test("badgeHidesDone is false when the view already hides done", () => {
+  const v: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"], hideDone: true } };
+  assert.equal(badgeHidesDone(v, { open: 12, done: 3 }), false);
+});
+
+test("badgeHidesDone is false when the match set has no done tasks", () => {
+  const v: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  assert.equal(badgeHidesDone(v, { open: 12, done: 0 }), false);
+});
+
+test("badgeHidesDone is false for a cohort bookmark (no hideDone facet)", () => {
+  const v = addCohortView([], "waiting on #5", 5)[0];
+  // Even with done tasks in its cohort, a cohort view has no filter to flip.
+  assert.equal(badgeHidesDone(v, { open: 4, done: 2 }), false);
+});
+
+test("renderViewChips emits an actionable button badge only when hideDoneBadge is true", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  // Actionable -> a <button data-view-hide-done> with the hint in the title.
+  const on = renderViewChips(views, emptyF(), {
+    matchCount: () => 15,
+    hideDoneBadge: () => true,
+  });
+  assert.match(on, /<button[^>]*class="view-chip-count is-actionable"[^>]*data-view-hide-done=/);
+  assert.match(on, /click to hide done/);
+  // Not actionable -> the inert <span> badge, byte-compatible with F141.
+  const off = renderViewChips(views, emptyF(), {
+    matchCount: () => 15,
+    hideDoneBadge: () => false,
+  });
+  assert.match(off, /<span class="view-chip-count"/);
+  assert.doesNotMatch(off, /data-view-hide-done/);
+  // No resolver -> inert span (existing callers unaffected).
+  assert.doesNotMatch(
+    renderViewChips(views, emptyF(), { matchCount: () => 15 }),
+    /data-view-hide-done/,
+  );
 });
 
 // --- F146: peek view (preview without recall) ------------------------------

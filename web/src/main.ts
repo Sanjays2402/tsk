@@ -250,6 +250,7 @@ import {
   viewsRowSummary,
   describeViewsRowSummary,
   peekViewLabel,
+  badgeHidesDone,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -3638,6 +3639,17 @@ function renderViewsRow(): void {
       describeViewMatchBreakdown(
         countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
       ),
+    // F152: a show-all view whose live match set holds done tasks gets a
+    // clickable badge — clicking it recalls the view AND flips hideDone on, so
+    // the "·N" that advertises a done count becomes a "land on just the open
+    // slice" jump. badgeHidesDone reads the SAME open/done breakdown the F145
+    // tooltip shows, so the badge is only actionable where it actually hides
+    // something (non-cohort, show-all, done > 0).
+    hideDoneBadge: (v) =>
+      badgeHidesDone(
+        v,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
+      ),
     // F142: mark the single busiest chip (the densest live bucket) so the eye
     // jumps to where the work piled up. busiestViewId reuses the SAME count
     // resolver the badge renders from, and returns null on a tie / empty board so
@@ -3882,6 +3894,23 @@ function recallView(id: string): void {
   setTimeout(() => setStatus("ready", false), 1_500);
 }
 
+/**
+ * F152: recall a saved view AND flip its hideDone facet on — the action behind
+ * clicking an actionable "·N" count badge. recallView applies the view's own
+ * filter first (which may keep done tasks); this then forces hideDone on and
+ * repaints, so a click on a show-all view's badge lands you on just the open
+ * slice. A no-op for an unknown id (recallView already guards). The view's saved
+ * filter is left untouched on disk — this only changes the live board (the
+ * recalled-view chip becomes "updatable" so you can save the tweak if you want).
+ */
+function recallViewHideDone(id: string): void {
+  const v = views.find((x) => x.id === id);
+  if (!v) return;
+  recallView(id);
+  // recallView set the live filter from the view; force the done slice hidden.
+  if (!filter.hideDone) setFilter({ hideDone: true });
+}
+
 /** F32: overwrite a saved view's filter with the live filter, then repaint.
  *
  * F104: also re-capture the live lens so updating a recalled lens+facet view
@@ -4084,6 +4113,16 @@ els.viewsChips.addEventListener("click", (e) => {
   if (upd) {
     e.stopPropagation();
     updateViewToCurrent(upd.dataset.viewUpdate ?? "");
+    return;
+  }
+  // F152: clicking an actionable count badge ("·N" on a show-all view holding
+  // done tasks) recalls the view AND flips hideDone on, landing you on just the
+  // open slice. Checked before the recall hook below so the badge's own action
+  // wins over the chip-wide recall (the badge sits inside the chip).
+  const hideDone = target?.closest<HTMLElement>("[data-view-hide-done]");
+  if (hideDone) {
+    e.stopPropagation();
+    recallViewHideDone(hideDone.dataset.viewHideDone ?? "");
     return;
   }
   const recall = target?.closest<HTMLElement>("[data-view-recall]");

@@ -1615,6 +1615,33 @@ button.lens-legend-item:focus-visible {
   opacity: 1;
 }
 
+/* F152: an actionable count badge — on a show-all view holding done tasks, the
+   "·N" becomes a button that recalls the view + hides the done slice. Rendered
+   as a real <button> so it's keyboard-focusable; styled to sit flush with the
+   inert span variant but reveal its clickability on hover/focus (underline +
+   pointer + a touch more weight), so the affordance is discoverable without
+   shouting over the chip's own recall action. */
+button.view-chip-count {
+  appearance: none;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+button.view-chip-count.is-actionable {
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+button.view-chip-count.is-actionable:hover,
+button.view-chip-count.is-actionable:focus-visible {
+  color: var(--color-accent, #d98a16);
+  opacity: 1;
+  text-decoration-style: solid;
+  outline: none;
+}
+
 /* F142: the busiest view — the chip matching the most live tasks (the densest
    bucket among F141's badges). A subtle amber left-accent + a brighter count
    badge so the eye jumps to where the work piled up, without shouting over the

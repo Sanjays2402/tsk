@@ -840,6 +840,18 @@ export interface ViewChipOpts {
    */
   matchTitle?: (view: SavedView) => string | null | undefined;
   /**
+   * F152: a resolver flagging whether a view's count badge should be an
+   * actionable "hide done" affordance (true) rather than a plain readout. When
+   * it returns true for a view, that chip's badge renders as a clickable
+   * `<button data-view-hide-done>` (recall + flip hideDone on click) instead of
+   * the inert `<span>`, and its tooltip gains a "click to hide done" hint.
+   * Backed by badgeHidesDone over the same open/done breakdown matchTitle reads,
+   * so a badge is only actionable when it actually advertises done tasks to
+   * hide. Omitted/false (or no matchCount) keeps the F141/F145 plain span, so
+   * existing callers stay byte-identical.
+   */
+  hideDoneBadge?: (view: SavedView) => boolean;
+  /**
    * F142: the id of the single BUSIEST view — the chip matching the most live
    * tasks (busiestViewId over the same match-count resolver F141's badge reads).
    * When supplied and a chip's id equals it, that chip gets an `is-busiest`
@@ -849,6 +861,29 @@ export interface ViewChipOpts {
    * the marker only appears when there's an unambiguous busiest view.
    */
   busiestId?: string | null;
+}
+
+/**
+ * F152: should the F145 "·N" count badge act as a "hide these done ones"
+ * affordance? On a SHOW-ALL view (its saved filter keeps done tasks) whose live
+ * match set actually contains completed tasks, clicking the badge recalls the
+ * view AND flips hideDone on — so the done count it advertises ("12 open · 3
+ * done") becomes an actionable "land on just the open slice" jump. On a view
+ * that already hides done, or matches no done tasks, there's nothing to hide so
+ * the badge stays a plain readout.
+ *
+ * A COHORT bookmark (empty filter, a captured chokepoint) has no hideDone facet
+ * of its own — it's recalled by re-focusing its chokepoint, not by applying a
+ * filter — so the action never applies to it (returns false), keeping the badge
+ * inert there. The breakdown is the SAME open/done split countViewMatchesBreakdown
+ * gives the F145 tooltip, so the actionable state can't disagree with the number
+ * the badge shows. Pure → unit-tested; main.ts opts the badge into a clickable
+ * button only when this returns true, and the click runs recall + hideDone.
+ */
+export function badgeHidesDone(view: SavedView, breakdown: ViewMatchBreakdown): boolean {
+  if (isCohortView(view)) return false; // no hideDone facet to flip
+  if (view.filter.hideDone) return false; // already hiding done — nothing to do
+  return breakdown.done > 0; // only actionable when there ARE done tasks to hide
 }
 
 export function renderViewChips(
@@ -913,13 +948,23 @@ export function renderViewChips(
       // null/undefined breakdown (or no resolver) falls back to the F141 text.
       const count = opts.matchCount ? opts.matchCount(v) : undefined;
       const breakdown = opts.matchTitle ? opts.matchTitle(v) : undefined;
-      const badgeTitle =
+      // F152: a show-all view whose match set holds done tasks turns its badge
+      // into a "hide these done ones" button (recall + flip hideDone). The
+      // resolver (badgeHidesDone) only flags non-cohort, show-all views with a
+      // non-zero done count, so the action is offered exactly where it does
+      // something. The tooltip gains a hint and the badge becomes a <button>.
+      const actionable =
+        typeof count === "number" && opts.hideDoneBadge ? opts.hideDoneBadge(v) : false;
+      const baseTitle =
         typeof breakdown === "string" && breakdown !== ""
           ? breakdown
           : `${count} matching ${count === 1 ? "task" : "tasks"}`;
+      const badgeTitle = actionable ? `${baseTitle} \u2014 click to hide done` : baseTitle;
       const badge =
         typeof count === "number"
-          ? `<span class="view-chip-count" aria-label="${escapeHTML(badgeTitle)}" title="${escapeHTML(badgeTitle)}">&middot;${count}</span>`
+          ? actionable
+            ? `<button type="button" class="view-chip-count is-actionable" data-view-hide-done="${escapeHTML(v.id)}" aria-label="${escapeHTML(badgeTitle)}" title="${escapeHTML(badgeTitle)}">&middot;${count}</button>`
+            : `<span class="view-chip-count" aria-label="${escapeHTML(badgeTitle)}" title="${escapeHTML(badgeTitle)}">&middot;${count}</span>`
           : "";
       // F142: mark the single busiest chip (the densest live bucket) so the eye
       // jumps to where the work piled up. Only the unambiguous winner gets it
