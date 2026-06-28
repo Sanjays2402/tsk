@@ -725,6 +725,26 @@ export function peekCommandTitle(name: string, count: number | null | undefined)
 }
 
 /**
+ * F160: enrich F146's peek readout for a COHORT bookmark with its chokepoint
+ * waiter depth, so "peek busiest" reads the bottleneck size — not just the match
+ * count. A cohort view's count IS its waiter count, but peekViewLabel renders it
+ * as a bare "N tasks · waiting on #M"; this appends "· N waiting" when the view
+ * is a cohort and a waiter count is known, so the readout names the pile-up
+ * depth explicitly ("4 tasks · waiting on #7 · 4 waiting"). A non-cohort view,
+ * or a null/undefined waiter count, returns the label unchanged — non-cohort
+ * peeks stay byte-identical. Pure → unit-tested; main.ts backs waiters with
+ * buildCohort(...).ids.length over the live graph for the busiest cohort.
+ */
+export function enrichCohortPeek(
+  view: SavedView,
+  label: string,
+  waiters: number | null | undefined,
+): string {
+  if (!isCohortView(view) || typeof waiters !== "number") return label;
+  return `${label} \u00b7 ${waiters} waiting`;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed

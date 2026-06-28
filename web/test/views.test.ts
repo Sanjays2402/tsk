@@ -32,6 +32,7 @@ import {
   appendStaleSegment,
   peekViewLabel,
   peekCommandTitle,
+  enrichCohortPeek,
   recallOpenOnlyTitle,
   badgeHidesDone,
   addCohortView,
@@ -1043,6 +1044,27 @@ test("peekCommandTitle keeps the plain title for a null/undefined count", () => 
 
 test("peekCommandTitle preserves a name with parens or unicode verbatim", () => {
   assert.equal(peekCommandTitle("(overdue)", 4), "Peek view ((overdue)) \u00b74");
+});
+
+// --- F160: cohort busiest peek names the waiter depth -----------------------
+
+test("enrichCohortPeek appends the waiter depth for a cohort bookmark", () => {
+  const cohort = addCohortView([], "#7", 7)[0];
+  assert.equal(
+    enrichCohortPeek(cohort, "4 tasks \u00b7 waiting on #7", 4),
+    "4 tasks \u00b7 waiting on #7 \u00b7 4 waiting",
+  );
+});
+
+test("enrichCohortPeek leaves a non-cohort view's label unchanged", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  assert.equal(enrichCohortPeek(v, "12 tasks \u00b7 tags: #work", 12), "12 tasks \u00b7 tags: #work");
+});
+
+test("enrichCohortPeek leaves the label unchanged with no known waiter count", () => {
+  const cohort = addCohortView([], "#7", 7)[0];
+  assert.equal(enrichCohortPeek(cohort, "waiting on #7", null), "waiting on #7");
+  assert.equal(enrichCohortPeek(cohort, "waiting on #7", undefined), "waiting on #7");
 });
 
 // --- F144: stale cohort-view bulk sweep ------------------------------------

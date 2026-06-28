@@ -255,6 +255,7 @@ import {
   appendStaleSegment,
   peekViewLabel,
   peekCommandTitle,
+  enrichCohortPeek,
   badgeHidesDone,
   recallOpenOnlyTitle,
   addCohortView,
@@ -3547,6 +3548,25 @@ function maybePeekBusiestViewCommand(): Command[] {
 }
 
 /**
+ * F160: the enriched peek readout for the live busiest view. For a cohort
+ * bookmark, enrichCohortPeek appends the chokepoint's live waiter depth (its
+ * buildCohort waiter count) so "peek busiest" reads the bottleneck size, not
+ * just the match count; non-cohort busiest views read the bare peekViewLabel.
+ * Returns null when there's no clear busiest winner. Shared by the F153 preview
+ * painter + runCommand so both stay consistent.
+ */
+function busiestPeekText(): string | null {
+  const id = currentBusiestViewId();
+  const v = id ? views.find((x) => x.id === id) : undefined;
+  if (!v) return null;
+  const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+  const waiters = v.cohort != null
+    ? (buildCohort(currentTasks as DepStatsTask[], v.cohort)?.ids.length ?? null)
+    : null;
+  return enrichCohortPeek(v, peekViewLabel(v, count), waiters);
+}
+
+/**
  * F144: drop EVERY stale cohort bookmark in one go — the bulk sweep behind the
  * "forget all stale" Cmd-K command + the Views-row button. The one-at-a-time
  * sister is F138's recall-to-self-clean. Each dead chip is removed through the
@@ -5921,9 +5941,9 @@ function runCommand(id: string): void {
   if (id === "peek-busiest") {
     const busiest = currentBusiestViewId();
     const v = busiest ? views.find((x) => x.id === busiest) : undefined;
-    if (v) {
-      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
-      setStatus(`peek busiest ${v.name}: ${peekViewLabel(v, count)}`, false);
+    const text = busiestPeekText();
+    if (v && text) {
+      setStatus(`peek busiest ${v.name}: ${text}`, false);
       setTimeout(() => setStatus("ready", false), 3_000);
     }
   }
@@ -6119,12 +6139,10 @@ function paintPaletteDuePreview(): void {
   // readout as F146, resolved to whatever currentBusiestViewId marks live now.
   if (cmd && cmd.id === "peek-busiest") {
     paletteDueParseSeq++; // invalidate any in-flight due parse — peek wins the slot
-    const busiest = currentBusiestViewId();
-    const v = busiest ? views.find((x) => x.id === busiest) : undefined;
-    if (v) {
-      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+    const text = busiestPeekText();
+    if (text) {
       line.hidden = false;
-      line.innerHTML = renderDisabledReason(peekViewLabel(v, count));
+      line.innerHTML = renderDisabledReason(text);
       return;
     }
   }
