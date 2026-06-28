@@ -37,6 +37,7 @@ import {
   emptyFilter,
   isFilterActive,
   applyFilter,
+  matchesFilter,
   collectTags,
   toggleMember,
   renderPriorityPills,
@@ -58,6 +59,7 @@ import { renderStatsPanel, chokepointTrend, chokepointShiftToast, toastFocusActi
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
+  matchesLens,
   renderLensChipBody,
   lensMeta,
   lensForDigit,
@@ -233,6 +235,7 @@ import {
   isCohortView,
   findCohortView,
   isStaleCohortView,
+  countViewMatches,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -3442,6 +3445,30 @@ function renderViewsRow(): void {
     // chokepoint done / waiters all finished / id gone) reads as dead.
     staleCohort: (v) =>
       isStaleCohortView(v, (sourceId) => buildCohort(currentTasks as DepStatsTask[], sourceId) !== null),
+    // F141: a quiet "·N" match-count badge per chip so the Views row reads as a
+    // triage dashboard. countViewMatches dispatches per view kind over the same
+    // live pool the board narrows from (not-deleted, the F15 tag route applied),
+    // with the three predicates backed by the real matchesFilter / matchesLens /
+    // buildCohort — so a badge can't drift from what a recall would actually show.
+    matchCount: (v) => {
+      const now = new Date();
+      const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+      const r = route;
+      const pool =
+        r.kind === "tag" ? notDeleted.filter((t) => t.tags.includes(r.tag)) : notDeleted;
+      const done = doneIndex(notDeleted);
+      return countViewMatches(v, pool, {
+        matchesFilter: (task, vf) => matchesFilter(task, vf),
+        matchesLens: (task, lensKind) => {
+          const k = parseLens(lensKind);
+          return k ? matchesLens(task as LensBreakdownTask, k, now, done) : true;
+        },
+        cohortIds: (sourceId) => {
+          const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
+          return c ? c.ids : [];
+        },
+      });
+    },
   });
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial

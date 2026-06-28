@@ -1585,6 +1585,22 @@ button.lens-legend-item:focus-visible {
 .view-chip.is-stale-cohort:hover {
   opacity: 0.85;
 }
+/* F141: a quiet "·N" live match-count badge so the Views row doubles as an
+   at-a-glance triage dashboard. Dim + small so it reads as a count, not a
+   second action; brightens with the chip when it's the active view. */
+.view-chip-count {
+  margin-left: 1px;
+  padding: 0 2px;
+  font-size: var(--fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-dim);
+  opacity: 0.8;
+  user-select: none;
+}
+.view-chip.is-active .view-chip-count {
+  color: var(--color-text);
+  opacity: 1;
+}
 
 /* F119: a one-shot flash on a freshly-pinned chip (F110/F115's one-click pin)
    so the user sees WHERE the pin landed in the Views row — the spatial

@@ -20,6 +20,7 @@ import {
   isCohortView,
   findCohortView,
   isStaleCohortView,
+  countViewMatches,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -661,4 +662,78 @@ test("renderViewChips without a staleCohort resolver never marks anything stale"
   const views = addCohortView([], "#7", 7);
   const html = renderViewChips(views, emptyF(), { activeCohort: null, cohortGlyph: "\u2191" });
   assert.doesNotMatch(html, /is-stale-cohort/);
+});
+
+// --- F141: saved-view chip match-count badges ------------------------------
+
+interface CountTask {
+  id: number;
+  title: string;
+  priority: string;
+  tags: string[];
+  done: boolean;
+}
+
+const COUNT_TASKS: CountTask[] = [
+  { id: 1, title: "alpha", priority: "high", tags: ["work"], done: false },
+  { id: 2, title: "beta", priority: "low", tags: ["work"], done: false },
+  { id: 3, title: "gamma", priority: "high", tags: ["home"], done: true },
+];
+
+// A trivial counters bundle: filter by tag membership, a lens that only the
+// high-priority tasks pass, and a fixed cohort id-set.
+function counters(cohortSet: number[] = []) {
+  return {
+    matchesFilter: (t: CountTask, f: ViewFilter) =>
+      f.tags.length === 0 || f.tags.some((tag) => t.tags.includes(tag)),
+    matchesLens: (t: CountTask, _lens: string) => t.priority === "high",
+    cohortIds: (_sourceId: number) => cohortSet,
+  };
+}
+
+test("countViewMatches counts a plain filter view over the live tasks", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  // #1 and #2 carry #work -> 2 matches.
+  assert.equal(countViewMatches(v, COUNT_TASKS, counters()), 2);
+});
+
+test("countViewMatches ANDs the filter with the lens for a lens+facet view", () => {
+  // #work AND high-priority: only #1 (beta is low, gamma is #home) -> 1.
+  const v: SavedView = { id: "lf", name: "work hi", filter: { ...emptyF(), tags: ["work"] }, lens: "blocked" };
+  assert.equal(countViewMatches(v, COUNT_TASKS, counters()), 1);
+});
+
+test("countViewMatches counts everything a pure-lens view passes", () => {
+  // Empty filter + a lens -> count all high-priority tasks (#1, #3) -> 2.
+  const v: SavedView = { id: "l", name: "(blocked)", filter: emptyF(), lens: "blocked" };
+  assert.equal(countViewMatches(v, COUNT_TASKS, counters()), 2);
+});
+
+test("countViewMatches returns a cohort view's live id-set size", () => {
+  const v = addCohortView([], "#5", 5)[0];
+  // The cohort id-set is injected; its length is the count (3 here).
+  assert.equal(countViewMatches(v, COUNT_TASKS, counters([7, 8, 9])), 3);
+  // A dead/empty cohort counts 0.
+  assert.equal(countViewMatches(v, COUNT_TASKS, counters([])), 0);
+});
+
+test("renderViewChips renders a quiet ·N badge when matchCount resolves a number", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  const html = renderViewChips(views, emptyF(), { matchCount: () => 12 });
+  assert.match(html, /class="view-chip-count"[^>]*>&middot;12</);
+  assert.match(html, /12 matching tasks/);
+});
+
+test("renderViewChips singularizes the badge tooltip for one match", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  const html = renderViewChips(views, emptyF(), { matchCount: () => 1 });
+  assert.match(html, /1 matching task[^s]/);
+});
+
+test("renderViewChips suppresses the badge for a null/undefined count or no resolver", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  // null count -> no badge.
+  assert.doesNotMatch(renderViewChips(views, emptyF(), { matchCount: () => null }), /view-chip-count/);
+  // no resolver -> byte-identical to before (no badge).
+  assert.doesNotMatch(renderViewChips(views, emptyF(), {}), /view-chip-count/);
 });

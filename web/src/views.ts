@@ -404,6 +404,51 @@ function emptyViewFilter(): ViewFilter {
 }
 
 /**
+ * F141: how many of the live `tasks` a saved view currently matches — the count
+ * behind the Views-row chip badges, so the row doubles as an at-a-glance triage
+ * dashboard ("#work ·12, blocked ·3, waiting on #1 ·5"). A saved view is one of
+ * three kinds (filter / pure-lens / cohort), each with its own match semantics,
+ * so the per-kind predicates are INJECTED to keep views.ts decoupled from the
+ * filter / lens / cohort modules (mirroring the lensGlyph / staleCohort
+ * injection pattern):
+ *   - cohort view  -> the size of its live id-set (`cohortIds(sourceId)`), since
+ *     a cohort isn't a per-task predicate but an explicit id set re-derived from
+ *     the graph; an empty/dead cohort counts 0.
+ *   - lens-bearing -> tasks passing BOTH the view's serializable filter AND its
+ *     lens predicate (`matchesLens(task, lens)`), the lens+facet combo F104
+ *     saves; a pure-lens view (empty filter) counts everything the lens passes.
+ *   - plain filter -> tasks passing the view's filter (`matchesFilter`).
+ * Pure → unit-tested; main.ts supplies the three predicates backed by the real
+ * matchesFilter / applyLens / buildCohort over the same live pool the board
+ * renders, so a badge can't drift from what a recall would actually show.
+ */
+export interface ViewMatchCounters<T> {
+  /** Does this task pass the view's serializable filter? */
+  matchesFilter: (task: T, filter: ViewFilter) => boolean;
+  /** Does this task pass the given lens kind? (only called for lens views) */
+  matchesLens: (task: T, lens: string) => boolean;
+  /** The live id-set for a cohort's chokepoint (only called for cohort views). */
+  cohortIds: (sourceId: number) => readonly number[];
+}
+
+export function countViewMatches<T>(
+  view: SavedView,
+  tasks: readonly T[],
+  counters: ViewMatchCounters<T>,
+): number {
+  // A cohort view's "matches" are its live id-set — re-derived, not a predicate.
+  if (isCohortView(view)) return counters.cohortIds(view.cohort!).length;
+  const lens = view.lens ?? null;
+  let n = 0;
+  for (const task of tasks) {
+    if (!counters.matchesFilter(task, view.filter)) continue;
+    if (lens !== null && !counters.matchesLens(task, lens)) continue;
+    n++;
+  }
+  return n;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed
@@ -548,6 +593,16 @@ export interface ViewChipOpts {
    * byte-identical.
    */
   staleCohort?: (view: SavedView) => boolean;
+  /**
+   * F141: a resolver giving the live match-count for a view — when supplied,
+   * each chip shows a quiet "·N" badge so the Views row doubles as an at-a-glance
+   * triage dashboard. Returns the count (countViewMatches over the live board) or
+   * null/undefined to suppress the badge for that chip (e.g. a count that isn't
+   * meaningful). Opt-in via this resolver so existing callers/tests stay
+   * byte-identical when it's omitted; main.ts supplies it backed by the real
+   * filter / lens / cohort predicates.
+   */
+  matchCount?: (view: SavedView) => number | null | undefined;
 }
 
 export function renderViewChips(
@@ -603,7 +658,15 @@ export function renderViewChips(
         opts.updatableId && opts.updatableId === v.id
           ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
           : "";
-      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      // F141: a quiet "·N" match-count badge so the Views row reads as a triage
+      // dashboard. Opt-in via the matchCount resolver; a null/undefined count (or
+      // no resolver) renders nothing, keeping omitting-callers byte-identical.
+      const count = opts.matchCount ? opts.matchCount(v) : undefined;
+      const badge =
+        typeof count === "number"
+          ? `<span class="view-chip-count" aria-label="${count} matching ${count === 1 ? "task" : "tasks"}" title="${count} matching ${count === 1 ? "task" : "tasks"}">&middot;${count}</span>`
+          : "";
+      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }
