@@ -2340,36 +2340,36 @@ filter), F50 (dep mini-graph), F54 (touch context menu). Fresh follow-ons after
 the T24 panel-back-step / panel-walk / unpin-fade / focus-reveals-panel /
 pin-toggle-key cluster:
 
-- [ ] **F132** Cohort history breadcrumb TRAIL in the stats panel: F127 gave the
+- [x] **F132** Cohort history breadcrumb TRAIL in the stats panel: F127 gave the
       panel line a single back-step button, but the chip/help only ever show the
       next step. Render the WHOLE cohort back-stack (cohortHistory) as a compact
       "#A › #B › #M" trail below the F126 line, each segment a button that pops
       straight to that ancestor (not just one level). Reuse popCohortHistory's
       skip-dead-ancestor logic but target a specific depth; pure-render the trail
-      in cohort.ts (renderCohortTrail(focus, history)) so it's unit-tested.
-- [ ] **F133** "Pin this cohort as a view" from the panel line: a cohort is a
+      in cohort.ts (renderCohortTrail(focus, history)) so it's unit-tested. (T25 2026-06-27, 38e6be7)
+- [x] **F133** "Pin this cohort as a view" from the panel line: a cohort is a
       momentary id-set (not serializable), but you often re-focus the SAME
       chokepoint. Add a small "pin" affordance on the F126 panel line that saves a
       named saved-view capturing the chokepoint's sourceId (a new view kind, or a
       filter that re-derives the cohort on recall) so "what waits on #1" is one
       click away next session. Design the recall path first (re-run buildCohort on
-      recall); record the chosen shape in STATE-web before building.
-- [ ] **F134** Unpin-fade also plays when the chip is removed via its × delete:
+      recall); record the chosen shape in STATE-web before building. (T25 2026-06-27, a017373)
+- [x] **F134** Unpin-fade also plays when the chip is removed via its × delete:
       F129 fades a chip out on the F125 unpin path, but deleting a saved view via
       the chip's × still vanishes instantly. Route the chip-× deleteView through the
       same is-unpinning exit (rename to a neutral is-leaving) so EVERY chip removal
       gets the spatial "this one left" confirmation, not just lens unpins. Reuse
-      canAnimateChipExit + UNPIN_EXIT_MS; guard the test env.
-- [ ] **F135** "Focus" toast action keyboard mirror: F130 made the toast Focus
+      canAnimateChipExit + UNPIN_EXIT_MS; guard the test env. (T25 2026-06-27, f57a2fb)
+- [x] **F135** "Focus" toast action keyboard mirror: F130 made the toast Focus
       button open the panel; add the same "focus the new chokepoint + reveal panel"
       as a keystroke while the shift toast is showing (e.g. `f`), so a keyboard user
       can act on a shift without reaching for Cmd-K or the mouse. Track the live
-      toast's focusId in a slot; clear it when the toast times out.
-- [ ] **F136** `*` pin-toggle also works from the chip star's keyboard focus: F131
+      toast's focusId in a slot; clear it when the toast times out. (T25 2026-06-27, 6acf1ca)
+- [x] **F136** `*` pin-toggle also works from the chip star's keyboard focus: F131
       bound `*` globally to toggle the ACTIVE lens's pin. Make the chip star itself
       focusable (tabindex) and Enter/Space on it pin/recall, Shift+Enter unpin — so
       a keyboard user tabbing the filter bar can drive the pin from the star too,
-      not only the global `*`. Reuse pinCurrentLens / unpinCurrentLens.
+      not only the global `*`. Reuse pinCurrentLens / unpinCurrentLens. (T25 2026-06-27, e5d0d64)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
@@ -2400,3 +2400,82 @@ live graph (exactly how setCohort already works). Chosen shape:
   (data-cohort-pin) — ☆ when unpinned, ★ when the chokepoint is already a saved
   cohort view. main.ts togglePinCohort() pins (addCohortView, recall-if-exists)
   or unpins (removeView) symmetric with the lens star (F131).
+
+### TICK LOG — T25 (2026-06-27 ~20:17 PT)
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `288ce9c..3214dfd`.
+
+- **F132** `38e6be7` — cohort drill breadcrumb trail in the stats panel.
+  cohort.ts renderCohortTrail(focus, history) + jumpCohortHistory(tasks, stack,
+  index) (leap to any ancestor, skip-dead via popCohortHistory over the
+  prefix). main.ts cohortJumpTo(index), panel renders the trail above the F126
+  line, click routes data-cohort-jump first. app.css .cohort-trail. +9 tests.
+- **F133** `a017373` — pin a cohort as a re-derivable saved view. views.ts
+  SavedView.cohort? + isCohortView/findCohortView/addCohortView; renderViewChips
+  cohort chips (activeCohort highlight, ↑ glyph, is-cohort-pin). cohort.ts panel
+  pin star (data-cohort-pin, ★/☆). main.ts togglePinCohort + recallView routes
+  cohort views through setCohort (live re-derive). Design note recorded first.
+  +18 tests.
+- **F134** `f57a2fb` — every saved-view chip fades out on removal. Extracted
+  animateChipExitThenRemove; deleteView + unpinCurrentLens + cohort-unpin all
+  route through it. CSS .is-unpinning -> neutral .is-leaving (alias kept). Pure
+  seam already covered (canAnimateChipExit + UNPIN_EXIT_MS).
+- **F135** `6acf1ca` — `f` key mirrors the shift-toast Focus action. stats.ts
+  toastFocusAction(focusId, statsOpen) shared by the toast button + the key.
+  main.ts liveToastFocusId slot (cleared on dismiss/timeout/action),
+  runLiveToastFocus, dismissInfoToast, `f` keydown, HELP_ROWS row. +4 tests.
+- **F136** `e5d0d64` — keyboard pin/unpin from the lens star's own focus. lens.ts
+  lensStarKeyAction(key, shift, kind, pinned): pin on Enter/Space, unpin on
+  Shift+activation when pinned. main.ts star keydown preventDefaults to avoid
+  the native-click double-fire. +4 tests.
+- `3214dfd` — bundle rebuild (41 modules, JS 40.84KB gz, CSS 10.91KB gz).
+
+Gates: web tests 799 -> 829 (+30), 0 fail; tsc app + test clean; gofmt/vet/build
+clean; go test ./... green (commands 66.5s, serve cached-green). Live `tsk serve`
+smoke: GET / 200, served bundle carried all new hooks (cohort-trail,
+data-cohort-jump, data-cohort-pin, is-cohort-pin, is-leaving); POST
+/api/tasks/1/toggle round-tripped to .tsk.md preserving BOTH depends:1 links +
+adding completed:; `tsk show 2` read depends:#1 back. Storage contract intact.
+
+Deferred: nothing. Standing long-carries: F48 (context-menu submenus), F49
+(autocomplete in edit/filter), F50 (dep mini-graph), F54 (touch context menu).
+T26 backlog (F137-F141) appended below so the loop never starves.
+
+### T26 — depth (appended T25 2026-06-27 so the loop never starves)
+
+Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after the T25 cohort
+trail / cohort-pin / chip-leave-fade / f-focus-mirror / star-keyboard cluster:
+
+- [ ] **F137** Cohort trail keyboard navigation: the F132 trail is mouse-only
+      (click a segment to jump). Add a keyboard path — when the stats panel has
+      focus, Alt+‹ / Alt+› (or `[`/`]` while a cohort is focused) step the trail
+      one ancestor at a time, mirroring the existing cohortBack/cohortJumpTo so a
+      keyboard user can walk the whole drill ancestry. Pure helper picks the
+      target index from the current focus + a direction; main.ts wires the keys.
+- [ ] **F138** Cohort-view chips survive a chokepoint that completes: F133's
+      recall calls setCohort, which no-ops with "nothing waits on #N" when the
+      chokepoint cleared — but the dead chip lingers. Add a small "stale" marker
+      on a cohort chip whose chokepoint is done/gone (computed at render from the
+      live graph), and offer a one-click "forget" on recall-of-a-dead-cohort so
+      the row self-cleans. Pure isStaleCohortView(view, tasks) → unit-tested.
+- [ ] **F139** "Pin current cohort" Cmd-K command: F133 added the panel star, but
+      the keyboard-first path (Cmd-K) can't pin/unpin the focused cohort. Add a
+      pinCohortCommand / unpinCohortCommand (mirroring F110's lens pin commands)
+      that reads the focused chokepoint + its pinned state, so the whole cohort
+      pin lifecycle is reachable from the palette too. Pure command builder +
+      label ("Pin cohort waiting on #N").
+- [ ] **F140** Cohort trail "copy chain" affordance: a trailing button on the
+      F132 trail copies the whole drill path as text ("#1 › #4 › #9") to the
+      clipboard — useful for pasting a bottleneck-walk into a standup note. Pure
+      formatCohortTrailText(focus, history); main.ts wires navigator.clipboard
+      with the F-style guarded fallback (test env / no clipboard → status hint).
+- [ ] **F141** Saved-view chip count badges: a filter view chip could show how
+      many tasks it currently matches (a tiny "·12" badge) computed live from the
+      board, so the Views row doubles as an at-a-glance triage dashboard. Pure
+      countViewMatches(view, tasks) reusing the filter/lens/cohort predicates;
+      render a quiet badge in renderViewChips; opt-in via a ViewChipOpts flag so
+      existing callers/tests stay byte-identical.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a per-row dep mini-sparkline, a saved-view
+import/export, a per-tag saved-view group, keyboard reordering of the Views row).
