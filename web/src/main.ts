@@ -54,7 +54,7 @@ import {
   renderDuePreview,
   type DuePreviewVM,
 } from "./duepicker";
-import { renderStatsPanel, chokepointTrend, chokepointShiftToast, shouldRevealStatsOnFocus } from "./stats";
+import { renderStatsPanel, chokepointTrend, chokepointShiftToast, toastFocusAction } from "./stats";
 import { computeScheduleStats } from "./schedule";
 import {
   applyLens,
@@ -2252,6 +2252,36 @@ let infoToastTimer: number | null = null;
  */
 let infoToastAction: (() => void) | null = null;
 
+/**
+ * F135: the focus id of the CURRENTLY-SHOWING chokepoint-shift toast (F123), or
+ * null when no shift toast is live. F123/F130 made the toast's "Focus" BUTTON
+ * drop into the new chokepoint + reveal the panel; this slot lets a keyboard user
+ * do the same with the `f` key while the toast is up, without reaching for the
+ * mouse or Cmd-K. Set when a shift toast with a focus id shows; cleared when the
+ * toast dismisses (timeout), is replaced, or the focus action fires — so a stale
+ * id never drives `f` after its toast is gone.
+ */
+let liveToastFocusId: number | null = null;
+
+/**
+ * F135: act on the live shift toast's focus — shared by the toast's "Focus"
+ * button and the `f` keyboard mirror so the two can't diverge. Routes through
+ * stats.toastFocusAction (the single source of truth for "what does Focus do"):
+ * setCohort(focusId) + a guarded toggleStats(true) when the panel was closed
+ * (F130). Clears the live slot + dismisses the toast so the action is one-shot.
+ * Returns true when it acted (so the `f` keydown can consume the event), false
+ * when there was no live focus to act on.
+ */
+function runLiveToastFocus(): boolean {
+  const plan = toastFocusAction(liveToastFocusId, statsOpen);
+  if (plan === null) return false;
+  liveToastFocusId = null;
+  dismissInfoToast();
+  setCohort(plan.focusId);
+  if (plan.revealPanel) toggleStats(true);
+  return true;
+}
+
 /** Lazily build the info-toast element (separate from the undo toast). */
 function infoToastEl(): HTMLElement {
   let el = document.querySelector<HTMLElement>("[data-info-toast]");
@@ -2267,6 +2297,7 @@ function infoToastEl(): HTMLElement {
     if (target?.dataset.toastAction === undefined) return;
     const run = infoToastAction;
     infoToastAction = null;
+    liveToastFocusId = null; // F135: the toast is acted on / gone — drop the f slot
     el!.classList.remove("is-open");
     if (infoToastTimer !== null) {
       window.clearTimeout(infoToastTimer);
@@ -2276,6 +2307,21 @@ function infoToastEl(): HTMLElement {
   });
   document.body.appendChild(el);
   return el;
+}
+
+/**
+ * F135: hide the info toast immediately and clear its one-shot state — used by
+ * the `f` keyboard mirror after it acts on the shift toast's focus, so the toast
+ * doesn't linger past the action (matching the action button's own dismissal).
+ */
+function dismissInfoToast(): void {
+  const el = document.querySelector<HTMLElement>("[data-info-toast]");
+  if (el) el.classList.remove("is-open");
+  infoToastAction = null;
+  if (infoToastTimer !== null) {
+    window.clearTimeout(infoToastTimer);
+    infoToastTimer = null;
+  }
 }
 
 /**
@@ -2302,6 +2348,7 @@ function showInfoToast(
     el.classList.remove("is-open");
     infoToastTimer = null;
     infoToastAction = null;
+    liveToastFocusId = null; // F135: the shift toast timed out — drop the f slot
   }, seconds * 1_000);
 }
 
@@ -4682,6 +4729,17 @@ document.addEventListener("keydown", (e) => {
         undoDelete();
       }
       break;
+    case "f":
+      // F135: while a chokepoint-shift toast is up, `f` mirrors its "Focus"
+      // button — drop into the new chokepoint's cohort + reveal the panel (F130),
+      // through the SAME runLiveToastFocus the button uses. A no-op (falls
+      // through) when no shift toast with a focus id is live, so `f` is free for
+      // other use otherwise.
+      if (liveToastFocusId !== null) {
+        e.preventDefault();
+        runLiveToastFocus();
+      }
+      break;
     case "r":
       e.preventDefault();
       refresh();
@@ -4758,6 +4816,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["shift [ / ]", "Jump priority to the floor (low) / ceiling (urgent)"],
   ["1 \u2026 5", "Toggle a stats lens (blocked / overdue / today / week / no-due)"],
   ["*", "Pin / unpin the active lens"],
+  ["f", "Focus the shifted chokepoint (while a shift toast is up)"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],
   ["drag ⠿", "Reorder a task (persists to .tsk.md)"],
@@ -5521,6 +5580,10 @@ async function liveRefresh(deferred: boolean): Promise<void> {
   if (shift.message !== "" && now - lastShiftToastAt > SHIFT_TOAST_THROTTLE_MS) {
     lastShiftToastAt = now;
     const focusId = shift.focusId;
+    // F135: track the live toast's focus id so the `f` key can mirror the Focus
+    // button while the toast is up (cleared on dismiss / timeout / action). Null
+    // when this shift had no focus id, so `f` stays a no-op then.
+    liveToastFocusId = focusId;
     showInfoToast(
       shift.message,
       6,
@@ -5528,18 +5591,19 @@ async function liveRefresh(deferred: boolean): Promise<void> {
         ? {
             label: "Focus",
             // F123: drop into the new chokepoint's cohort. F130: ALSO reveal the
-            // stats panel (when closed) so the F126 "Focused" line + the
-            // breakdown for the cohort you just focused are immediately legible —
-            // chaining the focus to its readout. shouldRevealStatsOnFocus guards
-            // the toggle so an already-open panel isn't needlessly flipped shut.
+            // stats panel (when closed). F135: both the button AND the `f` key
+            // run runLiveToastFocus, which goes through stats.toastFocusAction —
+            // the single source of truth for "what Focus does" — so the mouse and
+            // keyboard paths can't drift.
             run: () => {
-              setCohort(focusId);
-              if (shouldRevealStatsOnFocus(statsOpen)) toggleStats(true);
+              runLiveToastFocus();
             },
           }
         : undefined,
     );
   } else {
+    // F135: a non-shift / throttled live notice has no focus to act on.
+    liveToastFocusId = null;
     showInfoToast(liveChangeMessage(deferred));
   }
 }

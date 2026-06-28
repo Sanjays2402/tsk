@@ -14,6 +14,7 @@ import {
   chokepointShiftMessage,
   chokepointShiftToast,
   shouldRevealStatsOnFocus,
+  toastFocusAction,
   renderChokepointTrend,
   renderOtherChokepoints,
   renderScheduleStats,
@@ -363,6 +364,34 @@ test("shouldRevealStatsOnFocus opens the panel only when it's currently closed",
   assert.equal(shouldRevealStatsOnFocus(false), true);
   // Panel already open -> don't re-toggle (that would close it).
   assert.equal(shouldRevealStatsOnFocus(true), false);
+});
+
+// --- F135: the `f` keyboard mirror of the toast Focus action -----------------
+
+test("toastFocusAction is null when there's no live focus id", () => {
+  // No shift toast (or one without a focus id) -> the `f` key is a no-op.
+  assert.equal(toastFocusAction(null, false), null);
+  assert.equal(toastFocusAction(null, true), null);
+});
+
+test("toastFocusAction returns the focus id and reveals a closed panel", () => {
+  // Panel closed -> focus #5 AND reveal the panel (F130's reveal).
+  assert.deepEqual(toastFocusAction(5, false), { focusId: 5, revealPanel: true });
+});
+
+test("toastFocusAction does not reveal an already-open panel", () => {
+  // Panel open -> focus #5 but leave the panel as-is (don't toggle it shut).
+  assert.deepEqual(toastFocusAction(5, true), { focusId: 5, revealPanel: false });
+});
+
+test("toastFocusAction reveal mirrors shouldRevealStatsOnFocus exactly", () => {
+  // The button and the `f` key both go through this, so it can't drift from the
+  // F130 reveal rule.
+  for (const open of [true, false]) {
+    const plan = toastFocusAction(9, open);
+    assert.notEqual(plan, null);
+    assert.equal(plan!.revealPanel, shouldRevealStatsOnFocus(open));
+  }
 });
 
 test("renderChokepoint embeds the trend hint when the chokepoint changed", () => {

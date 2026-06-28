@@ -303,6 +303,32 @@ export function shouldRevealStatsOnFocus(statsOpen: boolean): boolean {
 }
 
 /**
+ * F135: the plan for acting on a live chokepoint-shift toast — shared by the
+ * toast's "Focus" button (F123/F130) AND the new `f` keyboard mirror, so the two
+ * surfaces can't drift in what "Focus" does. Given the toast's tracked focus id
+ * (the new chokepoint to drop into, or null when no toast/shift is live) and
+ * whether the stats panel is currently open, this returns either:
+ *   - null               → nothing to do (no live focus id), so the `f` key
+ *                          falls through to its other handling / is a no-op.
+ *   - { focusId, revealPanel } → setCohort(focusId), and toggleStats(true) iff
+ *                          revealPanel (the panel was closed — F130's reveal).
+ * Pure → unit-tested; main.ts runs setCohort + a guarded toggleStats(true) on
+ * the result for BOTH the toast button and the `f` key.
+ */
+export interface ToastFocusAction {
+  focusId: number;
+  revealPanel: boolean;
+}
+
+export function toastFocusAction(
+  focusId: number | null,
+  statsOpen: boolean,
+): ToastFocusAction | null {
+  if (focusId === null) return null;
+  return { focusId, revealPanel: shouldRevealStatsOnFocus(statsOpen) };
+}
+
+/**
  * F106: render the "Other bottlenecks" list — the runner-up chokepoints below
  * the single biggest one F92/renderChokepoint surfaces. On a board with several
  * bottlenecks, the second/third worst are invisible without scanning every row
