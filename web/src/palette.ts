@@ -344,6 +344,8 @@ export interface CommandReasonContext {
   hasChokepoint: boolean;
   /** F139: is the focused cohort currently pinned (so "unpin cohort" is meaningful)? */
   cohortPinned: boolean;
+  /** F144: how many cohort views are currently stale (so "forget all stale" is meaningful)? */
+  staleCohortCount: number;
 }
 
 /**
@@ -520,6 +522,31 @@ export function unpinCohortCommand(cohortSummary: string | null, pinned: boolean
   };
 }
 
+/**
+ * F144: the "Forget all stale cohort views (N)" palette command — the bulk-sweep
+ * sister of F138's one-at-a-time recall-to-clean. After a big external edit a
+ * handful of cohort bookmarks can go dead at once (their chokepoints completed);
+ * F138 only drops one when you recall it. This command drops every stale cohort
+ * bookmark keyboard-only in a single action, routing through the same removeView
+ * (with the F134 leave-fade) the chip × drives.
+ *
+ * `staleCount` is how many cohort views are currently stale (staleCohortViewIds
+ * length). The title names the count ("Forget all stale cohort views (3)") so
+ * the palette doubles as a "how many dead bookmarks do I have?" readout. The
+ * command is meaningful only when at least one is stale, so it's disabled at
+ * zero — commandDisabledReason then explains "no stale cohort views". Pure →
+ * unit-tested.
+ */
+export function forgetStaleCohortsCommand(staleCount: number): Command {
+  return {
+    id: "cohort-forget-stale",
+    title: staleCount > 0 ? `Forget all stale cohort views (${staleCount})` : "Forget all stale cohort views",
+    group: "View",
+    keywords: ["cohort", "stale", "dead", "forget", "remove", "clean", "sweep", "bookmark", "prune", "tidy", "waiting", "chokepoint"],
+    disabled: staleCount <= 0,
+  };
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
@@ -639,5 +666,6 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
     if (!ctx.hasCohort) return "no cohort active";
     if (!ctx.cohortPinned) return "cohort not pinned";
   }
+  if (id === "cohort-forget-stale" && ctx.staleCohortCount <= 0) return "no stale cohort views";
   return null;
 }

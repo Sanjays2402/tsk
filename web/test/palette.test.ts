@@ -21,6 +21,7 @@ import {
   unpinLensCommand,
   pinCohortCommand,
   unpinCohortCommand,
+  forgetStaleCohortsCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -386,7 +387,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true, staleCohortCount: 2 };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -681,6 +682,35 @@ test("unpinCohortCommand is fuzzy-findable by 'unpin' and 'forget'", () => {
   const byUnpin = filterCommands([unpinCohortCommand("2 waiting on #4", true)], "unpin");
   assert.equal(byUnpin.length, 1);
   assert.equal(byUnpin[0].id, "cohort-unpin");
+});
+
+// --- F144: forget all stale cohort views -----------------------------------
+
+test("forgetStaleCohortsCommand names the stale count and is enabled when > 0", () => {
+  const c = forgetStaleCohortsCommand(3);
+  assert.equal(c.id, "cohort-forget-stale");
+  assert.match(c.title, /Forget all stale cohort views \(3\)/);
+  assert.equal(c.disabled, false);
+});
+
+test("forgetStaleCohortsCommand reads plainly and is disabled at zero stale", () => {
+  const c = forgetStaleCohortsCommand(0);
+  assert.equal(c.title, "Forget all stale cohort views");
+  assert.equal(c.disabled, true);
+});
+
+test("forgetStaleCohortsCommand is fuzzy-findable by 'stale' and 'sweep'", () => {
+  assert.equal(filterCommands([forgetStaleCohortsCommand(2)], "stale")[0].id, "cohort-forget-stale");
+  assert.equal(filterCommands([forgetStaleCohortsCommand(2)], "sweep")[0].id, "cohort-forget-stale");
+});
+
+test("commandDisabledReason explains a zero-stale forget command", () => {
+  assert.equal(
+    commandDisabledReason("cohort-forget-stale", { ...FULL_CTX, staleCohortCount: 0 }),
+    "no stale cohort views",
+  );
+  // With stale views present the command is live (no reason).
+  assert.equal(commandDisabledReason("cohort-forget-stale", FULL_CTX), null);
 });
 
 test("cohort commands are fuzzy-findable by 'cohort' and 'chokepoint'", () => {

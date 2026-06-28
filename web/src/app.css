@@ -1751,6 +1751,28 @@ button.lens-legend-item:focus-visible {
   cursor: default;
 }
 
+/* F144: the "forget stale" sweep button — appears in the Views row ONLY when at
+   least one cohort bookmark has gone dead (its chokepoint cleared). Reads in the
+   overdue/warn tint so it's clearly a "clean up" action, distinct from the
+   accent "+ save view". Quiet until hover, like its sibling. */
+.views-sweep {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-faint);
+  background: transparent;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 999px;
+  padding: 2px var(--sp-3);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.views-sweep:hover {
+  color: var(--color-overdue);
+  border-color: var(--color-overdue);
+}
+
 /* Shared filter pill/chip look — quiet until active */
 .fpill,
 .fchip {

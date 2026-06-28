@@ -20,6 +20,7 @@ import {
   isCohortView,
   findCohortView,
   isStaleCohortView,
+  staleCohortViewIds,
   countViewMatches,
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
@@ -844,4 +845,39 @@ test("renderViewChips omits is-busiest when busiestId is null/absent", () => {
   const views = addView([], "a", { ...emptyF(), tags: ["a"] });
   assert.doesNotMatch(renderViewChips(views, emptyF(), { busiestId: null }), /is-busiest/);
   assert.doesNotMatch(renderViewChips(views, emptyF(), {}), /is-busiest/);
+});
+
+// --- F144: stale cohort-view bulk sweep ------------------------------------
+
+test("staleCohortViewIds returns every dead cohort bookmark's id", () => {
+  // Two cohort views (#1, #2) + a plain filter view. #2's chokepoint is dead.
+  let views = addCohortView([], "wait 1", 1);
+  views = addCohortView(views, "wait 2", 2);
+  views = addView(views, "work", { ...emptyF(), tags: ["work"] });
+  const ids = staleCohortViewIds(views, (id) => id === 1); // only #1 is live
+  // Only the #2 cohort view is stale; the live one + the filter view are not.
+  const dead = views.find((v) => v.cohort === 2)!;
+  assert.deepEqual(ids, [dead.id]);
+});
+
+test("staleCohortViewIds returns [] when every cohort is live (or there are none)", () => {
+  let views = addCohortView([], "wait 1", 1);
+  views = addCohortView(views, "wait 2", 2);
+  // Both chokepoints live -> nothing stale.
+  assert.deepEqual(staleCohortViewIds(views, () => true), []);
+  // No cohort views at all -> nothing stale.
+  const filterOnly = addView([], "work", { ...emptyF(), tags: ["work"] });
+  assert.deepEqual(staleCohortViewIds(filterOnly, () => false), []);
+});
+
+test("staleCohortViewIds preserves list order and agrees with isStaleCohortView", () => {
+  let views = addCohortView([], "a", 1);
+  views = addCohortView(views, "b", 2);
+  views = addCohortView(views, "c", 3);
+  // #1 and #3 are dead, #2 is live -> ids in list order.
+  const dead = (id: number) => id === 2;
+  const ids = staleCohortViewIds(views, dead);
+  const expected = views.filter((v) => isStaleCohortView(v, dead)).map((v) => v.id);
+  assert.deepEqual(ids, expected);
+  assert.equal(ids.length, 2);
 });

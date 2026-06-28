@@ -171,6 +171,7 @@ import {
   clearCohortCommand,
   pinCohortCommand,
   unpinCohortCommand,
+  forgetStaleCohortsCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -237,6 +238,7 @@ import {
   isCohortView,
   findCohortView,
   isStaleCohortView,
+  staleCohortViewIds,
   countViewMatches,
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
@@ -319,6 +321,7 @@ root.innerHTML = `
       <div class="filter-views" data-views-row hidden>
         <span class="views-label">Views</span>
         <div class="views-chips" data-views-chips role="group" aria-label="Saved views"></div>
+        <button class="views-sweep" data-views-sweep type="button" title="Forget every stale cohort view (its chokepoint cleared)" hidden>forget stale</button>
         <button class="views-save" data-views-save type="button" title="Save the current filter as a named view">+ save view</button>
       </div>
     </div>
@@ -369,6 +372,7 @@ const els = {
   viewsRow: must<HTMLElement>("[data-views-row]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
   viewsSave: must<HTMLButtonElement>("[data-views-save]"),
+  viewsSweep: must<HTMLButtonElement>("[data-views-sweep]"),
   statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
   statsPanel: must<HTMLElement>("[data-stats-panel]"),
   settingsToggle: must<HTMLButtonElement>("[data-settings-toggle]"),
@@ -3449,6 +3453,54 @@ function viewMatchCounters(): ViewMatchCounters<Task> {
   };
 }
 
+/**
+ * F138/F144: the ids of every currently-stale cohort bookmark — a cohort view
+ * whose chokepoint no longer has a live cohort (recalling it would land on
+ * nothing). Shared by the F144 "forget all stale" command (its count + its
+ * action) and the Views-row sweep button, all reading the SAME buildCohort-
+ * over-the-live-graph staleness check F138's per-chip mark uses, so none can
+ * disagree on what's stale.
+ */
+function currentStaleCohortIds(): string[] {
+  return staleCohortViewIds(
+    views,
+    (sourceId) => buildCohort(currentTasks as DepStatsTask[], sourceId) !== null,
+  );
+}
+
+/**
+ * F144: drop EVERY stale cohort bookmark in one go — the bulk sweep behind the
+ * "forget all stale" Cmd-K command + the Views-row button. The one-at-a-time
+ * sister is F138's recall-to-self-clean. Each dead chip is removed through the
+ * SAME F134 leave-fade path the chip × + single unpin use, so the row animates
+ * the sweep instead of snapping. A no-op (with a quiet status) when nothing's
+ * stale. Persists + repaints once after the batch.
+ */
+function forgetStaleCohorts(): void {
+  const ids = currentStaleCohortIds();
+  if (ids.length === 0) {
+    setStatus("no stale cohort views to forget", false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const n = ids.length;
+  setStatus(`forgot ${n} stale cohort view${n === 1 ? "" : "s"}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+  // Fade each dead chip out, then remove all in one store update + repaint. The
+  // fades overlap (same UNPIN_EXIT_MS), so the whole sweep lands in one frame
+  // window rather than staggering.
+  let remaining = ids.length;
+  const commit = (): void => {
+    remaining--;
+    if (remaining > 0) return;
+    views = ids.reduce((acc, id) => removeView(acc, id), views);
+    if (recalledViewId !== null && ids.includes(recalledViewId)) recalledViewId = null;
+    saveViews();
+    renderViewsRow();
+  };
+  for (const id of ids) animateChipExitThenRemove(id, commit);
+}
+
 /** Repaint the saved-views chip row + the enabled state of "save view". */
 function renderViewsRow(): void {
   const f = currentViewFilter();
@@ -3548,6 +3600,12 @@ function renderViewsRow(): void {
   const dup = activeViewWithLens(views, f, lens) !== null;
   els.viewsSave.disabled = !savable || dup;
   els.viewsSave.textContent = dup ? "saved" : "+ save view";
+  // F144: surface the "forget stale" sweep button ONLY when at least one cohort
+  // bookmark is dead (its chokepoint cleared) — otherwise it stays out of the
+  // way. The count rides into the label so the row reads "forget stale (3)".
+  const staleN = currentStaleCohortIds().length;
+  els.viewsSweep.hidden = staleN === 0;
+  els.viewsSweep.textContent = staleN > 0 ? `forget stale (${staleN})` : "forget stale";
 }
 
 /** Prompt for a name and save the current filter as a view.
@@ -3926,6 +3984,9 @@ els.filterClear.addEventListener("click", () => {
 // --- F25: saved-views wiring -----------------------------------------------
 
 els.viewsSave.addEventListener("click", saveCurrentView);
+// F144: the "forget stale" sweep button drops every dead cohort bookmark at
+// once (the mouse sister of the Cmd-K "Forget all stale cohort views" command).
+els.viewsSweep.addEventListener("click", forgetStaleCohorts);
 els.viewsChips.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
   const del = target?.closest<HTMLElement>("[data-view-del]");
@@ -5363,6 +5424,12 @@ function buildCommands(): Command[] {
       focusCohort ? cohortSummary(focusCohort) : null,
       focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
     ),
+    // F144: the bulk-sweep sister of F138's recall-to-self-clean — drop every
+    // stale cohort bookmark (its chokepoint cleared) in one go keyboard-only.
+    // The count names how many are dead; disabled at zero (commandDisabledReason
+    // explains "no stale cohort views"). currentStaleCohortIds reads the same
+    // buildCohort staleness check F138's per-chip mark + the row button use.
+    forgetStaleCohortsCommand(currentStaleCohortIds().length),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
@@ -5500,6 +5567,12 @@ function runCommand(id: string): void {
       // right-clicking the star. No-op when no cohort is focused or it isn't
       // pinned (the command is disabled in those cases).
       unpinFocusedCohort();
+      break;
+    case "cohort-forget-stale":
+      // F144: bulk-drop every stale cohort bookmark (its chokepoint cleared) in
+      // one go — the sweep sister of F138's recall-to-self-clean. No-op when
+      // none are stale (the command is disabled then anyway).
+      forgetStaleCohorts();
       break;
     case "cohort-focus-biggest": {
       // F103: focus the biggest chokepoint's cohort keyboard-only (sister of
@@ -5695,6 +5768,7 @@ function paintPaletteDuePreview(): void {
           hasChokepoint: currentChokepointId() !== null,
           cohortPinned:
             focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
+          staleCohortCount: currentStaleCohortIds().length,
         })
       : null;
   if (reason !== null) {

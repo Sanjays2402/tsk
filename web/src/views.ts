@@ -377,6 +377,28 @@ export function isStaleCohortView(
 }
 
 /**
+ * F144: the ids of EVERY stale cohort bookmark — the bulk-sweep sister of F138's
+ * one-at-a-time self-clean. F138 drops a dead cohort chip only when you recall
+ * it; after a big external edit (the CLI / TUI / hand completing a batch of
+ * chokepoints) several cohort bookmarks can go dead at once, and clearing them
+ * one recall at a time is tedious. This returns the id list of all currently-
+ * stale cohort views so a "forget all stale" affordance (a Cmd-K command + a
+ * Views-row button) can drop them in one go.
+ *
+ * `hasLiveCohort` is injected exactly as isStaleCohortView takes it (main.ts
+ * backs it with buildCohort over the live graph), so the two can't disagree on
+ * what "stale" means — this is just isStaleCohortView mapped over the list. A
+ * non-cohort view is never stale, so the result is a subset of the cohort
+ * bookmarks. Order follows the views list (stable). Pure → unit-tested.
+ */
+export function staleCohortViewIds(
+  views: SavedView[],
+  hasLiveCohort: (sourceId: number) => boolean,
+): string[] {
+  return views.filter((v) => isStaleCohortView(v, hasLiveCohort)).map((v) => v.id);
+}
+
+/**
  * F133: add a COHORT bookmark capturing `sourceId` (or recall semantics via the
  * caller when one already exists — this just keeps the store clean by
  * overwriting any same-name OR same-chokepoint cohort view rather than
