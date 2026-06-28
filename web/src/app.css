@@ -2791,6 +2791,18 @@ button.stat-metric:focus-visible .lens-key {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
+/* F150: a tiny superscript waiter-count on each ancestor segment, so the
+   heaviest ancestor (the F147 Alt+D densest-jump target) is legible at a glance
+   without pressing the key. Dim + small so it reads as a count, not an action. */
+.cohort-trail-count {
+  margin-left: 1px;
+  font-size: 0.7em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-faint, var(--color-text-dim));
+}
+.cohort-trail-step:hover .cohort-trail-count {
+  color: var(--color-text-dim);
+}
 .cohort-trail-sep {
   color: var(--color-text-faint, var(--color-text-dim));
   user-select: none;

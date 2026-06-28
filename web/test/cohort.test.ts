@@ -17,6 +17,7 @@ import {
   popCohortHistory,
   cohortTrailKeyTarget,
   densestCohortAncestorIndex,
+  cohortTrailCounts,
   formatCohortTrailText,
   formatCohortTrailMarkdown,
   type CohortFocus,
@@ -657,4 +658,53 @@ test("densestCohortAncestorIndex result feeds jumpCohortHistory cleanly", () => 
   assert.equal(idx, 0); // #1 (3 waiters) beats #4 (1 waiter)
   const jump = jumpCohortHistory(ts, [1, 4], idx);
   assert.equal(jump.focus?.sourceId, 1);
+});
+
+// --- F150: per-segment waiter counts in the cohort trail -------------------
+
+test("cohortTrailCounts maps each ancestor to its live waiter count, in order", () => {
+  const counts: Record<number, number> = { 1: 2, 4: 7, 9: 3 };
+  // Same oldest-first order renderCohortTrail walks; one entry per ancestor.
+  assert.deepEqual(cohortTrailCounts([1, 4, 9], (id) => counts[id] ?? 0), [2, 7, 3]);
+});
+
+test("cohortTrailCounts returns [] for an empty history (no ancestors)", () => {
+  assert.deepEqual(cohortTrailCounts([], () => 5), []);
+});
+
+test("cohortTrailCounts excludes the current focus (history-only, like F147)", () => {
+  // The focus isn't in `history`, so its count never appears — the array length
+  // equals the ancestor count, pairing 1:1 with the trail's ancestor segments.
+  const counts: Record<number, number> = { 1: 4, 4: 6 };
+  assert.deepEqual(cohortTrailCounts([1, 4], (id) => counts[id] ?? 0), [4, 6]);
+});
+
+test("renderCohortTrail wears a superscript waiter-count per ancestor when supplied", () => {
+  // history [1, 4] with counts [2, 7]; current #9 has no count (it's "you are here").
+  const html = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], [2, 7]);
+  assert.match(html, /#1<sup class="cohort-trail-count" aria-hidden="true">2<\/sup>/);
+  assert.match(html, /#4<sup class="cohort-trail-count" aria-hidden="true">7<\/sup>/);
+  // The current segment stays a plain "you are here" with no count superscript.
+  assert.match(html, /cohort-trail-current[^>]*>#9</);
+  assert.doesNotMatch(html, /#9<sup/);
+  // The aria-label surfaces the count for assistive tech.
+  assert.match(html, /\(7 waiting\)/);
+});
+
+test("renderCohortTrail omits counts when no waiterCounts array is passed (byte-identical)", () => {
+  const withArg = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4]);
+  const noArg = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], undefined);
+  assert.equal(withArg, noArg);
+  assert.doesNotMatch(withArg, /cohort-trail-count/);
+});
+
+test("renderCohortTrail skips a zero/missing per-segment count gracefully", () => {
+  // count 0 for #1 (dead ancestor) -> no superscript; #4 keeps its 5.
+  const html = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], [0, 5]);
+  assert.doesNotMatch(html, /#1<sup/);
+  assert.match(html, /#4<sup class="cohort-trail-count"[^>]*>5<\/sup>/);
+  // A SHORTER array (only one entry for two ancestors) degrades: #4 gets nothing.
+  const partial = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], [3]);
+  assert.match(partial, /#1<sup[^>]*>3<\/sup>/);
+  assert.doesNotMatch(partial, /#4<sup/);
 });

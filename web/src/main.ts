@@ -94,6 +94,7 @@ import {
   popCohortHistory,
   cohortTrailKeyTarget,
   densestCohortAncestorIndex,
+  cohortTrailCounts,
   formatCohortTrailText,
   formatCohortTrailMarkdown,
   type CohortFocus,
@@ -1489,7 +1490,15 @@ async function refreshStats(): Promise<void> {
     // full ancestry and any ancestor is one click away (data-cohort-jump=index ->
     // cohortJumpTo -> jumpCohortHistory). "" when there's no history, so a
     // depth-0 cohort shows only the single F126 line.
-    const cohortTrail = renderCohortTrail(focusCohort, cohortHistory);
+    // F150: pass each ancestor's live waiter-count so the trail renders a tiny
+    // superscript per segment ("#4⁷"), making the F147 Alt+D densest-jump target
+    // visible in the trail. The counts come from the SAME buildCohort-over-live-
+    // tasks measure densestCohortAncestorIndex reads, so they can't disagree.
+    const trailCounts = cohortTrailCounts(cohortHistory, (sourceId) => {
+      const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
+      return c ? c.ids.length : 0;
+    });
+    const cohortTrail = renderCohortTrail(focusCohort, cohortHistory, trailCounts);
     if (cohortTrail !== "") html = `<div class="stats-cohort-trail">${cohortTrail}</div>` + html;
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),

@@ -451,6 +451,31 @@ export function formatCohortTrailMarkdown(focus: CohortFocus | null, history: re
 }
 
 /**
+ * F150: the live waiter-count of each ancestor in the cohort drill — the
+ * per-segment numbers behind the F132 trail's superscript counts, so the F147
+ * "jump to densest ancestor" key has a visible counterpart in the trail itself.
+ * F132 lays out the ancestry as "#A › #B › #current" and F147 leaps to the
+ * heaviest ancestor by key, but the trail gives no hint WHICH segment that is
+ * without pressing the key; this surfaces each ancestor's load so the bottleneck
+ * is legible at a glance.
+ *
+ * `waiterCount(sourceId)` is injected exactly as densestCohortAncestorIndex
+ * (F147) takes it — main.ts backs it with buildCohort(...).ids.length over the
+ * live tasks — so the rendered counts can't disagree with the densest-jump
+ * target. Returns one count per `history` entry, in the SAME oldest-first order
+ * renderCohortTrail walks (so counts[i] pairs with the i-th trail segment). The
+ * current focus is NOT included (it's the terminal "you are here" segment, not
+ * an ancestor — matching densestCohortAncestorIndex's history-only scan). An
+ * empty history returns []. Pure → unit-tested.
+ */
+export function cohortTrailCounts(
+  history: readonly number[],
+  waiterCount: (sourceId: number) => number,
+): number[] {
+  return history.map((id) => waiterCount(id));
+}
+
+/**
  * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
  * panel — the multi-step sibling of F127's single back-step button. F108/F113
  * track a per-session cohort history but the chip / F127 panel button only ever
@@ -478,13 +503,36 @@ export function formatCohortTrailMarkdown(focus: CohortFocus | null, history: re
  * is the terminal segment after the current cohort, a disjoint sibling so its
  * click never overlaps a jump segment. Present whenever the trail renders (i.e.
  * whenever there's history), so it appears/vanishes with the trail itself.
+ *
+ * F150: when `waiterCounts` is supplied (one entry per ancestor, oldest-first —
+ * the cohortTrailCounts output), each ancestor segment wears a tiny superscript
+ * of its live waiter-count ("#4⁷") so the F147 densest-jump target is visible IN
+ * the trail, not just reachable by Alt+D. The counts align 1:1 with `history`
+ * (the same order the segments render). Omitting it (or a shorter/garbage array)
+ * renders no counts, keeping existing callers byte-identical; a missing per-index
+ * entry is simply skipped so a partial array degrades gracefully. The current
+ * focus segment never gets a count (it's "you are here", not an ancestor).
  */
-export function renderCohortTrail(focus: CohortFocus | null, history: readonly number[]): string {
+export function renderCohortTrail(
+  focus: CohortFocus | null,
+  history: readonly number[],
+  waiterCounts?: readonly number[],
+): string {
   if (focus === null || history.length === 0) return "";
   const sep = `<span class="cohort-trail-sep" aria-hidden="true">&#8250;</span>`;
   const steps = history.map((id, i) => {
     const title = `Jump back to the cohort waiting on #${id}`;
-    return `<button type="button" class="cohort-trail-step" data-cohort-jump="${i}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">#${id}</button>`;
+    // F150: a quiet superscript count of this ancestor's live waiters, so the
+    // heaviest ancestor (the F147 Alt+D target) is legible at a glance. Only
+    // rendered when a non-negative count is provided for this segment.
+    const c = waiterCounts ? waiterCounts[i] : undefined;
+    const countSup =
+      typeof c === "number" && c > 0
+        ? `<sup class="cohort-trail-count" aria-hidden="true">${c}</sup>`
+        : "";
+    const countAria =
+      typeof c === "number" && c > 0 ? ` (${c} waiting)` : "";
+    return `<button type="button" class="cohort-trail-step" data-cohort-jump="${i}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title + countAria)}">#${id}${countSup}</button>`;
   });
   const current = `<span class="cohort-trail-current" aria-current="step" title="Current cohort">#${focus.sourceId}</span>`;
   // F140: a copy-chain affordance after the current segment. Its hook carries
