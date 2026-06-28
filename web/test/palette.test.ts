@@ -22,6 +22,7 @@ import {
   pinCohortCommand,
   unpinCohortCommand,
   forgetStaleCohortsCommand,
+  recallBusiestViewCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -387,7 +388,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true, staleCohortCount: 2 };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true, staleCohortCount: 2, hasBusiestView: true };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -711,6 +712,41 @@ test("commandDisabledReason explains a zero-stale forget command", () => {
   );
   // With stale views present the command is live (no reason).
   assert.equal(commandDisabledReason("cohort-forget-stale", FULL_CTX), null);
+});
+
+// --- F149: recall busiest view command -------------------------------------
+
+test("recallBusiestViewCommand names the winner + count and is enabled", () => {
+  const cmd = recallBusiestViewCommand("#work", 12);
+  assert.equal(cmd.id, "view-busiest");
+  assert.equal(cmd.title, "Recall busiest view (#work, 12)");
+  assert.equal(cmd.group, "Views");
+  assert.equal(cmd.disabled, false);
+});
+
+test("recallBusiestViewCommand is a disabled placeholder with no clear winner", () => {
+  // No winner (null name/count) -> a plain, discoverable-but-disabled command.
+  const cmd = recallBusiestViewCommand(null, null);
+  assert.equal(cmd.title, "Recall busiest view");
+  assert.equal(cmd.disabled, true);
+  // A half-null pair (name but no count, or vice versa) is also treated as no winner.
+  assert.equal(recallBusiestViewCommand("#work", null).disabled, true);
+  assert.equal(recallBusiestViewCommand(null, 5).disabled, true);
+});
+
+test("recallBusiestViewCommand is fuzzy-findable by 'busiest' and 'densest'", () => {
+  const cmd = recallBusiestViewCommand("#work", 9);
+  assert.equal(filterCommands([cmd], "busiest").length, 1);
+  assert.equal(filterCommands([cmd], "densest").length, 1);
+});
+
+test("commandDisabledReason explains an absent busiest view", () => {
+  assert.equal(
+    commandDisabledReason("view-busiest", { ...FULL_CTX, hasBusiestView: false }),
+    "no busiest view",
+  );
+  // With a winner present the command is live (no reason).
+  assert.equal(commandDisabledReason("view-busiest", FULL_CTX), null);
 });
 
 test("cohort commands are fuzzy-findable by 'cohort' and 'chokepoint'", () => {

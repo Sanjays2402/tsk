@@ -346,6 +346,8 @@ export interface CommandReasonContext {
   cohortPinned: boolean;
   /** F144: how many cohort views are currently stale (so "forget all stale" is meaningful)? */
   staleCohortCount: number;
+  /** F149: is there a single unambiguous busiest view (so "recall busiest view" is meaningful)? */
+  hasBusiestView: boolean;
 }
 
 /**
@@ -547,6 +549,35 @@ export function forgetStaleCohortsCommand(staleCount: number): Command {
   };
 }
 
+/**
+ * F149: build a "Recall busiest view (<name>, N)" command — the keyboard-only
+ * path to whatever F142 marks as the densest saved view. F142 gives the row a
+ * visual is-busiest marker so the eye jumps to where the work piled up; F148
+ * sums the totals; but reaching the densest bucket still meant eyeballing the
+ * row + clicking. This recalls the triage winner straight from Cmd-K.
+ *
+ * `name` is the busiest view's name and `count` its live match-count (both from
+ * busiestViewId + the same count resolver the badge reads), or null when there's
+ * no clear winner — an empty row, every view matching nothing, or a TIE for the
+ * top (busiestViewId resolves a tie to null, so this command never picks an
+ * ambiguous winner). With no winner the command reads plainly and is disabled
+ * (commandDisabledReason then explains "no busiest view"). The title names the
+ * winner + its count ("Recall busiest view (#work, 12)") so the palette doubles
+ * as a "where's the pile-up?" readout. Its id is the static "view-busiest";
+ * runCommand routes it through the same recallView path the per-view commands
+ * use, reading the live busiest id at dispatch time. Pure → unit-tested.
+ */
+export function recallBusiestViewCommand(name: string | null, count: number | null): Command {
+  const titled = name !== null && count !== null;
+  return {
+    id: "view-busiest",
+    title: titled ? `Recall busiest view (${name}, ${count})` : "Recall busiest view",
+    group: "Views",
+    keywords: ["busiest", "densest", "most", "view", "recall", "triage", "saved", "pile", "top", "biggest"],
+    disabled: !titled,
+  };
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
@@ -667,5 +698,6 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
     if (!ctx.cohortPinned) return "cohort not pinned";
   }
   if (id === "cohort-forget-stale" && ctx.staleCohortCount <= 0) return "no stale cohort views";
+  if (id === "view-busiest" && !ctx.hasBusiestView) return "no busiest view";
   return null;
 }

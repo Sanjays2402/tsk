@@ -173,6 +173,7 @@ import {
   pinCohortCommand,
   unpinCohortCommand,
   forgetStaleCohortsCommand,
+  recallBusiestViewCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -3484,6 +3485,33 @@ function currentStaleCohortIds(): string[] {
 }
 
 /**
+ * F149: the id of the single busiest saved view — the densest live bucket F142
+ * marks with is-busiest. Shared by the F149 "Recall busiest view" command (its
+ * title/disabled state) + the runCommand dispatch, all reading the SAME
+ * busiestViewId over the SAME count resolver the chip badges + the F148 summary
+ * use, so the command can't recall a different view than the marker highlights.
+ * Returns null when there's no clear winner (empty row / all-empty / a tie).
+ */
+function currentBusiestViewId(): string | null {
+  return busiestViewId(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters()));
+}
+
+/**
+ * F149: build the "Recall busiest view (<name>, N)" command from the live
+ * busiest view, or a disabled placeholder when there's no clear winner. Reads
+ * currentBusiestViewId + the same count resolver the marker/badge use, so the
+ * command's name + count match exactly what the row shows. Always emits exactly
+ * one command (disabled when there's no winner) so the palette stays declarative
+ * + the command is discoverable; commandDisabledReason explains "no busiest view".
+ */
+function maybeBusiestViewCommand(): Command[] {
+  const id = currentBusiestViewId();
+  const v = id ? views.find((x) => x.id === id) : undefined;
+  const count = v ? countViewMatches(v, viewMatchPool(), viewMatchCounters()) : null;
+  return [recallBusiestViewCommand(v ? v.name : null, v ? count : null)];
+}
+
+/**
  * F144: drop EVERY stale cohort bookmark in one go — the bulk sweep behind the
  * "forget all stale" Cmd-K command + the Views-row button. The one-at-a-time
  * sister is F138's recall-to-self-clean. Each dead chip is removed through the
@@ -5485,6 +5513,13 @@ function buildCommands(): Command[] {
     // explains "no stale cohort views"). currentStaleCohortIds reads the same
     // buildCohort staleness check F138's per-chip mark + the row button use.
     forgetStaleCohortsCommand(currentStaleCohortIds().length),
+    // F149: recall whatever F142 marks as the busiest (densest) saved view
+    // straight from Cmd-K — the keyboard path to the triage winner, no eyeballing
+    // the row. currentBusiestViewId reads the SAME busiestViewId + count resolver
+    // the chip marker + F148 summary use; the title names the winner + its live
+    // count. Disabled (with "no busiest view" via F89) when there's no clear
+    // winner (empty row / all-empty / a tie).
+    ...maybeBusiestViewCommand(),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
@@ -5670,6 +5705,15 @@ function runCommand(id: string): void {
   if (id.startsWith("view:")) {
     recallView(id.slice("view:".length));
   }
+  // F149: recall the busiest (densest) saved view — the F142 triage winner —
+  // keyboard-only. Reads the live busiest id at dispatch time (the board may have
+  // changed since the palette opened) and routes through the same recallView
+  // path the per-view commands use. A no-op if there's no clear winner now (the
+  // command is disabled in that case anyway).
+  if (id === "view-busiest") {
+    const busiest = currentBusiestViewId();
+    if (busiest !== null) recallView(busiest);
+  }
   // F107: dynamic per-chokepoint focus commands (id shaped "cohort-focus-<id>",
   // distinct from the static "cohort-focus-biggest"). Decode the target id and
   // route through the same setCohort path the sidebar focus buttons + the
@@ -5824,6 +5868,7 @@ function paintPaletteDuePreview(): void {
           cohortPinned:
             focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
           staleCohortCount: currentStaleCohortIds().length,
+          hasBusiestView: currentBusiestViewId() !== null,
         })
       : null;
   if (reason !== null) {
