@@ -2666,6 +2666,54 @@ button.stat-metric:focus-visible .lens-key {
 .stats-cohort {
   margin-bottom: var(--sp-3, 12px);
 }
+/* F132: the cohort drill breadcrumb TRAIL — the full back-stack rendered as
+   "#A › #B › #current" above the F126 line, so a multi-step drill shows its
+   whole ancestry and any ancestor is one click away. Each step is a quiet
+   button; the current cohort is a non-interactive emphasized segment. The
+   separator "›" echoes the chip's ‹ back glyph so the two readouts read alike.
+   The row wraps on a deep stack and stays visually subordinate to the F126
+   line (smaller, dimmer) since it's a navigation aid, not the headline. */
+.stats-cohort-trail {
+  margin-bottom: var(--sp-2, 8px);
+}
+.cohort-trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1, 4px);
+  font-size: var(--fs-xs, 11px);
+}
+.cohort-trail-step {
+  padding: 1px var(--sp-1, 4px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface, transparent);
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs, 11px);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.cohort-trail-step:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.cohort-trail-step:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+.cohort-trail-sep {
+  color: var(--color-text-faint, var(--color-text-dim));
+  user-select: none;
+}
+.cohort-trail-current {
+  padding: 1px var(--sp-1, 4px);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font-weight: 600;
+}
 /* F127/F128: the active-cohort line is a flex row of disjoint buttons — an
    optional leading ‹ back step (when the cohort has history), the clear
    readout (flex-grows to fill), and a trailing "walk" into the dependent

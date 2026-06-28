@@ -11,6 +11,8 @@ import {
   cohortSummary,
   renderCohortHelp,
   renderCohortPanelLine,
+  renderCohortTrail,
+  jumpCohortHistory,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -404,4 +406,89 @@ test("renderCohortPanelLine row holds disjoint back / clear / walk buttons in or
   const walk = html.indexOf("data-waiting-walk");
   assert.ok(back >= 0 && clear >= 0 && walk >= 0);
   assert.ok(back < clear && clear < walk);
+});
+
+// --- F132: cohort breadcrumb trail + multi-step jump -----------------------
+
+test("renderCohortTrail is empty without a focus or without history", () => {
+  assert.equal(renderCohortTrail(null, [1, 2]), "");
+  assert.equal(renderCohortTrail({ sourceId: 3, ids: [4] }, []), "");
+  // A null focus stays empty even with history.
+  assert.equal(renderCohortTrail(null, []), "");
+});
+
+test("renderCohortTrail lays out ancestors then the current cohort, in order", () => {
+  const html = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4]);
+  // Two ancestor step buttons indexed by position, then the current segment.
+  assert.match(html, /data-cohort-jump="0"[^>]*>#1</);
+  assert.match(html, /data-cohort-jump="1"[^>]*>#4</);
+  assert.match(html, /class="cohort-trail-current"[^>]*aria-current="step"[^>]*>#9</);
+  // Order: #1 before #4 before the current #9.
+  assert.ok(html.indexOf("#1") < html.indexOf("#4"));
+  assert.ok(html.indexOf("#4") < html.indexOf(">#9<"));
+});
+
+test("renderCohortTrail renders one separator fewer than segments", () => {
+  // 2 ancestors + 1 current = 3 segments -> 2 separators.
+  const html = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4]);
+  const seps = html.match(/cohort-trail-sep/g) ?? [];
+  assert.equal(seps.length, 2);
+});
+
+test("renderCohortTrail escapes nothing odd but the current is non-interactive", () => {
+  const html = renderCohortTrail({ sourceId: 2, ids: [3] }, [1]);
+  // The current segment is a span, not a button (you're already on it).
+  assert.match(html, /<span class="cohort-trail-current"/);
+  assert.doesNotMatch(html, /data-cohort-jump="1"/); // no jump for the current
+});
+
+test("jumpCohortHistory lands on the targeted ancestor and trims the stack", () => {
+  // #2,#3 wait on #1; #4 waits on #1; the stack is [1, 4] (drilled 1 then 4).
+  const ts: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 4, done: false },
+    { id: 5, done: false, depends_on: [4] },
+  ];
+  // Jump to index 0 (the #1 ancestor): focus rebuilds for #1, stack empties.
+  const j = jumpCohortHistory(ts, [1, 4], 0);
+  assert.notEqual(j.focus, null);
+  assert.equal(j.focus!.sourceId, 1);
+  assert.deepEqual(j.stack, []);
+});
+
+test("jumpCohortHistory to the top index returns that ancestor", () => {
+  const ts: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+    { id: 4, done: false },
+    { id: 5, done: false, depends_on: [4] },
+  ];
+  // index 1 targets #4; the remaining stack is everything before it ([1]).
+  const j = jumpCohortHistory(ts, [1, 4], 1);
+  assert.equal(j.focus!.sourceId, 4);
+  assert.deepEqual(j.stack, [1]);
+});
+
+test("jumpCohortHistory skips a dead targeted ancestor to the nearest live one", () => {
+  // #1 is done -> its cohort is dead; jumping to it should fall back to an
+  // older live ancestor (#7, which still has a waiter #8).
+  const ts: DepStatsTask[] = [
+    { id: 7, done: false },
+    { id: 8, done: false, depends_on: [7] },
+    { id: 1, done: true }, // completed chokepoint -> dead cohort
+  ];
+  const j = jumpCohortHistory(ts, [7, 1], 1);
+  assert.notEqual(j.focus, null);
+  assert.equal(j.focus!.sourceId, 7); // skipped #1, landed on #7
+  assert.deepEqual(j.stack, []);
+});
+
+test("jumpCohortHistory is a no-op for an out-of-range index", () => {
+  const ts: DepStatsTask[] = [
+    { id: 1, done: false },
+    { id: 2, done: false, depends_on: [1] },
+  ];
+  assert.deepEqual(jumpCohortHistory(ts, [1], -1), { stack: [1], focus: null });
+  assert.deepEqual(jumpCohortHistory(ts, [1], 5), { stack: [1], focus: null });
 });

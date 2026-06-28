@@ -85,6 +85,8 @@ import {
   cohortSummary,
   renderCohortHelp,
   renderCohortPanelLine,
+  renderCohortTrail,
+  jumpCohortHistory,
   pushCohortHistory,
   popCohortHistory,
   type CohortFocus,
@@ -1455,6 +1457,13 @@ async function refreshStats(): Promise<void> {
     // back through the drill from the panel too.
     const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length);
     if (cohortLine !== "") html = `<div class="stats-cohort">${cohortLine}</div>` + html;
+    // F132: under the F126/F127 cohort line, render the WHOLE back-stack as a
+    // breadcrumb trail ("#A › #B › #current") so a multi-step drill shows its
+    // full ancestry and any ancestor is one click away (data-cohort-jump=index ->
+    // cohortJumpTo -> jumpCohortHistory). "" when there's no history, so a
+    // depth-0 cohort shows only the single F126 line.
+    const cohortTrail = renderCohortTrail(focusCohort, cohortHistory);
+    if (cohortTrail !== "") html = `<div class="stats-cohort-trail">${cohortTrail}</div>` + html;
     // F80: when a lens is active, append a breakdown of the lensed subset so the
     // sidebar reflects what's actually on screen ("12 blocked: 3 urgent, …"),
     // not just whole-board totals. Computed over the same not-deleted pool the
@@ -3128,6 +3137,31 @@ function cohortBack(): boolean {
 }
 
 /**
+ * F132: jump STRAIGHT to a specific ancestor in the cohort back-stack from the
+ * panel breadcrumb trail — the multi-step sibling of cohortBack (F108), which
+ * only steps one level. `index` is the position in cohortHistory the trail
+ * segment names (0 = oldest). jumpCohortHistory rebuilds that ancestor against
+ * the live graph, transparently skipping any ancestor that's since gone dead
+ * (lands on the nearest still-live one at-or-before it), and returns the
+ * remaining (older) stack. A no-op when there's no focus / empty history / an
+ * out-of-range index, mirroring cohortBack's guards. Re-renders + refreshes the
+ * panel so the trail collapses to the landed depth.
+ */
+function cohortJumpTo(index: number): void {
+  if (focusCohort === null || cohortHistory.length === 0) return;
+  const jump = jumpCohortHistory(currentTasks as DepStatsTask[], cohortHistory, index);
+  // A null focus means the targeted ancestor (and everything before it) went
+  // dead — nothing live to land on, so leave the current focus untouched.
+  if (jump.focus === null) return;
+  cohortHistory = jump.stack;
+  focusCohort = jump.focus;
+  setStatus(`back to ${jump.focus.ids.length} waiting on #${jump.focus.sourceId}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+  render();
+  refreshStats();
+}
+
+/**
  * F103: the id of the current biggest chokepoint (the undone task the most
  * others wait on), or null on a flat board. Computed over the same live list +
  * whole-list done-index the F92 sidebar line uses, so the Cmd-K "Focus biggest
@@ -3658,6 +3692,15 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F132: a breadcrumb-trail segment jumps STRAIGHT to that ancestor cohort
+  // (multi-step), not just one level back. Checked FIRST so a trail click never
+  // falls through to the single-step back / clear / walk affordances below.
+  const jump = target?.closest<HTMLElement>("[data-cohort-jump]");
+  if (jump) {
+    const index = Number(jump.dataset.cohortJump);
+    if (Number.isFinite(index)) cohortJumpTo(index);
+    return;
+  }
   // F127: the panel cohort line's leading ‹ back button steps back one level
   // through the cohort drill (the SAME cohortBack the chip's ‹ glyph, Escape,
   // and the F122 help breadcrumb drive) instead of clearing — checked FIRST so

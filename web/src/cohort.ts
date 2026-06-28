@@ -302,3 +302,61 @@ export function popCohortHistory(
   }
   return { stack: [], focus: null };
 }
+
+/**
+ * F132: jump STRAIGHT to a specific ancestor in the cohort back-stack, not just
+ * one level. F108's popCohortHistory steps back exactly one cohort; the F132
+ * breadcrumb trail renders the WHOLE stack so a click can leap to any ancestor
+ * directly. Given a target index into `stack` (0 = oldest), this rebuilds the
+ * cohort for that ancestor against the FRESH graph and returns it plus the
+ * remaining stack (everything BEFORE the landed ancestor). It reuses
+ * popCohortHistory's skip-dead-ancestor walk by running it over the truncated
+ * prefix `stack.slice(0, targetIndex + 1)`: if the targeted ancestor has since
+ * gone dead (its chokepoint completed, or all its waiters finished), the jump
+ * transparently lands on the nearest still-live ancestor at-or-before it rather
+ * than on an empty focus — exactly mirroring a multi-tap back. An out-of-range
+ * index is a no-op (returns the stack unchanged + a null focus) so the caller
+ * can decline to act. Pure → unit-tested; main.ts calls this from the trail.
+ */
+export function jumpCohortHistory(
+  tasks: DepStatsTask[],
+  stack: readonly number[],
+  targetIndex: number,
+): CohortBack {
+  if (targetIndex < 0 || targetIndex >= stack.length) {
+    return { stack: [...stack], focus: null };
+  }
+  return popCohortHistory(tasks, stack.slice(0, targetIndex + 1));
+}
+
+/**
+ * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
+ * panel — the multi-step sibling of F127's single back-step button. F108/F113
+ * track a per-session cohort history but the chip / F127 panel button only ever
+ * reveal the NEXT step back; this lays out the whole ancestry as
+ * "#A › #B › #(current)" so you can see how deep the drill went AND leap to any
+ * ancestor in one click.
+ *
+ * Each ancestor in `history` (oldest first, the same order pushCohortHistory
+ * appends) renders as a `<button data-cohort-jump="<index>">#<id></button>` so a
+ * delegated click routes through main.ts's cohortJumpTo(index) → jumpCohortHistory
+ * (which skips dead ancestors). The CURRENT focus is the terminal segment — a
+ * non-interactive span marked aria-current="step" ("you are here"), since you're
+ * already on it. Segments are separated by an inert "›" glyph echoing the chip's
+ * ‹ back affordance so the two readouts read consistently.
+ *
+ * Returns "" when there's no focus OR no history (a depth-0 cohort has no trail
+ * to show — the F126 line already names the single current cohort), so the trail
+ * only appears once you've actually drilled. Pure → unit-tested; the ids need no
+ * escaping (they're numbers) but the helper stays consistent with the module.
+ */
+export function renderCohortTrail(focus: CohortFocus | null, history: readonly number[]): string {
+  if (focus === null || history.length === 0) return "";
+  const sep = `<span class="cohort-trail-sep" aria-hidden="true">&#8250;</span>`;
+  const steps = history.map((id, i) => {
+    const title = `Jump back to the cohort waiting on #${id}`;
+    return `<button type="button" class="cohort-trail-step" data-cohort-jump="${i}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">#${id}</button>`;
+  });
+  const current = `<span class="cohort-trail-current" aria-current="step" title="Current cohort">#${focus.sourceId}</span>`;
+  return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}</div>`;
+}
