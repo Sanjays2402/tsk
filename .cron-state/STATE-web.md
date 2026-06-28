@@ -2773,25 +2773,30 @@ Standing unstarted: F48, F49, F50, F54, F152. Fresh follow-ons after the T28
 cohort-trail-counts / stale-sweep-undo / views-summary / recall-busiest / peek
 cluster:
 
-- [ ] **F152** Open/done badge filter action: clicking the F145 "·N" badge on a
+- [x] **F152** Open/done badge filter action: clicking the F145 "·N" badge on a
       show-all view recalls it AND toggles hideDone so you land on just the open
       slice — the badge's done count becomes an actionable "hide these" affordance.
-- [ ] **F153** Peek the busiest view from the palette: pair F146's peek with
+      (tick T29 2026-06-28, 550e71e)
+- [x] **F153** Peek the busiest view from the palette: pair F146's peek with
       F149's busiest — a "Peek busiest view" command that previews the densest
       bucket's count + summary WITHOUT recalling, so you can confirm before the
       F149 jump. Reuse peekViewLabel + currentBusiestViewId; pure-render only.
-- [ ] **F154** Views-summary names the busiest inline: extend F148's "N views ·
+      (tick T29 2026-06-28, 9226613)
+- [x] **F154** Views-summary names the busiest inline: extend F148's "N views ·
       M tasks" readout with a trailing "· busiest: <name> (K)" when F142 has a
       clear winner, so the row head doubles as the triage headline. Pure
       describeViewsRowSummary growing an optional busiest {name, count}.
-- [ ] **F155** Cohort-trail "jump to densest" button: F147's Alt+D is keyboard-
+      (tick T29 2026-06-28, dc19d78)
+- [x] **F155** Cohort-trail "jump to densest" button: F147's Alt+D is keyboard-
       only; with F150's per-segment counts rendered, add a small trailing button
       on the trail (data-cohort-densest) that does the same leap by click, so the
       densest-ancestor jump is reachable by mouse too. Reuse densestCohortAncestorIndex.
-- [ ] **F156** Stale-sweep undo also restores via Cmd-K: F151's undo is a toast
+      (tick T29 2026-06-28, 304df6d)
+- [x] **F156** Stale-sweep undo also restores via Cmd-K: F151's undo is a toast
       button only; stash the last swept snapshot and add a "Undo last stale sweep
       (N)" command (disabled when nothing's recently swept) so the restore is
       keyboard-reachable past the toast window. Pure builder + a held snapshot slot.
+      (tick T29 2026-06-28, 4a9ffde)
 - [ ] **F157** Peek-view count badge in the palette row: F146 shows the count in
       the preview slot on highlight; also render a quiet "·N" suffix on the "Peek
       view (<name>)" command TITLE itself (like the chip badge) so you can scan all
@@ -2800,3 +2805,124 @@ cluster:
 When fewer than 5 remain, append more (recurring-task UI, archive view, a
 per-row dep mini-sparkline, a saved-view import/export, keyboard reordering of
 the Views row, a per-tag saved-view group).
+
+---
+
+## Web tick T29 — 2026-06-28 11:47 PT
+
+Shipped 5/5 web slices on `main` (F155, F152, F154, F153, F156), gated once,
+pushed clean `5c722c4..186c4f2` (6 commits: 5 features + the web_dist bundle
+rebuild). Workdir: the canonical `/Volumes/Projects/tsk` external SSD WAS
+mounted (git resolved cleanly on `main`, clean tree, node_modules present) — no
+fallback to the internal worktree needed.
+
+This batch finishes the entire T29 queue's saved-view / cohort-trail cluster
+cleanly (only F157, a distinct palette-title slice, carries forward). Every
+shipped slice extends the F141/F142/F145 badge, the F148 summary, the F146/F149
+peek-busiest pair, and the F132/F147/F150 cohort-trail work from T26-T28.
+
+### Features (one commit each + the bundle rebuild)
+- **F155** `304df6d` — cohort-trail "jump to densest" button. cohort.ts pure
+  densestCountIndex(counts) — argmax over the already-rendered cohortTrailCounts
+  array (first-max-wins on ties matching densestCohortAncestorIndex; -1 for
+  empty/all-zero), so the click target can't disagree with the F150 superscripts.
+  renderCohortTrail appends a data-cohort-densest button at that index when
+  waiterCounts is supplied + an ancestor has waiters (title names the target +
+  count); omitted/all-zero renders no button (byte-identical degrade). main.ts
+  routes the click through the SAME cohortJumpTo the per-segment buttons use.
+  app.css accent-hued .cohort-trail-densest. +13 cohort tests.
+- **F152** `550e71e` — clickable open/done count badge hides the done slice.
+  views.ts pure badgeHidesDone(view, breakdown) — true only for a non-cohort,
+  show-all view with done > 0 (reads the SAME F145 open/done split). renderViewChips
+  opt-in hideDoneBadge resolver swaps the inert <span> for a <button
+  class="view-chip-count is-actionable" data-view-hide-done> + a "click to hide
+  done" hint; omitted keeps byte-identical. main.ts recallViewHideDone (recall +
+  setFilter hideDone) on the delegated badge click, checked before the chip-wide
+  recall. app.css focus-able actionable-badge styling. RELOCATED badgeHidesDone
+  next to renderViewChips (away from describeViewsRowSummary) so F152/F154 occupy
+  disjoint diff regions and commit independently. +6 views tests.
+- **F154** `dc19d78` — views-row summary names the busiest inline. views.ts
+  describeViewsRowSummary grows an optional BusiestViewLabel {name, count} →
+  appends " · busiest: <name> (K)" when there's a task half + a clear winner;
+  omitted/null/empty-name keeps the bare F148 readout (byte-identical), all-empty
+  board names nothing. main.ts wires name+count from the SAME currentBusiestViewId
+  resolver the F142 marker / F149 command read. +4 views tests.
+- **F153** `9226613` — peek the busiest view from the palette. palette.ts pure
+  peekBusiestViewCommand(name, count) (id "peek-busiest", disabled on no clear
+  winner — shares F149's gate + "no busiest view" reason). main.ts
+  maybePeekBusiestViewCommand emits it; paintPaletteDuePreview renders
+  peekViewLabel of the live busiest into the slot on highlight; runCommand echoes
+  to status (look-don't-touch, never recalls). +4 palette tests.
+- **F156** `4a9ffde` — undo the last stale-cohort sweep from the palette. palette.ts
+  pure undoStaleSweepCommand(count) (id "cohort-undo-sweep", disabled when
+  nothing's stashed; new staleSweepCount ctx field + "nothing to restore" reason).
+  main.ts module-level lastStaleSweep stash holds the detached snapshotViews copy
+  past F151's toast window; forgetStaleCohorts sets it, the toast undo clears it
+  (no double-restore), undoLastStaleSweep restores via the SAME restoreSweptViews
+  path + clears the stash. +5 palette tests.
+- `186c4f2` — web_dist bundle rebuild (41 modules, JS 44.07KB gz, CSS 11.21KB gz).
+
+### Gates
+- web check: tests 907 -> 928 (+21), 0 fail; tsc app + test/tsconfig.json clean;
+  web build green (41 modules). Each of the 5 cumulative commit prefixes was
+  independently re-checked (typecheck + full unit suite) so every feature commit
+  builds green on its own — none depends on a later one.
+- gofmt clean / go vet clean / go build clean; go test ./... green (commands
+  70.2s, serve re-run clean against the freshly-embedded T29 bundle).
+- live `tsk serve --addr 127.0.0.1:7989` off the shipped binary: GET / 200;
+  served JS carried all 8 new hooks (data-view-hide-done, "click to hide done",
+  cohort-trail-densest, "Peek busiest view", peek-busiest, "Undo last stale
+  sweep", cohort-undo-sweep, "busiest: "); POST /api/tasks/1/toggle round-tripped
+  to .tsk.md adding completed: + keeping the hand-editable format. Storage
+  contract intact. Fixtures + binary cleaned up.
+
+### Deferred
+F157 (peek-view count in the palette command TITLE) — a distinct palette-render
+slice better sized on its own; carried to T30. Standing long-carries: F48
+(context-menu submenus), F49 (autocomplete in edit/filter), F50 (dep mini-graph),
+F54 (touch context menu).
+
+### Process note
+F152 and F154 both edit views.ts in adjacent regions; the original layout glued
+badgeHidesDone (F152) directly below describeViewsRowSummary (F154), sharing a
+close brace that no line-level split could cleanly separate into two compiling
+commits. Fix: relocated badgeHidesDone to sit just above renderViewChips (still a
+pure helper, no behaviour change), decoupling the two diff regions so each
+feature commits + reverts independently. Worth remembering for future ticks —
+keep sibling features' helpers textually apart when they'll land in one batch.
+
+### T30 — depth (appended T29 2026-06-28 so the loop never starves)
+
+Standing unstarted: F48, F49, F50, F54, F157. Fresh follow-ons after the T29
+densest-button / hide-done-badge / busiest-summary / peek-busiest / undo-sweep
+cluster:
+
+- [ ] **F157** Peek-view count badge in the palette command TITLE: F146 shows the
+      count in the preview slot on highlight; also render a quiet "·N" suffix on
+      the "Peek view (<name>)" command title itself so you can scan all views'
+      counts in the list without highlighting each. Pure peekCommandTitle(name, count).
+- [ ] **F158** Hide-done badge keyboard reach: F152's actionable badge is mouse-
+      only; add a per-view "Recall <name> (open only)" Cmd-K command so the
+      recall+hideDone jump is keyboard-reachable too. Pure builder over
+      badgeHidesDone + the view name.
+- [ ] **F159** Busiest headline is clickable: F154 names the busiest in the summary
+      readout as plain text; wrap "busiest: <name>" in a recall affordance
+      (data-view-recall on the summary span) so the triage headline doubles as a
+      one-click jump to the pile-up. Pure-render + reuse the existing recall click.
+- [ ] **F160** Peek-busiest also previews the cohort: F153 peeks a saved view's
+      count+facets; when the busiest view is a COHORT bookmark, enrich the preview
+      with the chokepoint's waiter count (reuse buildCohort) so "peek busiest"
+      reads the bottleneck depth, not just the match count. Pure peek text growth.
+- [ ] **F161** Stale-sweep undo toast + Cmd-K share a count badge: F156's command
+      title shows (N); surface that same N in the F151 toast label so the two undo
+      affordances read consistently ("forgot 3 · Undo" everywhere). Pure label.
+- [ ] **F162** Densest-jump button on the panel cohort line too: F155 put the ▲ on
+      the breadcrumb trail; mirror it on the F127 single-line cohort readout when a
+      denser ancestor exists, so the jump is reachable from both cohort surfaces.
+- [ ] **F163** Views-row summary "· stale: N" segment: when F138 marks stale cohort
+      chips, extend F148/F154's summary with a trailing "· N stale" so the sweep
+      need is legible at the row head (pairs with F144's sweep button). Pure-render.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, a per-row
+dep mini-sparkline, a saved-view import/export, keyboard reordering of the Views
+row, a per-tag saved-view group, a TUI-style density toggle for the chip row).
