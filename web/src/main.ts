@@ -252,6 +252,7 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
+  appendStaleSegment,
   peekViewLabel,
   peekCommandTitle,
   badgeHidesDone,
@@ -3743,8 +3744,13 @@ function renderViewsRow(): void {
     viewsRowSummary(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
     busiestForSummary,
   );
-  els.viewsSummary.textContent = summaryText;
-  els.viewsSummary.hidden = summaryText === "";
+  // F163: append "· N stale" when dead cohort bookmarks exist, so the sweep need
+  // (F144's button) is legible at the row head without scanning for greyed chips.
+  // currentStaleCohortIds is the SAME set F138 marks + F144 sweeps, so the count
+  // can't disagree with the chips. Zero stale leaves the headline byte-identical.
+  const summaryWithStale = appendStaleSegment(summaryText, currentStaleCohortIds().length);
+  els.viewsSummary.textContent = summaryWithStale;
+  els.viewsSummary.hidden = summaryWithStale === "";
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial
   // "it landed here" confirmation is lost. Scroll it into view (horizontally)

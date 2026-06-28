@@ -668,6 +668,21 @@ export function describeViewsRowSummary(s: ViewsRowSummary, busiest?: BusiestVie
 }
 
 /**
+ * F163: append a quiet "· N stale" segment to the Views-row summary when stale
+ * cohort bookmarks exist. F138 marks stale cohort chips (their chokepoint
+ * cleared) and F144 sweeps them; this surfaces the sweep NEED at the row head so
+ * it's legible without scanning for greyed chips — pairs with F144's sweep
+ * button. A zero/negative/omitted stale count returns the summary unchanged, so
+ * existing callers stay byte-identical and a clean board reads plainly. Empty
+ * summary (no views) gains nothing. Pure → unit-tested; composes after
+ * describeViewsRowSummary so it tacks onto whatever headline already rendered.
+ */
+export function appendStaleSegment(summary: string, staleCount: number): string {
+  if (summary === "" || staleCount <= 0) return summary;
+  return `${summary} \u00b7 ${staleCount} stale`;
+}
+
+/**
  * F146: the preview text for a "Peek view (<name>)" command — a view's live
  * match-count + a compact description of what it filters, shown in the palette's
  * preview slot WITHOUT recalling it, so you can compare saved views before

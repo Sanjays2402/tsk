@@ -29,6 +29,7 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
+  appendStaleSegment,
   peekViewLabel,
   peekCommandTitle,
   recallOpenOnlyTitle,
@@ -916,6 +917,27 @@ test("describeViewsRowSummary omits the busiest headline on an all-empty board",
     describeViewsRowSummary({ views: 3, tasks: 0 }, { name: "#work", count: 0 }),
     "3 views",
   );
+});
+
+// --- F163: views-row summary "· N stale" segment ---------------------------
+
+test("appendStaleSegment tacks a stale count onto the summary", () => {
+  assert.equal(appendStaleSegment("3 views \u00b7 17 tasks", 2), "3 views \u00b7 17 tasks \u00b7 2 stale");
+  assert.equal(appendStaleSegment("3 views", 1), "3 views \u00b7 1 stale");
+});
+
+test("appendStaleSegment leaves the summary unchanged with no stale views", () => {
+  assert.equal(appendStaleSegment("3 views \u00b7 17 tasks", 0), "3 views \u00b7 17 tasks");
+  assert.equal(appendStaleSegment("3 views \u00b7 17 tasks", -1), "3 views \u00b7 17 tasks");
+});
+
+test("appendStaleSegment adds nothing to an empty (no-views) summary", () => {
+  assert.equal(appendStaleSegment("", 5), "");
+});
+
+test("appendStaleSegment composes after the busiest headline", () => {
+  const base = describeViewsRowSummary({ views: 3, tasks: 17 }, { name: "#work", count: 9 });
+  assert.equal(appendStaleSegment(base, 2), "3 views \u00b7 17 tasks \u00b7 busiest: #work (9) \u00b7 2 stale");
 });
 
 // --- F152: actionable hide-done count badge --------------------------------
