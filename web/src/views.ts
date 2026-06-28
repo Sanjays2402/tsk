@@ -354,6 +354,29 @@ export function findCohortView(views: SavedView[], sourceId: number): SavedView 
 }
 
 /**
+ * F138: is a cohort bookmark STALE — i.e. its chokepoint no longer has a live
+ * cohort? F133's cohort views re-derive their id-set on recall (setCohort), but
+ * once the chokepoint completes (or all its waiters finish) recall no-ops with
+ * "nothing waits on #N" and the chip just lingers, a dead bookmark with no
+ * obvious tell. This answers "would recalling this view land on nothing?" so the
+ * Views row can mark such a chip and offer a self-clean.
+ *
+ * `hasLiveCohort` is injected (the cohort lives in cohort.ts; keeping views.ts
+ * decoupled mirrors the lensGlyph / cohortGlyph injection pattern) — main.ts
+ * passes a predicate backed by cohort.buildCohort over the live graph. A view
+ * that isn't a cohort bookmark is never stale by this measure (returns false);
+ * a cohort bookmark is stale exactly when its chokepoint has no live cohort.
+ * Pure → unit-tested.
+ */
+export function isStaleCohortView(
+  view: SavedView,
+  hasLiveCohort: (sourceId: number) => boolean,
+): boolean {
+  if (!isCohortView(view)) return false;
+  return !hasLiveCohort(view.cohort!);
+}
+
+/**
  * F133: add a COHORT bookmark capturing `sourceId` (or recall semantics via the
  * caller when one already exists — this just keeps the store clean by
  * overwriting any same-name OR same-chokepoint cohort view rather than
@@ -514,6 +537,17 @@ export interface ViewChipOpts {
   activeCohort?: number | null;
   /** F133: a fixed leading glyph for cohort chips (the ↑ chokepoint marker). */
   cohortGlyph?: string;
+  /**
+   * F138: a predicate marking a cohort chip STALE — its chokepoint no longer has
+   * a live cohort, so recalling it would land on nothing. When supplied, a cohort
+   * chip whose chokepoint is dead gets an `is-stale-cohort` class + a tooltip
+   * note ("— stale, recall to clear") so the dead bookmark is visible and a recall
+   * can self-clean it (main.ts). Backed by isStaleCohortView with an injected
+   * live-cohort check so views.ts stays decoupled from the graph. Omitting it
+   * leaves every chip un-marked (the safe default), keeping existing callers
+   * byte-identical.
+   */
+  staleCohort?: (view: SavedView) => boolean;
 }
 
 export function renderViewChips(
@@ -557,6 +591,11 @@ export function renderViewChips(
         glyph = opts.cohortGlyph ?? "";
         pinClass = " is-cohort-pin";
       }
+      // F138: mark a stale cohort chip (its chokepoint has no live cohort) so the
+      // dead bookmark is visible + a recall can self-clean it. Only consulted for
+      // cohort chips (the predicate already short-circuits non-cohort views).
+      const stale = cohortPin && opts.staleCohort && opts.staleCohort(v) ? " is-stale-cohort" : "";
+      const staleTitle = stale ? " \u2014 stale, recall to clear" : "";
       const glyphSpan = glyph
         ? `<span class="view-chip-lens-glyph" aria-hidden="true">${escapeHTML(glyph)}</span> `
         : "";
@@ -564,7 +603,7 @@ export function renderViewChips(
         opts.updatableId && opts.updatableId === v.id
           ? `<button type="button" class="view-chip-update" data-view-update="${escapeHTML(v.id)}" title="Update “${escapeHTML(v.name)}” to the current filter" aria-label="Update view ${escapeHTML(v.name)} to current filter">&#8635;</button>`
           : "";
-      return `<span class="view-chip${active}${lensed}${pinClass}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v))}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

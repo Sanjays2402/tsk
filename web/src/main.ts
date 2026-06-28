@@ -230,6 +230,7 @@ import {
   findPureLensView,
   isCohortView,
   findCohortView,
+  isStaleCohortView,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -3409,6 +3410,13 @@ function renderViewsRow(): void {
     // wears a fixed ↑ chokepoint glyph so it reads distinct from filter/lens chips.
     activeCohort: focusCohort ? focusCohort.sourceId : null,
     cohortGlyph: "\u2191", // ↑ — the chokepoint marker echoing the chip + panel
+    // F138: mark a cohort chip stale when its chokepoint no longer has a live
+    // cohort (recalling it would land on nothing). isStaleCohortView takes an
+    // injected live-cohort check (keeping views.ts decoupled) backed by
+    // buildCohort over the live graph — a cohort with no open dependents (its
+    // chokepoint done / waiters all finished / id gone) reads as dead.
+    staleCohort: (v) =>
+      isStaleCohortView(v, (sourceId) => buildCohort(currentTasks as DepStatsTask[], sourceId) !== null),
   });
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial
@@ -3581,6 +3589,22 @@ function recallView(id: string): void {
   // buildCohort (setCohort), not applied as a filter. setCohort degrades
   // gracefully ("nothing waits on #N") if the chokepoint has since cleared.
   if (isCohortView(v)) {
+    // F138: if the chokepoint is dead (no live cohort), recalling would land on
+    // nothing and just leave the stale chip behind. Self-clean: drop the dead
+    // bookmark (with the F134 leave-fade) and tell the user, instead of a bare
+    // no-op. A live cohort recalls as before.
+    if (buildCohort(currentTasks as DepStatsTask[], v.cohort!) === null) {
+      setStatus(`removed stale view "${v.name}" (nothing waits on #${v.cohort})`, false);
+      setTimeout(() => setStatus("ready", false), 2_500);
+      animateChipExitThenRemove(v.id, () => {
+        views = removeView(views, v.id);
+        if (recalledViewId === v.id) recalledViewId = null;
+        saveViews();
+        render();
+        refreshStats();
+      });
+      return;
+    }
     recalledViewId = id;
     setCohort(v.cohort!);
     setStatus(`view: ${v.name}`, false);

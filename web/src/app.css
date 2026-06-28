@@ -1568,6 +1568,23 @@ button.lens-legend-item:focus-visible {
 .view-chip.is-cohort-pin.is-active .view-chip-lens-glyph {
   opacity: 1;
 }
+/* F138: a STALE cohort bookmark — its chokepoint no longer has a live cohort, so
+   recalling it would land on nothing. Dim the whole chip + dot the glyph so the
+   dead bookmark reads as inert (you can still click it: recall self-cleans it).
+   Strikethrough the name to signal "this points at nothing anymore". */
+.view-chip.is-stale-cohort {
+  opacity: 0.55;
+}
+.view-chip.is-stale-cohort .view-chip-name {
+  text-decoration: line-through;
+  text-decoration-color: var(--color-text-faint, var(--color-text-dim));
+}
+.view-chip.is-stale-cohort .view-chip-lens-glyph {
+  color: var(--color-text-dim);
+}
+.view-chip.is-stale-cohort:hover {
+  opacity: 0.85;
+}
 
 /* F119: a one-shot flash on a freshly-pinned chip (F110/F115's one-click pin)
    so the user sees WHERE the pin landed in the Views row — the spatial

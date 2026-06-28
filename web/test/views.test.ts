@@ -19,6 +19,7 @@ import {
   isPureLensView,
   isCohortView,
   findCohortView,
+  isStaleCohortView,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -610,4 +611,54 @@ test("renderViewChips leaves cohort chips inactive when nothing is focused", () 
   const views = addCohortView([], "#1", 1);
   const html = renderViewChips(views, emptyF(), { activeCohort: null, cohortGlyph: "\u2191" });
   assert.doesNotMatch(html, /is-active/);
+});
+
+// --- F138: stale cohort chips ----------------------------------------------
+
+test("isStaleCohortView is true only when a cohort view's chokepoint has no live cohort", () => {
+  const live = addCohortView([], "#1", 1)[0];
+  // #1 has a live cohort -> not stale.
+  assert.equal(isStaleCohortView(live, (id) => id === 1), false);
+  // #1 has no live cohort (its waiters all completed / it's done) -> stale.
+  assert.equal(isStaleCohortView(live, () => false), true);
+});
+
+test("isStaleCohortView never flags a non-cohort view", () => {
+  // A plain filter view is never stale by the cohort measure, even if the
+  // predicate would say no live cohort exists.
+  const filterView: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  assert.equal(isStaleCohortView(filterView, () => false), false);
+  // A pure-lens view likewise.
+  const lensView: SavedView = { id: "l", name: "(blocked)", filter: emptyF(), lens: "blocked" };
+  assert.equal(isStaleCohortView(lensView, () => false), false);
+});
+
+test("renderViewChips marks a stale cohort chip with is-stale-cohort + a tooltip note", () => {
+  const views = addCohortView([], "#7", 7);
+  // The chokepoint #7 is dead (no live cohort) -> the chip reads as stale.
+  const html = renderViewChips(views, emptyF(), {
+    activeCohort: null,
+    cohortGlyph: "\u2191",
+    staleCohort: () => true,
+  });
+  assert.match(html, /class="view-chip is-cohort-pin is-stale-cohort"/);
+  assert.match(html, /stale, recall to clear/);
+});
+
+test("renderViewChips leaves a live cohort chip un-marked (no stale class)", () => {
+  const views = addCohortView([], "#7", 7);
+  const html = renderViewChips(views, emptyF(), {
+    activeCohort: null,
+    cohortGlyph: "\u2191",
+    staleCohort: () => false,
+  });
+  assert.doesNotMatch(html, /is-stale-cohort/);
+  assert.doesNotMatch(html, /stale, recall to clear/);
+});
+
+test("renderViewChips without a staleCohort resolver never marks anything stale", () => {
+  // Omitting the resolver keeps existing callers byte-identical (no stale marks).
+  const views = addCohortView([], "#7", 7);
+  const html = renderViewChips(views, emptyF(), { activeCohort: null, cohortGlyph: "\u2191" });
+  assert.doesNotMatch(html, /is-stale-cohort/);
 });
