@@ -176,6 +176,7 @@ import {
   recallBusiestViewCommand,
   peekBusiestViewCommand,
   undoStaleSweepCommand,
+  staleSweepLabel,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -3586,8 +3587,10 @@ function forgetStaleCohorts(): void {
     renderViewsRow();
     // F151: surface a single-shot undo toast AFTER the sweep lands, so the user
     // can put the forgotten bookmarks back if the sweep was a misfire.
+    // F161: the toast label shares staleSweepLabel with the F156 Cmd-K command so
+    // the two undo affordances read consistently ("forgot N stale views").
     showInfoToast(
-      `forgot ${n} stale view${n === 1 ? "" : "s"}`,
+      staleSweepLabel(n),
       6,
       { label: "Undo", run: () => undoForgetStaleCohorts(snapshot) },
     );

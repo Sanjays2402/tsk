@@ -25,6 +25,7 @@ import {
   recallBusiestViewCommand,
   peekBusiestViewCommand,
   undoStaleSweepCommand,
+  staleSweepLabel,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -794,6 +795,20 @@ test("undoStaleSweepCommand reads plainly and is disabled with nothing stashed",
 test("undoStaleSweepCommand is fuzzy-findable by 'undo' and 'restore'", () => {
   assert.equal(filterCommands([undoStaleSweepCommand(2)], "undo")[0].id, "cohort-undo-sweep");
   assert.equal(filterCommands([undoStaleSweepCommand(2)], "restore")[0].id, "cohort-undo-sweep");
+});
+
+// --- F161: shared stale-sweep label parity (toast + command) ---------------
+
+test("staleSweepLabel pluralizes the swept-view count", () => {
+  assert.equal(staleSweepLabel(3), "forgot 3 stale views");
+  assert.equal(staleSweepLabel(1), "forgot 1 stale view");
+  assert.equal(staleSweepLabel(0), "forgot 0 stale views");
+});
+
+test("staleSweepLabel's count matches the undo-sweep command's parenthetical N", () => {
+  // The toast (label) and the Cmd-K command (title) read the same N.
+  assert.equal(staleSweepLabel(5), "forgot 5 stale views");
+  assert.equal(undoStaleSweepCommand(5).title, "Undo last stale sweep (5)");
 });
 
 test("commandDisabledReason explains an empty undo-sweep command", () => {

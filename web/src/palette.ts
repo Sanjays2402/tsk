@@ -633,6 +633,18 @@ export function undoStaleSweepCommand(count: number): Command {
   };
 }
 
+/**
+ * F161: the single shared "forgot N stale view(s)" phrase both undo affordances
+ * read from. F151's toast and F156's Cmd-K command each describe the same swept
+ * snapshot; before this they singularized independently, so a refactor could
+ * drift them apart. Centralizing the count phrase here keeps the toast label and
+ * the command's parenthetical N consistent forever — "forgot 3 stale views ·
+ * Undo" reads the same wherever the sweep is recoverable. Pure → unit-tested.
+ */
+export function staleSweepLabel(count: number): string {
+  return `forgot ${count} stale view${count === 1 ? "" : "s"}`;
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
