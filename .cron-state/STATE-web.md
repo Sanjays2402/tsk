@@ -2897,32 +2897,78 @@ Standing unstarted: F48, F49, F50, F54, F157. Fresh follow-ons after the T29
 densest-button / hide-done-badge / busiest-summary / peek-busiest / undo-sweep
 cluster:
 
-- [ ] **F157** Peek-view count badge in the palette command TITLE: F146 shows the
+- [x] **F157** Peek-view count badge in the palette command TITLE: F146 shows the
       count in the preview slot on highlight; also render a quiet "·N" suffix on
       the "Peek view (<name>)" command title itself so you can scan all views'
-      counts in the list without highlighting each. Pure peekCommandTitle(name, count).
-- [ ] **F158** Hide-done badge keyboard reach: F152's actionable badge is mouse-
+      counts in the list without highlighting each. Pure peekCommandTitle(name, count). (tick T30 2026-06-28, e2a83fc)
+- [x] **F158** Hide-done badge keyboard reach: F152's actionable badge is mouse-
       only; add a per-view "Recall <name> (open only)" Cmd-K command so the
       recall+hideDone jump is keyboard-reachable too. Pure builder over
-      badgeHidesDone + the view name.
+      badgeHidesDone + the view name. (tick T30 2026-06-28, 580345c)
 - [ ] **F159** Busiest headline is clickable: F154 names the busiest in the summary
       readout as plain text; wrap "busiest: <name>" in a recall affordance
       (data-view-recall on the summary span) so the triage headline doubles as a
       one-click jump to the pile-up. Pure-render + reuse the existing recall click.
-- [ ] **F160** Peek-busiest also previews the cohort: F153 peeks a saved view's
+- [x] **F160** Peek-busiest also previews the cohort: F153 peeks a saved view's
       count+facets; when the busiest view is a COHORT bookmark, enrich the preview
       with the chokepoint's waiter count (reuse buildCohort) so "peek busiest"
-      reads the bottleneck depth, not just the match count. Pure peek text growth.
-- [ ] **F161** Stale-sweep undo toast + Cmd-K share a count badge: F156's command
+      reads the bottleneck depth, not just the match count. Pure peek text growth. (tick T30 2026-06-28, 56e45ae)
+- [x] **F161** Stale-sweep undo toast + Cmd-K share a count badge: F156's command
       title shows (N); surface that same N in the F151 toast label so the two undo
-      affordances read consistently ("forgot 3 · Undo" everywhere). Pure label.
+      affordances read consistently ("forgot 3 · Undo" everywhere). Pure label. (tick T30 2026-06-28, fe87fee)
 - [ ] **F162** Densest-jump button on the panel cohort line too: F155 put the ▲ on
       the breadcrumb trail; mirror it on the F127 single-line cohort readout when a
       denser ancestor exists, so the jump is reachable from both cohort surfaces.
-- [ ] **F163** Views-row summary "· stale: N" segment: when F138 marks stale cohort
+- [x] **F163** Views-row summary "· stale: N" segment: when F138 marks stale cohort
       chips, extend F148/F154's summary with a trailing "· N stale" so the sweep
-      need is legible at the row head (pairs with F144's sweep button). Pure-render.
+      need is legible at the row head (pairs with F144's sweep button). Pure-render. (tick T30 2026-06-28, 2772ca4)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, a per-row
 dep mini-sparkline, a saved-view import/export, keyboard reordering of the Views
 row, a per-tag saved-view group, a TUI-style density toggle for the chip row).
+
+## Web tick T30 — 2026-06-28 16:17 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `5b45065..d0e1b06`.
+Canonical workdir `/Volumes/Projects/tsk` mounted.
+
+### Features (one commit each + bundle rebuild)
+- F157 e2a83fc — peek-view command title carries the live count (peekCommandTitle
+  folds a quiet "·N" onto each "Peek view (<name>)" so the Views group reads as a
+  count column without highlighting each). +4 tests.
+- F158 580345c — keyboard-reachable "Recall <name> (open only)" Cmd-K command for
+  every view badgeHidesDone flags; recallOpenOnlyTitle + id recall-open:<id>
+  through the same recallViewHideDone path the F152 badge click uses. +2 tests.
+- F161 fe87fee — staleSweepLabel shares the "forgot N stale view(s)" phrase across
+  the F151 toast + F156 command so the two undo affordances stay consistent. +2.
+- F163 2772ca4 — appendStaleSegment tacks "· N stale" onto the Views-row summary
+  when dead cohorts exist (same currentStaleCohortIds set F138/F144 use); composes
+  after the busiest clause. +4 tests.
+- F160 56e45ae — peek-busiest enriches a COHORT busiest view with its buildCohort
+  waiter depth ("4 tasks · waiting on #7 · 4 waiting"); shared busiestPeekText
+  helper backs preview painter + runCommand. +3 tests.
+- d0e1b06 — web_dist bundle rebuild (41 modules, JS 44.34KB gz, CSS 11.21KB gz).
+
+### Gates
+- web check: 928 -> 943 tests (+15), 0 fail; tsc app + test clean; build green.
+- gofmt clean; go vet + build clean; go test ./... green (commands 65s, rest cached).
+- live tsk serve 127.0.0.1: GET / 200; served JS carried "Peek view (", "open
+  only)", "stale", "waiting", "forgot " hooks; POST toggle round-tripped to
+  .tsk.md ([x] + completed:, hand-editable format preserved). Fixture cleaned up.
+
+### Deferred / standing
+F159 (clickable busiest headline) + F162 (panel cohort densest-jump) carried — both
+distinct render slices, sized on their own. Standing long-carries: F48, F49, F50, F54.
+
+### T31 — depth (appended T30 so the loop never starves)
+Standing unstarted: F48, F49, F50, F54, F159, F162. Fresh follow-ons after T30:
+- [ ] **F159** Busiest headline clickable: wrap F154's "busiest: <name>" in a recall span.
+- [ ] **F162** Panel cohort densest-jump: mirror F155's ▲ on the F127 single-line readout.
+- [ ] **F164** Stale segment is clickable: F163's "· N stale" → trigger F144 sweep on click.
+- [ ] **F165** Peek-open-only command: F158's recall sibling that PREVIEWS the open-slice count.
+- [ ] **F166** Recall-open-only count in title: F158 + F157, fold the open-slice "·N" onto it.
+- [ ] **F167** Views-row summary live tooltip: hover the headline → busiest+stale breakdown.
+- [ ] **F168** Archive view (read-only completed log) — long-pending; a dedicated done pane.
+- [ ] **F169** Recurring-task UI badge: render an "↻ weekly" chip when a task carries recur meta.
+- [ ] **F170** Saved-view import/export (JSON) — copy your Views row between machines.
+
