@@ -1602,6 +1602,20 @@ button.lens-legend-item:focus-visible {
   opacity: 1;
 }
 
+/* F142: the busiest view — the chip matching the most live tasks (the densest
+   bucket among F141's badges). A subtle amber left-accent + a brighter count
+   badge so the eye jumps to where the work piled up, without shouting over the
+   active-chip highlight. Only ever one chip wears it (busiestViewId resolves a
+   tie to null), so it reads as a single "look here first" marker. */
+.view-chip.is-busiest {
+  box-shadow: inset 2px 0 0 0 var(--color-accent, #d98a16);
+}
+.view-chip.is-busiest .view-chip-count {
+  color: var(--color-accent, #d98a16);
+  opacity: 1;
+  font-weight: 600;
+}
+
 /* F119: a one-shot flash on a freshly-pinned chip (F110/F115's one-click pin)
    so the user sees WHERE the pin landed in the Views row — the spatial
    confirmation the status line can't give. main.ts sets the class for exactly

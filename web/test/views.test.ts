@@ -21,6 +21,9 @@ import {
   findCohortView,
   isStaleCohortView,
   countViewMatches,
+  countViewMatchesBreakdown,
+  describeViewMatchBreakdown,
+  busiestViewId,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -736,4 +739,109 @@ test("renderViewChips suppresses the badge for a null/undefined count or no reso
   assert.doesNotMatch(renderViewChips(views, emptyF(), { matchCount: () => null }), /view-chip-count/);
   // no resolver -> byte-identical to before (no badge).
   assert.doesNotMatch(renderViewChips(views, emptyF(), {}), /view-chip-count/);
+});
+
+// --- F145: open/done breakdown for the badge tooltip -----------------------
+
+test("countViewMatchesBreakdown splits a filter view's matches into open/done", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  // #1 (open) + #2 (open) carry #work; #3 is #home (not matched). -> 2 open, 0 done.
+  assert.deepEqual(
+    countViewMatchesBreakdown(v, COUNT_TASKS, counters(), (t) => t.done),
+    { open: 2, done: 0 },
+  );
+});
+
+test("countViewMatchesBreakdown counts done matches when the filter admits them", () => {
+  // A lens view that passes all high-priority tasks: #1 (open, #work) + #3
+  // (done, #home) -> with an empty filter the lens alone gates -> 1 open, 1 done.
+  const v: SavedView = { id: "l", name: "(hi)", filter: emptyF(), lens: "blocked" };
+  assert.deepEqual(
+    countViewMatchesBreakdown(v, COUNT_TASKS, counters(), (t) => t.done),
+    { open: 1, done: 1 },
+  );
+});
+
+test("countViewMatchesBreakdown reports a cohort as all-open by construction", () => {
+  const v = addCohortView([], "#5", 5)[0];
+  // A cohort's id-set is the undone dependents — open by construction, done=0.
+  assert.deepEqual(
+    countViewMatchesBreakdown(v, COUNT_TASKS, counters([7, 8, 9]), (t) => t.done),
+    { open: 3, done: 0 },
+  );
+});
+
+test("describeViewMatchBreakdown renders open-only, the split, and the empty case", () => {
+  assert.equal(describeViewMatchBreakdown({ open: 12, done: 0 }), "12 open");
+  assert.equal(describeViewMatchBreakdown({ open: 12, done: 3 }), "12 open \u00b7 3 done");
+  assert.equal(describeViewMatchBreakdown({ open: 0, done: 3 }), "0 open \u00b7 3 done");
+  assert.equal(describeViewMatchBreakdown({ open: 0, done: 0 }), "no matches");
+});
+
+test("renderViewChips uses the matchTitle breakdown for the badge tooltip", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  const html = renderViewChips(views, emptyF(), {
+    matchCount: () => 12,
+    matchTitle: () => "9 open \u00b7 3 done",
+  });
+  // The richer breakdown replaces the bare "·N matching tasks" in title + aria.
+  assert.match(html, /title="9 open \xb7 3 done"/);
+  assert.match(html, /aria-label="9 open \xb7 3 done"/);
+  // The number itself is still the badge text.
+  assert.match(html, /&middot;12</);
+});
+
+test("renderViewChips falls back to the plain count tooltip without matchTitle", () => {
+  const views = addView([], "work", { ...emptyF(), tags: ["work"] });
+  const html = renderViewChips(views, emptyF(), { matchCount: () => 5 });
+  assert.match(html, /5 matching tasks/);
+});
+
+// --- F142: busiest-view marker ---------------------------------------------
+
+test("busiestViewId picks the single densest view", () => {
+  const a: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  const b: SavedView = { id: "b", name: "b", filter: { ...emptyF(), tags: ["b"] } };
+  const c: SavedView = { id: "c", name: "c", filter: { ...emptyF(), tags: ["c"] } };
+  const counts: Record<string, number> = { a: 3, b: 9, c: 5 };
+  assert.equal(busiestViewId([a, b, c], (v) => counts[v.id]), "b");
+});
+
+test("busiestViewId returns null on a tie for the top", () => {
+  const a: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  const b: SavedView = { id: "b", name: "b", filter: { ...emptyF(), tags: ["b"] } };
+  const counts: Record<string, number> = { a: 7, b: 7 };
+  assert.equal(busiestViewId([a, b], (v) => counts[v.id]), null);
+});
+
+test("busiestViewId ignores zero/null counts and an empty list", () => {
+  const a: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  const b: SavedView = { id: "b", name: "b", filter: { ...emptyF(), tags: ["b"] } };
+  // All-zero / null -> nothing is "busy".
+  assert.equal(busiestViewId([a, b], () => 0), null);
+  assert.equal(busiestViewId([a, b], () => null), null);
+  assert.equal(busiestViewId([], () => 5), null);
+  // A single positive count beats a field of zeros.
+  assert.equal(busiestViewId([a, b], (v) => (v.id === "a" ? 0 : 4)), "b");
+});
+
+test("renderViewChips marks only the busiest chip with is-busiest", () => {
+  const views = [
+    ...addView([], "a", { ...emptyF(), tags: ["a"] }),
+  ];
+  const second = addView(views, "b", { ...emptyF(), tags: ["b"] });
+  const html = renderViewChips(second, emptyF(), { busiestId: second[1].id });
+  // Exactly one chip carries the class.
+  assert.equal((html.match(/is-busiest/g) ?? []).length, 1);
+  // It's the chip with the matching id.
+  assert.match(
+    html,
+    new RegExp(`view-chip[^"]*is-busiest"[^>]*data-view-id="${second[1].id}"`),
+  );
+});
+
+test("renderViewChips omits is-busiest when busiestId is null/absent", () => {
+  const views = addView([], "a", { ...emptyF(), tags: ["a"] });
+  assert.doesNotMatch(renderViewChips(views, emptyF(), { busiestId: null }), /is-busiest/);
+  assert.doesNotMatch(renderViewChips(views, emptyF(), {}), /is-busiest/);
 });

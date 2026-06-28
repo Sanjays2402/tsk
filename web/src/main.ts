@@ -236,6 +236,9 @@ import {
   findCohortView,
   isStaleCohortView,
   countViewMatches,
+  countViewMatchesBreakdown,
+  describeViewMatchBreakdown,
+  busiestViewId,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -246,6 +249,7 @@ import {
   STORAGE_KEY as VIEWS_KEY,
   type SavedView,
   type ViewFilter,
+  type ViewMatchCounters,
 } from "./views";
 
 const root = document.getElementById("root");
@@ -3399,6 +3403,42 @@ function saveViews(): void {
   }
 }
 
+/**
+ * F141/F142/F145: the live task pool the Views-row match badges count over — the
+ * not-deleted tasks, with the F15 tag route applied (so a badge on a tag page
+ * reflects that page, matching what a recall would show). Hoisted out of
+ * renderViewsRow so the count badge (F141), the open/done tooltip (F145), and
+ * the busiest-chip marker (F142) all read the IDENTICAL pool and can't drift.
+ */
+function viewMatchPool(): Task[] {
+  const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
+  const r = route;
+  return r.kind === "tag" ? notDeleted.filter((t) => t.tags.includes(r.tag)) : notDeleted;
+}
+
+/**
+ * F141/F142/F145: the per-view-kind match predicates the Views-row badges count
+ * with — backed by the real matchesFilter / matchesLens / buildCohort over the
+ * live graph, so a badge can never show a different number than a recall of that
+ * view would. Shared by countViewMatches (F141 count), countViewMatchesBreakdown
+ * (F145 open/done split), and busiestViewId (F142 densest marker).
+ */
+function viewMatchCounters(): ViewMatchCounters<Task> {
+  const now = new Date();
+  const done = doneIndex(currentTasks.filter((t) => !pendingDeletes.has(t.id)));
+  return {
+    matchesFilter: (task, vf) => matchesFilter(task, vf),
+    matchesLens: (task, lensKind) => {
+      const k = parseLens(lensKind);
+      return k ? matchesLens(task as LensBreakdownTask, k, now, done) : true;
+    },
+    cohortIds: (sourceId) => {
+      const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
+      return c ? c.ids : [];
+    },
+  };
+}
+
 /** Repaint the saved-views chip row + the enabled state of "save view". */
 function renderViewsRow(): void {
   const f = currentViewFilter();
@@ -3450,25 +3490,23 @@ function renderViewsRow(): void {
     // live pool the board narrows from (not-deleted, the F15 tag route applied),
     // with the three predicates backed by the real matchesFilter / matchesLens /
     // buildCohort — so a badge can't drift from what a recall would actually show.
-    matchCount: (v) => {
-      const now = new Date();
-      const notDeleted = currentTasks.filter((t) => !pendingDeletes.has(t.id));
-      const r = route;
-      const pool =
-        r.kind === "tag" ? notDeleted.filter((t) => t.tags.includes(r.tag)) : notDeleted;
-      const done = doneIndex(notDeleted);
-      return countViewMatches(v, pool, {
-        matchesFilter: (task, vf) => matchesFilter(task, vf),
-        matchesLens: (task, lensKind) => {
-          const k = parseLens(lensKind);
-          return k ? matchesLens(task as LensBreakdownTask, k, now, done) : true;
-        },
-        cohortIds: (sourceId) => {
-          const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
-          return c ? c.ids : [];
-        },
-      });
-    },
+    // F142/F145: viewMatchPool + viewMatchCounters are hoisted so the count
+    // badge, the open/done tooltip (F145), and the busiest-chip marker (F142) all
+    // read the SAME live pool + predicates — none can disagree with another.
+    matchCount: (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters()),
+    // F145: the badge's tooltip reads the open/done split of that same matched
+    // set ("12 open · 3 done"), so a hide-done view shows "N open" (done filtered
+    // out) and a show-all view shows the split — making hideDone visible. Backed
+    // by countViewMatchesBreakdown over the identical pool the count uses.
+    matchTitle: (v) =>
+      describeViewMatchBreakdown(
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
+      ),
+    // F142: mark the single busiest chip (the densest live bucket) so the eye
+    // jumps to where the work piled up. busiestViewId reuses the SAME count
+    // resolver the badge renders from, and returns null on a tie / empty board so
+    // at most one unambiguous winner is ever marked.
+    busiestId: busiestViewId(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
   });
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial

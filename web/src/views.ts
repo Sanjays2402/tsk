@@ -449,6 +449,99 @@ export function countViewMatches<T>(
 }
 
 /**
+ * F145: the open/done split of a view's live match-count — the breakdown behind
+ * F141's badge tooltip ("12 open · 3 done"). F141's badge shows ONE number
+ * (countViewMatches), but a hide-done view and a show-all view read very
+ * differently at the same total, and the badge alone can't say why. This splits
+ * the SAME matched set into open vs done so the tooltip can explain the number.
+ *
+ * The split honours the view's own filter exactly as countViewMatches does, so a
+ * hide-done view (its filter excludes completed tasks) naturally reports done=0 —
+ * making "the badge respects hideDone" visible rather than implied. A show-all
+ * view reports both halves. A cohort view's matches are its live id-set, which
+ * is by construction the UNDONE dependents of a chokepoint (buildCohort →
+ * openDependents), so a cohort is always {open: N, done: 0} without needing the
+ * tasks back. `isDone` is injected (the done-state lives on the caller's concrete
+ * task), mirroring the ViewMatchCounters injection so views.ts stays decoupled.
+ * Pure → unit-tested; main.ts supplies isDone backed by the real task.done flag
+ * over the same live pool countViewMatches reads, so the breakdown can't drift
+ * from the badge number (open + done === the badge for a show-all view).
+ */
+export interface ViewMatchBreakdown {
+  open: number;
+  done: number;
+}
+
+export function countViewMatchesBreakdown<T>(
+  view: SavedView,
+  tasks: readonly T[],
+  counters: ViewMatchCounters<T>,
+  isDone: (task: T) => boolean,
+): ViewMatchBreakdown {
+  // A cohort's matches are its undone dependents — all open by construction.
+  if (isCohortView(view)) return { open: counters.cohortIds(view.cohort!).length, done: 0 };
+  const lens = view.lens ?? null;
+  let open = 0;
+  let done = 0;
+  for (const task of tasks) {
+    if (!counters.matchesFilter(task, view.filter)) continue;
+    if (lens !== null && !counters.matchesLens(task, lens)) continue;
+    if (isDone(task)) done++;
+    else open++;
+  }
+  return { open, done };
+}
+
+/**
+ * F145: render the human breakdown text for a view's match badge tooltip —
+ * "12 open · 3 done", or just "12 open" when nothing's done (e.g. a hide-done
+ * view, where done is filtered out by construction). An all-done view reads
+ * "0 open · 3 done" so a fully-completed bucket is still legible. A view that
+ * matches nothing returns "no matches" so the tooltip never reads a bare "0".
+ * Kept pure + tiny so the badge tooltip can't drift from countViewMatchesBreakdown.
+ */
+export function describeViewMatchBreakdown(b: ViewMatchBreakdown): string {
+  if (b.open === 0 && b.done === 0) return "no matches";
+  if (b.done === 0) return `${b.open} open`;
+  return `${b.open} open \u00b7 ${b.done} done`;
+}
+
+/**
+ * F142: the id of the BUSIEST saved view — the one matching the most live tasks
+ * (the densest bucket in F141's per-chip badges), so the Views row can mark it
+ * and the user's eye jumps straight to where the work piled up. Reuses the SAME
+ * match-count resolver F141's badge renders from (countViewMatches over the live
+ * board) so the marked chip can't disagree with its own badge number.
+ *
+ * Returns the unique densest view's id, or null when there's no clear winner: an
+ * empty list, every view matching nothing (max count 0 — nothing's "busy"), OR a
+ * TIE for the top (two views both densest is ambiguous — better to mark neither
+ * than mislead by picking one arbitrarily). A null/undefined count from the
+ * resolver (a view whose count isn't meaningful) is treated as not-busy. Pure →
+ * unit-tested; main.ts passes the resolver + sets a `busiestId` render opt.
+ */
+export function busiestViewId(
+  views: SavedView[],
+  count: (view: SavedView) => number | null | undefined,
+): string | null {
+  let bestId: string | null = null;
+  let bestCount = 0;
+  let tied = false;
+  for (const v of views) {
+    const c = count(v);
+    if (typeof c !== "number" || c <= 0) continue;
+    if (c > bestCount) {
+      bestCount = c;
+      bestId = v.id;
+      tied = false;
+    } else if (c === bestCount) {
+      tied = true;
+    }
+  }
+  return tied ? null : bestId;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed
@@ -603,6 +696,27 @@ export interface ViewChipOpts {
    * filter / lens / cohort predicates.
    */
   matchCount?: (view: SavedView) => number | null | undefined;
+  /**
+   * F145: a resolver giving the open/done breakdown TEXT for a view's count
+   * badge tooltip ("12 open · 3 done"). When supplied alongside matchCount, the
+   * badge's title/aria reads the richer breakdown instead of the bare "·N
+   * matching tasks", so a hide-done view (done filtered out) reads "12 open" and
+   * a show-all view reads the split — making the badge respect hideDone visible.
+   * Returns null/undefined (or omitted) to keep the F141 plain count tooltip, so
+   * existing callers stay byte-identical. main.ts backs it with
+   * describeViewMatchBreakdown(countViewMatchesBreakdown(...)).
+   */
+  matchTitle?: (view: SavedView) => string | null | undefined;
+  /**
+   * F142: the id of the single BUSIEST view — the chip matching the most live
+   * tasks (busiestViewId over the same match-count resolver F141's badge reads).
+   * When supplied and a chip's id equals it, that chip gets an `is-busiest`
+   * class so the densest bucket pops at a glance — the Views row's at-a-glance
+   * triage marker. Omitting it (or null) marks nothing, keeping existing callers
+   * byte-identical. A tie or an all-empty board resolves to null (no winner), so
+   * the marker only appears when there's an unambiguous busiest view.
+   */
+  busiestId?: string | null;
 }
 
 export function renderViewChips(
@@ -661,12 +775,26 @@ export function renderViewChips(
       // F141: a quiet "·N" match-count badge so the Views row reads as a triage
       // dashboard. Opt-in via the matchCount resolver; a null/undefined count (or
       // no resolver) renders nothing, keeping omitting-callers byte-identical.
+      // F145: when a matchTitle resolver is supplied, the badge's title/aria
+      // reads the richer open/done breakdown ("12 open · 3 done") instead of the
+      // bare "·N matching tasks", so the badge respects hideDone visibly. A
+      // null/undefined breakdown (or no resolver) falls back to the F141 text.
       const count = opts.matchCount ? opts.matchCount(v) : undefined;
+      const breakdown = opts.matchTitle ? opts.matchTitle(v) : undefined;
+      const badgeTitle =
+        typeof breakdown === "string" && breakdown !== ""
+          ? breakdown
+          : `${count} matching ${count === 1 ? "task" : "tasks"}`;
       const badge =
         typeof count === "number"
-          ? `<span class="view-chip-count" aria-label="${count} matching ${count === 1 ? "task" : "tasks"}" title="${count} matching ${count === 1 ? "task" : "tasks"}">&middot;${count}</span>`
+          ? `<span class="view-chip-count" aria-label="${escapeHTML(badgeTitle)}" title="${escapeHTML(badgeTitle)}">&middot;${count}</span>`
           : "";
-      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      // F142: mark the single busiest chip (the densest live bucket) so the eye
+      // jumps to where the work piled up. Only the unambiguous winner gets it
+      // (busiestViewId resolves a tie / empty board to null), so at most one chip
+      // wears is-busiest; omitting busiestId marks nothing.
+      const busiest = opts.busiestId && opts.busiestId === v.id ? " is-busiest" : "";
+      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }
