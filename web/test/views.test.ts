@@ -31,6 +31,7 @@ import {
   describeViewsRowSummary,
   peekViewLabel,
   peekCommandTitle,
+  recallOpenOnlyTitle,
   badgeHidesDone,
   addCohortView,
   chipClippedX,
@@ -938,6 +939,17 @@ test("badgeHidesDone is false for a cohort bookmark (no hideDone facet)", () => 
   const v = addCohortView([], "waiting on #5", 5)[0];
   // Even with done tasks in its cohort, a cohort view has no filter to flip.
   assert.equal(badgeHidesDone(v, { open: 4, done: 2 }), false);
+});
+
+// --- F158: recall-open-only command title ----------------------------------
+
+test("recallOpenOnlyTitle names the view as the open-only recall", () => {
+  assert.equal(recallOpenOnlyTitle("work"), "Recall work (open only)");
+});
+
+test("recallOpenOnlyTitle preserves the name verbatim (unicode/parens)", () => {
+  assert.equal(recallOpenOnlyTitle("(overdue)"), "Recall (overdue) (open only)");
+  assert.equal(recallOpenOnlyTitle("#bug \u2192 fix"), "Recall #bug \u2192 fix (open only)");
 });
 
 test("renderViewChips emits an actionable button badge only when hideDoneBadge is true", () => {

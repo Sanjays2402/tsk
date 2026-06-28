@@ -254,6 +254,7 @@ import {
   peekViewLabel,
   peekCommandTitle,
   badgeHidesDone,
+  recallOpenOnlyTitle,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -5517,6 +5518,25 @@ function buildCommands(): Command[] {
     group: "Views",
     keywords: ["peek", "preview", "look", "inspect", "compare", "saved", "view", ...v.filter.tags],
   }));
+  // F158: a "Recall <name> (open only)" command per view whose badge would be
+  // actionable (F152: non-cohort, show-all, with live done tasks to hide), so
+  // the recall+hideDone jump the badge offers on click is also reachable
+  // keyboard-only. Built ONLY for those views (badgeHidesDone over the same
+  // open/done breakdown the badge reads), so the command set never advertises
+  // a hide-done jump where there's nothing to hide. id "recall-open:<id>".
+  const recallOpenCommands: Command[] = views
+    .filter((v) =>
+      badgeHidesDone(
+        v,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
+      ),
+    )
+    .map((v) => ({
+      id: `recall-open:${v.id}`,
+      title: recallOpenOnlyTitle(v.name),
+      group: "Views",
+      keywords: ["recall", "open", "hide", "done", "view", "filter", ...v.filter.tags],
+    }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -5703,6 +5723,9 @@ function buildCommands(): Command[] {
     // F146: the per-view "Peek view (<name>)" commands sit after the recall
     // group so they're discoverable but don't crowd the recall list head.
     ...peekCommands,
+    // F158: per-view "Recall <name> (open only)" — only for views whose badge
+    // is actionable, so the keyboard reaches F152's recall+hideDone jump.
+    ...recallOpenCommands,
   ];
 }
 
@@ -5866,6 +5889,12 @@ function runCommand(id: string): void {
       setStatus(`peek ${v.name}: ${peekViewLabel(v, count)}`, false);
       setTimeout(() => setStatus("ready", false), 3_000);
     }
+  }
+  // F158: "Recall <name> (open only)" recalls a show-all view AND hides its done
+  // slice in one jump — the keyboard sibling of F152's actionable badge click.
+  // Same recallViewHideDone path the badge uses, so they can't diverge.
+  if (id.startsWith("recall-open:")) {
+    recallViewHideDone(id.slice("recall-open:".length));
   }
   // F149: recall the busiest (densest) saved view — the F142 triage winner —
   // keyboard-only. Reads the live busiest id at dispatch time (the board may have

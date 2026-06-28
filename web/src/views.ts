@@ -922,6 +922,20 @@ export function badgeHidesDone(view: SavedView, breakdown: ViewMatchBreakdown): 
   return breakdown.done > 0; // only actionable when there ARE done tasks to hide
 }
 
+/**
+ * F158: the title for a per-view "Recall <name> (open only)" command — the
+ * keyboard-reachable sibling of F152's actionable count badge. F152 lets the
+ * mouse click a "·N" badge to recall a show-all view AND hide its done slice in
+ * one go; this gives that same recall+hideDone jump a Cmd-K entry so the
+ * keyboard reaches it too. Built only for views badgeHidesDone flags (non-cohort,
+ * show-all, with live done tasks to hide), so the command appears exactly where
+ * the badge would be actionable. Pure → unit-tested; main.ts maps the command id
+ * "recall-open:<id>" through the same recallViewHideDone path the badge click uses.
+ */
+export function recallOpenOnlyTitle(name: string): string {
+  return `Recall ${name} (open only)`;
+}
+
 export function renderViewChips(
   views: SavedView[],
   filter: ViewFilter,
