@@ -16,6 +16,7 @@ import {
   pushCohortHistory,
   popCohortHistory,
   cohortTrailKeyTarget,
+  formatCohortTrailText,
   type CohortFocus,
 } from "../src/cohort.ts";
 import type { DepStatsTask } from "../src/deps.ts";
@@ -545,4 +546,43 @@ test("cohortTrailKeyTarget returns -1 for an empty history (nothing to step)", (
   assert.equal(cohortTrailKeyTarget(0, "step"), -1);
   assert.equal(cohortTrailKeyTarget(0, "root"), -1);
   assert.equal(cohortTrailKeyTarget(-1, "step"), -1);
+});
+
+// --- F140: copy the cohort drill chain as text -----------------------------
+
+test("formatCohortTrailText renders the whole chain ancestors-first then current", () => {
+  const focus: CohortFocus = { sourceId: 9, ids: [10] };
+  // History oldest-first [1, 4] + the current #9 -> "#1 › #4 › #9".
+  assert.equal(formatCohortTrailText(focus, [1, 4]), "#1 \u203a #4 \u203a #9");
+});
+
+test("formatCohortTrailText is empty without a focus or without history", () => {
+  assert.equal(formatCohortTrailText(null, [1, 2]), "");
+  assert.equal(formatCohortTrailText({ sourceId: 3, ids: [4] }, []), "");
+  // Matches renderCohortTrail's empty conditions so the two appear/vanish together.
+  assert.equal(renderCohortTrail(null, [1, 2]), formatCohortTrailText(null, [1, 2]));
+});
+
+test("formatCohortTrailText reuses the trail separator glyph so they read alike", () => {
+  const focus: CohortFocus = { sourceId: 2, ids: [3] };
+  const text = formatCohortTrailText(focus, [1]);
+  assert.equal(text, "#1 \u203a #2");
+  // The on-screen trail names the same ids in the same order (the copy is faithful).
+  const html = renderCohortTrail(focus, [1]);
+  assert.ok(html.indexOf("#1") < html.indexOf(">#2<"));
+});
+
+test("renderCohortTrail appends a copy-chain button carrying the data-cohort-copy hook", () => {
+  const html = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4]);
+  // A real button with the shared copy hook, sitting AFTER the current segment.
+  assert.match(html, /<button[^>]*class="cohort-trail-copy"[^>]*data-cohort-copy/);
+  assert.ok(html.indexOf("cohort-trail-current") < html.indexOf("data-cohort-copy"));
+  // Its title carries the full chain so a hover previews what'll be copied.
+  assert.match(html, /Copy the drill chain \(#1 \u203a #4 \u203a #9\)/);
+});
+
+test("renderCohortTrail emits no copy button when there's no trail to copy", () => {
+  // No history -> no trail and therefore no copy affordance.
+  assert.equal(renderCohortTrail({ sourceId: 3, ids: [4] }, []), "");
+  assert.equal(renderCohortTrail(null, [1]), "");
 });

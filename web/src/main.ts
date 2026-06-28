@@ -91,6 +91,7 @@ import {
   pushCohortHistory,
   popCohortHistory,
   cohortTrailKeyTarget,
+  formatCohortTrailText,
   type CohortFocus,
 } from "./cohort";
 import { keyToPopNavAction, nextPopNavIndex } from "./popnav";
@@ -3219,6 +3220,38 @@ function cohortJumpTo(index: number): void {
 }
 
 /**
+ * F140: copy the cohort drill chain ("#A › #B › #current") to the clipboard —
+ * the action behind the breadcrumb trail's "copy chain" button. The text is the
+ * SAME string formatCohortTrailText feeds the trail + the button title, so the
+ * copied chain reads exactly like the on-screen breadcrumb. A no-op (nothing to
+ * copy) when there's no focused cohort with history. navigator.clipboard is
+ * guarded for the test / no-API / insecure-context env: when it's unavailable
+ * (or the write rejects) we degrade to a status hint that still shows the chain,
+ * mirroring the F-style guarded clipboard fallback used elsewhere — the user
+ * always at least SEES the chain even if the copy itself couldn't fire.
+ */
+function copyCohortChain(): void {
+  const chain = formatCohortTrailText(focusCohort, cohortHistory);
+  if (chain === "") return;
+  const hint = (): void => {
+    setStatus(`chain: ${chain}`, false);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.writeText === "function") {
+    clip.writeText(chain).then(
+      () => {
+        setStatus(`copied chain ${chain}`, false);
+        setTimeout(() => setStatus("ready", false), 2_000);
+      },
+      () => hint(), // write rejected (permissions / insecure context) — show it
+    );
+  } else {
+    hint(); // no clipboard API (test env / old browser) — show the chain
+  }
+}
+
+/**
  * F133: pin (or unpin) the focused cohort's chokepoint as a saved "cohort view"
  * — a re-derivable bookmark of "the tasks waiting on #N". The panel star drives
  * this: when the chokepoint isn't pinned yet, save a cohort view named
@@ -3841,6 +3874,15 @@ els.settingsToggle.addEventListener("click", () => toggleSettings(!settingsOpen)
 // Clicking a top-tag row drives the F11 tag filter (and opens the filter view).
 els.statsPanel.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F140: the breadcrumb-trail "copy chain" button lifts the whole drill path
+  // ("#A › #B › #current") to the clipboard so it can be pasted into a standup
+  // note. Checked FIRST so a copy click never falls through to a jump. Routes
+  // through copyCohortChain, which guards navigator.clipboard for the test /
+  // no-API env (degrading to a status hint).
+  if (target?.closest("[data-cohort-copy]")) {
+    copyCohortChain();
+    return;
+  }
   // F132: a breadcrumb-trail segment jumps STRAIGHT to that ancestor cohort
   // (multi-step), not just one level back. Checked FIRST so a trail click never
   // falls through to the single-step back / clear / walk affordances below.

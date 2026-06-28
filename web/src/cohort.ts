@@ -377,6 +377,25 @@ export function cohortTrailKeyTarget(historyLength: number, dir: "step" | "root"
 }
 
 /**
+ * F140: format the cohort drill path as plain copyable text — "#A › #B ›
+ * #current" — for the F132 trail's "copy chain" affordance. The trail buttons
+ * let you JUMP through the ancestry; this lets you lift the whole bottleneck
+ * walk out as text to paste into a standup note or an issue ("blocked chain:
+ * #1 › #4 › #9"). Mirrors renderCohortTrail's segment order (ancestors
+ * oldest-first via `history`, then the current focus as the terminal segment)
+ * and reuses the same › separator glyph the trail renders, so the copied text
+ * reads exactly like the on-screen breadcrumb. Returns "" when there's no focus
+ * OR no history (a depth-0 cohort has no chain to copy — the single current
+ * cohort isn't a path), matching renderCohortTrail's empty conditions so the
+ * copy button and the trail appear/vanish together. Pure → unit-tested.
+ */
+export function formatCohortTrailText(focus: CohortFocus | null, history: readonly number[]): string {
+  if (focus === null || history.length === 0) return "";
+  const ids = [...history, focus.sourceId];
+  return ids.map((id) => `#${id}`).join(" \u203a "); // › with surrounding spaces
+}
+
+/**
  * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
  * panel — the multi-step sibling of F127's single back-step button. F108/F113
  * track a per-session cohort history but the chip / F127 panel button only ever
@@ -396,6 +415,14 @@ export function cohortTrailKeyTarget(historyLength: number, dir: "step" | "root"
  * to show — the F126 line already names the single current cohort), so the trail
  * only appears once you've actually drilled. Pure → unit-tested; the ids need no
  * escaping (they're numbers) but the helper stays consistent with the module.
+ *
+ * F140: a trailing "copy chain" button (data-cohort-copy) lifts the whole drill
+ * path out as text ("#A › #B › #current") to the clipboard — useful for pasting
+ * a bottleneck walk into a standup note. main.ts wires navigator.clipboard with
+ * a guarded fallback (test env / no clipboard API → a status hint). The button
+ * is the terminal segment after the current cohort, a disjoint sibling so its
+ * click never overlaps a jump segment. Present whenever the trail renders (i.e.
+ * whenever there's history), so it appears/vanishes with the trail itself.
  */
 export function renderCohortTrail(focus: CohortFocus | null, history: readonly number[]): string {
   if (focus === null || history.length === 0) return "";
@@ -405,5 +432,11 @@ export function renderCohortTrail(focus: CohortFocus | null, history: readonly n
     return `<button type="button" class="cohort-trail-step" data-cohort-jump="${i}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}">#${id}</button>`;
   });
   const current = `<span class="cohort-trail-current" aria-current="step" title="Current cohort">#${focus.sourceId}</span>`;
-  return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}</div>`;
+  // F140: a copy-chain affordance after the current segment. Its hook carries
+  // the full path text so the click handler doesn't re-derive it (single source
+  // of truth = formatCohortTrailText, the same string this trail reads).
+  const chainText = formatCohortTrailText(focus, history);
+  const copyTitle = `Copy the drill chain (${chainText})`;
+  const copy = `<button type="button" class="cohort-trail-copy" data-cohort-copy title="${escapeHTML(copyTitle)}" aria-label="${escapeHTML(copyTitle)}">&#10697;</button>`;
+  return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}${copy}</div>`;
 }

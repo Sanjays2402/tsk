@@ -2733,6 +2733,31 @@ button.stat-metric:focus-visible .lens-key {
   color: var(--color-text);
   font-weight: 600;
 }
+/* F140: the trail's "copy chain" button — lifts the whole drill path out as
+   text. Sits after the current segment; styled like a trail step but with a
+   little left margin so it reads as a separate affordance, not another hop. */
+.cohort-trail-copy {
+  margin-left: var(--sp-1, 4px);
+  padding: 1px var(--sp-1, 4px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface, transparent);
+  color: var(--color-text-dim);
+  font: inherit;
+  font-size: var(--fs-xs, 11px);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.cohort-trail-copy:hover {
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+.cohort-trail-copy:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
 /* F127/F128: the active-cohort line is a flex row of disjoint buttons — an
    optional leading ‹ back step (when the cohort has history), the clear
    readout (flex-grows to fill), and a trailing "walk" into the dependent
