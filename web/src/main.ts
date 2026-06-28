@@ -3184,13 +3184,17 @@ function togglePinCohort(): void {
   const existing = findCohortView(views, sourceId);
   if (existing) {
     // Already pinned — unpin it (drop the bookmark; the cohort stays focused).
-    views = removeView(views, existing.id);
-    if (recalledViewId === existing.id) recalledViewId = null;
-    saveViews();
-    render();
-    refreshStats(); // re-render the panel star as ☆ (now unpinned)
+    // F134: fade the leaving chip out (shared with the lens unpin + chip × delete)
+    // so the removal gets the same spatial confirmation; synchronous in tests.
     setStatus(`unpinned cohort "${existing.name}"`, false);
     setTimeout(() => setStatus("ready", false), 2_000);
+    animateChipExitThenRemove(existing.id, () => {
+      views = removeView(views, existing.id);
+      if (recalledViewId === existing.id) recalledViewId = null;
+      saveViews();
+      render();
+      refreshStats(); // re-render the panel star as ☆ (now unpinned)
+    });
     return;
   }
   const name = `waiting on #${sourceId}`;
@@ -3386,6 +3390,31 @@ function saveCurrentView(): void {
 }
 
 /**
+ * F134: fade a chip out before removing its saved view — the shared exit helper
+ * the lens unpin (F129), the cohort unpin (F133), and the chip × delete all run
+ * through, so EVERY chip removal gets the same spatial "this one left"
+ * confirmation, not just lens unpins. Finds the chip by view id, marks it
+ * `is-leaving` for a brief CSS exit, and DEFERS `done` (the actual removeView +
+ * persist + repaint) until the animation has played. canAnimateChipExit gates
+ * the animation on a real chip with a working classList, so the jsdom-less/test
+ * env — or a chip not currently in the Views row — falls straight through to a
+ * synchronous `done()`, keeping behaviour there unchanged. Callers fire their
+ * status line BEFORE calling this so the feedback isn't delayed by the fade.
+ */
+function animateChipExitThenRemove(viewId: string, done: () => void): void {
+  const chip =
+    typeof els.viewsChips.querySelector === "function"
+      ? els.viewsChips.querySelector<HTMLElement>(`[data-view-id="${viewId}"]`)
+      : null;
+  if (canAnimateChipExit(chip)) {
+    chip!.classList.add("is-leaving");
+    window.setTimeout(done, UNPIN_EXIT_MS);
+  } else {
+    done();
+  }
+}
+
+/**
  * F110: one-click "pin this lens" — save the active render-pipeline lens as a
  * pure-lens view (empty filter + the lens), named after the lens, with NO
  * prompt. The common case (a frequently-used lens you want as a recallable chip)
@@ -3433,32 +3462,20 @@ function unpinCurrentLens(): void {
   if (activeLens === null) return;
   const existing = findPureLensView(views, activeLens);
   if (!existing) return; // not pinned — nothing to unpin
-  // F129: the inverse of F119's pin-flash — before dropping the view, fade the
-  // leaving chip out so the user sees WHICH chip left (an unpin is otherwise a
-  // silent vanish + a status line). Find the chip, mark it `is-unpinning` for a
-  // brief CSS exit, and DEFER the removeView until the animation has played.
-  // canAnimateChipExit gates this on a real chip with a working classList, so the
-  // jsdom-less/test env (or a chip not in the row) falls straight through to the
-  // synchronous removal — behaviour there is unchanged. The status line still
-  // fires immediately so the keyboard/command feedback isn't delayed.
-  const chip =
-    typeof els.viewsChips.querySelector === "function"
-      ? els.viewsChips.querySelector<HTMLElement>(`[data-view-id="${existing.id}"]`)
-      : null;
-  const finish = (): void => {
+  // F129/F134: the inverse of F119's pin-flash — fade the leaving chip out so the
+  // user sees WHICH chip left (an unpin is otherwise a silent vanish + a status
+  // line). animateChipExitThenRemove (shared with the cohort unpin + the chip ×
+  // delete) marks the chip `is-leaving`, then defers removeView until the exit
+  // has played; in the test/jsdom-less env it removes synchronously. The status
+  // line fires immediately so the keyboard/command feedback isn't delayed.
+  setStatus(`unpinned lens "${existing.name}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+  animateChipExitThenRemove(existing.id, () => {
     views = removeView(views, existing.id);
     saveViews();
     render();
     refreshStats();
-  };
-  setStatus(`unpinned lens "${existing.name}"`, false);
-  setTimeout(() => setStatus("ready", false), 2_000);
-  if (canAnimateChipExit(chip)) {
-    chip!.classList.add("is-unpinning");
-    window.setTimeout(finish, UNPIN_EXIT_MS);
-  } else {
-    finish();
-  }
+  });
 }
 
 /**
@@ -3546,10 +3563,17 @@ function reorderViews(movedId: string, beforeId: string | null): void {
 
 /** Forget a saved view by id. */
 function deleteView(id: string): void {
-  views = removeView(views, id);
-  if (recalledViewId === id) recalledViewId = null;
-  saveViews();
-  render();
+  // F134: fade the leaving chip out before removing it, so deleting a saved view
+  // via its × gets the SAME spatial "this one left" confirmation as a lens /
+  // cohort unpin — not an instant vanish. animateChipExitThenRemove marks the
+  // chip `is-leaving` and defers the removeView; in the test/jsdom-less env it
+  // removes synchronously, so behaviour there is unchanged.
+  animateChipExitThenRemove(id, () => {
+    views = removeView(views, id);
+    if (recalledViewId === id) recalledViewId = null;
+    saveViews();
+    render();
+  });
 }
 
 // Free-text search box: debounced not needed at this scale, filter on input.

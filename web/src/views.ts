@@ -406,13 +406,15 @@ export function chipClippedX(chip: RectLike, container: RectLike, epsilon = 1): 
 }
 
 /**
- * F129: the one-shot exit-animation duration (ms) for a chip being UNPINNED
- * (F125's lens unpin). F125 removes the pure-lens view instantly — the chip just
- * vanishes with no spatial feedback. This is the inverse of F119's pin-flash: a
- * brief fade-out so the user sees WHICH chip left before it's removed. Exported
- * as the single source of truth so main.ts's deferred-removeView timer and the
- * CSS `.is-unpinning` animation can't drift. Kept here (not main.ts) so it's
- * importable into tests without a DOM.
+ * F129/F134: the one-shot exit-animation duration (ms) for a chip LEAVING the
+ * Views row. F129 introduced it for the lens unpin (which removed the chip
+ * instantly, no spatial feedback); F134 made it the duration for EVERY chip
+ * removal (chip × delete, lens unpin, cohort unpin) routed through the shared
+ * `animateChipExitThenRemove` helper. The inverse of F119's pin-flash: a brief
+ * fade-out so the user sees WHICH chip left before it's removed. Exported as the
+ * single source of truth so main.ts's deferred-removeView timer and the CSS
+ * `.is-leaving` animation can't drift. Kept here (not main.ts) so it's importable
+ * into tests without a DOM.
  */
 export const UNPIN_EXIT_MS = 240;
 

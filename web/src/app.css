@@ -1598,12 +1598,17 @@ button.lens-legend-item:focus-visible {
     box-shadow: 0 0 0 2px var(--color-accent);
   }
 }
-/* F129: a one-shot fade-out on a chip being UNPINNED (F125's lens unpin) — the
-   inverse of the F119 pin-flash. main.ts marks the leaving chip `is-unpinning`
-   and defers removeView by UNPIN_EXIT_MS so the user sees WHICH chip left before
-   it vanishes. A quick shrink + fade; reduced-motion collapses to an instant
-   opacity drop so the chip still visibly leaves without movement. The duration
-   here MUST match views.ts UNPIN_EXIT_MS (240ms). */
+/* F129/F134: a one-shot fade-out on a chip LEAVING the Views row — the inverse
+   of the F119 pin-flash. main.ts marks the leaving chip `is-leaving` and defers
+   removeView by UNPIN_EXIT_MS so the user sees WHICH chip left before it
+   vanishes. F129 introduced this for lens unpin (`is-unpinning`); F134 renames
+   it to the neutral `is-leaving` and routes EVERY chip removal (the chip × delete,
+   the lens unpin, the cohort unpin) through it, so any chip removal gets the same
+   spatial "this one left" confirmation — not just lens unpins. The old
+   `is-unpinning` class is kept as an alias so nothing breaks. A quick shrink +
+   fade; reduced-motion collapses to an instant opacity drop so the chip still
+   visibly leaves without movement. The duration MUST match views.ts
+   UNPIN_EXIT_MS (240ms). */
 @keyframes view-chip-unpin {
   0% {
     opacity: 1;
@@ -1614,11 +1619,13 @@ button.lens-legend-item:focus-visible {
     transform: scale(0.82);
   }
 }
+.view-chip.is-leaving,
 .view-chip.is-unpinning {
   animation: view-chip-unpin 0.24s ease-in 1 forwards;
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
+  .view-chip.is-leaving,
   .view-chip.is-unpinning {
     animation: none;
     opacity: 0;
