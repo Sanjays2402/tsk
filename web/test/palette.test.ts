@@ -23,6 +23,7 @@ import {
   unpinCohortCommand,
   forgetStaleCohortsCommand,
   recallBusiestViewCommand,
+  peekBusiestViewCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -738,6 +739,39 @@ test("recallBusiestViewCommand is fuzzy-findable by 'busiest' and 'densest'", ()
   const cmd = recallBusiestViewCommand("#work", 9);
   assert.equal(filterCommands([cmd], "busiest").length, 1);
   assert.equal(filterCommands([cmd], "densest").length, 1);
+});
+
+// --- F153: peek busiest view command ---------------------------------------
+
+test("peekBusiestViewCommand names the winner + count and is enabled", () => {
+  const cmd = peekBusiestViewCommand("#work", 12);
+  assert.equal(cmd.id, "peek-busiest");
+  assert.equal(cmd.title, "Peek busiest view (#work, 12)");
+  assert.equal(cmd.group, "Views");
+  assert.equal(cmd.disabled, false);
+});
+
+test("peekBusiestViewCommand is a disabled placeholder with no clear winner", () => {
+  const cmd = peekBusiestViewCommand(null, null);
+  assert.equal(cmd.title, "Peek busiest view");
+  assert.equal(cmd.disabled, true);
+  // A half-null pair is also treated as no winner.
+  assert.equal(peekBusiestViewCommand("#work", null).disabled, true);
+  assert.equal(peekBusiestViewCommand(null, 5).disabled, true);
+});
+
+test("peekBusiestViewCommand is fuzzy-findable by 'peek' and 'busiest'", () => {
+  const cmd = peekBusiestViewCommand("#work", 9);
+  assert.equal(filterCommands([cmd], "peek").length, 1);
+  assert.equal(filterCommands([cmd], "busiest").length, 1);
+});
+
+test("commandDisabledReason explains a no-winner peek-busiest command", () => {
+  assert.equal(
+    commandDisabledReason("peek-busiest", { ...FULL_CTX, hasBusiestView: false }),
+    "no busiest view",
+  );
+  assert.equal(commandDisabledReason("peek-busiest", FULL_CTX), null);
 });
 
 test("commandDisabledReason explains an absent busiest view", () => {

@@ -578,6 +578,35 @@ export function recallBusiestViewCommand(name: string | null, count: number | nu
   };
 }
 
+/**
+ * F153: build a "Peek busiest view (<name>, N)" command — the look-don't-touch
+ * sibling of F149's recall-busiest. F149 JUMPS to the densest saved view; this
+ * PREVIEWS its match-count + facet summary in the palette preview slot (F146's
+ * peek machinery) WITHOUT recalling, so you can confirm the pile-up is what you
+ * expect before committing to the F149 leap. Pairs F146 (peek any view) with
+ * F149 (find the busiest) into one keystroke.
+ *
+ * `name` is the busiest view's name and `count` its live match-count (the SAME
+ * busiestViewId + count resolver F149 reads), or null when there's no clear
+ * winner (empty row / all-empty / a tie — busiestViewId resolves a tie to null,
+ * so this never previews an ambiguous winner). With no winner the command reads
+ * plainly and is disabled (commandDisabledReason explains "no busiest view", the
+ * same reason F149 uses). Its id is the static "peek-busiest"; the preview
+ * painter renders peekViewLabel of the live busiest view into the slot on
+ * highlight, and runCommand echoes the peek to the status line (never recalls).
+ * Pure → unit-tested.
+ */
+export function peekBusiestViewCommand(name: string | null, count: number | null): Command {
+  const titled = name !== null && count !== null;
+  return {
+    id: "peek-busiest",
+    title: titled ? `Peek busiest view (${name}, ${count})` : "Peek busiest view",
+    group: "Views",
+    keywords: ["peek", "preview", "look", "busiest", "densest", "most", "view", "triage", "pile", "biggest", "inspect"],
+    disabled: !titled,
+  };
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
@@ -699,5 +728,7 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   }
   if (id === "cohort-forget-stale" && ctx.staleCohortCount <= 0) return "no stale cohort views";
   if (id === "view-busiest" && !ctx.hasBusiestView) return "no busiest view";
+  // F153: the peek-busiest command shares the F149 "no clear winner" gate.
+  if (id === "peek-busiest" && !ctx.hasBusiestView) return "no busiest view";
   return null;
 }

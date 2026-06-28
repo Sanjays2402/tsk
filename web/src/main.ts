@@ -174,6 +174,7 @@ import {
   unpinCohortCommand,
   forgetStaleCohortsCommand,
   recallBusiestViewCommand,
+  peekBusiestViewCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -3514,6 +3515,22 @@ function maybeBusiestViewCommand(): Command[] {
 }
 
 /**
+ * F153: build the "Peek busiest view (<name>, N)" command — the look-don't-touch
+ * sister of F149's recall-busiest. Reads the SAME currentBusiestViewId + count
+ * resolver, so it previews exactly the chip F142 marks + F149 would recall.
+ * Always emits exactly one command (disabled when there's no clear winner) so
+ * the palette stays declarative; commandDisabledReason explains "no busiest
+ * view". The preview painter renders peekViewLabel into the slot on highlight;
+ * runCommand echoes it to the status line (never recalls).
+ */
+function maybePeekBusiestViewCommand(): Command[] {
+  const id = currentBusiestViewId();
+  const v = id ? views.find((x) => x.id === id) : undefined;
+  const count = v ? countViewMatches(v, viewMatchPool(), viewMatchCounters()) : null;
+  return [peekBusiestViewCommand(v ? v.name : null, v ? count : null)];
+}
+
+/**
  * F144: drop EVERY stale cohort bookmark in one go — the bulk sweep behind the
  * "forget all stale" Cmd-K command + the Views-row button. The one-at-a-time
  * sister is F138's recall-to-self-clean. Each dead chip is removed through the
@@ -5599,6 +5616,10 @@ function buildCommands(): Command[] {
     // count. Disabled (with "no busiest view" via F89) when there's no clear
     // winner (empty row / all-empty / a tie).
     ...maybeBusiestViewCommand(),
+    // F153: the look-don't-touch sister — peek the busiest view's count + facet
+    // in the preview slot without recalling, so you can confirm the pile-up
+    // before the F149 jump. Same disabled gate (no clear winner).
+    ...maybePeekBusiestViewCommand(),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
@@ -5809,6 +5830,19 @@ function runCommand(id: string): void {
     const busiest = currentBusiestViewId();
     if (busiest !== null) recallView(busiest);
   }
+  // F153: peek the busiest view — look-don't-touch. Like F146's peek, running it
+  // (Enter) doesn't recall; it echoes the busiest view's count + facet summary
+  // to the status line (the preview slot showed it while highlighted). To
+  // actually open it, use the sibling "Recall busiest view".
+  if (id === "peek-busiest") {
+    const busiest = currentBusiestViewId();
+    const v = busiest ? views.find((x) => x.id === busiest) : undefined;
+    if (v) {
+      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+      setStatus(`peek busiest ${v.name}: ${peekViewLabel(v, count)}`, false);
+      setTimeout(() => setStatus("ready", false), 3_000);
+    }
+  }
   // F107: dynamic per-chokepoint focus commands (id shaped "cohort-focus-<id>",
   // distinct from the static "cohort-focus-biggest"). Decode the target id and
   // route through the same setCohort path the sidebar focus buttons + the
@@ -5981,6 +6015,20 @@ function paintPaletteDuePreview(): void {
   if (cmd && cmd.id.startsWith("peek:")) {
     paletteDueParseSeq++; // invalidate any in-flight due parse — peek wins the slot
     const v = views.find((x) => x.id === cmd.id.slice("peek:".length));
+    if (v) {
+      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+      line.hidden = false;
+      line.innerHTML = renderDisabledReason(peekViewLabel(v, count));
+      return;
+    }
+  }
+  // F153: a highlighted "Peek busiest view" command previews the densest saved
+  // view's count + facet summary in the slot WITHOUT recalling — the same peek
+  // readout as F146, resolved to whatever currentBusiestViewId marks live now.
+  if (cmd && cmd.id === "peek-busiest") {
+    paletteDueParseSeq++; // invalidate any in-flight due parse — peek wins the slot
+    const busiest = currentBusiestViewId();
+    const v = busiest ? views.find((x) => x.id === busiest) : undefined;
     if (v) {
       const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
       line.hidden = false;
