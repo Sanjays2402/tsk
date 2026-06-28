@@ -2374,3 +2374,29 @@ pin-toggle-key cluster:
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a keyboard-driven dep-graph navigator, a saved-view
 import/export, a per-tag saved-view group, a per-row dep mini-sparkline, etc.).
+
+### F133 design note (recorded T25 2026-06-27 before building, per prompt)
+
+A cohort is a momentary id-set (snapshot of "who waits on #N right now"), NOT
+serializable — but the CHOKEPOINT (#N) is stable, so a saved cohort view stores
+only the sourceId and RE-DERIVES the id-set on recall via buildCohort against the
+live graph (exactly how setCohort already works). Chosen shape:
+
+- `SavedView.cohort?: number` — the chokepoint sourceId. A cohort view has an
+  EMPTY filter and NO lens (it's a third saved-view kind beside filter views and
+  pure-lens views). normalizeViews carries it (positive int only).
+- `isCohortView(v)`: cohort set AND empty filter AND no lens.
+- `addCohortView(views, name, sourceId)`: add/overwrite-by-name a cohort view.
+- `findCohortView(views, sourceId)`: the saved view for a chokepoint (so the pin
+  affordance reads pinned vs unpinned, and recall-if-exists avoids duplicates).
+- renderViewChips: a cohort chip wears an `is-cohort-pin` class + a fixed up-arrow
+  (↑) glyph (the cohort glyph, echoing the chip's & panel's ↑). Active highlight
+  for a cohort chip is `v.cohort === opts.activeCohort` (NOT the filter path —
+  its empty filter would otherwise match every empty-filter board), so the chip
+  lights up only while THAT chokepoint's cohort is focused.
+- Recall path: recallView detects v.cohort and routes through setCohort(v.cohort)
+  (re-runs buildCohort live; graceful "nothing waits" if the chokepoint cleared).
+- Pin affordance: renderCohortPanelLine grows a trailing star button
+  (data-cohort-pin) — ☆ when unpinned, ★ when the chokepoint is already a saved
+  cohort view. main.ts togglePinCohort() pins (addCohortView, recall-if-exists)
+  or unpins (removeView) symmetric with the lens star (F131).

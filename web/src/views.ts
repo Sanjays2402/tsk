@@ -37,6 +37,19 @@ export interface SavedView {
    * keeping older stored views byte-identical.
    */
   lens?: string;
+  /**
+   * F133: an optional CHOKEPOINT source id captured for a "cohort view" — a
+   * saved bookmark of "the tasks waiting on #N". A cohort's id-set is a momentary
+   * snapshot (meaningless once those tasks complete), so it is NOT serialized;
+   * only the stable chokepoint id is, and the id-set is RE-DERIVED on recall via
+   * cohort.buildCohort against the live graph (exactly how setCohort works). A
+   * cohort view has an EMPTY filter and NO lens — it's a third kind of saved view
+   * beside filter views and pure-lens views (F110). Stored as a positive integer;
+   * absent for the common filter / lens views, keeping older stored views
+   * byte-identical. The main.ts recall path re-runs the cohort live (degrading
+   * gracefully to "nothing waits on #N" if the chokepoint has since cleared).
+   */
+  cohort?: number;
 }
 
 export const STORAGE_KEY = "tsk.views";
@@ -95,6 +108,13 @@ export function normalizeViews(raw: unknown): SavedView[] {
     // real LENS_ORDER via parseLens, so a stale/garbage kind degrades to "no
     // lens" rather than wedging the board). A non-string/empty lens is dropped.
     if (typeof o.lens === "string" && o.lens !== "") view.lens = o.lens;
+    // F133: carry a captured chokepoint id for a cohort view. A cohort view is a
+    // re-derivable bookmark ("tasks waiting on #N"), so only the stable source id
+    // is stored; the id-set is rebuilt on recall. Accept a positive integer only
+    // (a non-number / non-positive value is dropped, degrading to a plain view).
+    if (typeof o.cohort === "number" && Number.isInteger(o.cohort) && o.cohort > 0) {
+      view.cohort = o.cohort;
+    }
     out.push(view);
   }
   return out;
@@ -304,6 +324,63 @@ export function isPureLensView(view: SavedView): boolean {
 }
 
 /**
+ * F133: is this view a COHORT bookmark — a captured chokepoint id with no filter
+ * and no lens? F133's panel pin saves exactly this shape (a `cohort` source id,
+ * empty filter, no lens), a re-derivable "tasks waiting on #N" bookmark. The
+ * Views chip row uses it to give a cohort chip the ↑ glyph + an `is-cohort-pin`
+ * class so it reads distinct from filter / lens bookmarks, and the recall path
+ * uses it to route through setCohort instead of applying a filter. A view that
+ * also carries a filter or a lens is not a pure cohort bookmark (returns false).
+ * Pure → unit-tested.
+ */
+export function isCohortView(view: SavedView): boolean {
+  return (
+    typeof view.cohort === "number" &&
+    view.cohort > 0 &&
+    !view.lens &&
+    filterIsEmpty(view.filter)
+  );
+}
+
+/**
+ * F133: find the saved COHORT view for a chokepoint id — a cohort bookmark whose
+ * `cohort` equals `sourceId`. Returns it (so the panel pin star can read as
+ * "already pinned" + recall instead of re-saving) or null when this chokepoint
+ * isn't pinned yet. The cohort sibling of findPureLensView (F110). Pure →
+ * unit-tested.
+ */
+export function findCohortView(views: SavedView[], sourceId: number): SavedView | null {
+  return views.find((v) => isCohortView(v) && v.cohort === sourceId) ?? null;
+}
+
+/**
+ * F133: add a COHORT bookmark capturing `sourceId` (or recall semantics via the
+ * caller when one already exists — this just keeps the store clean by
+ * overwriting any same-name OR same-chokepoint cohort view rather than
+ * duplicating). A blank name or a non-positive id is rejected (returns the list
+ * unchanged). The saved view has an empty filter, no lens, and the captured
+ * cohort id. The cohort sibling of addView's pure-lens path. Returns a NEW array.
+ */
+export function addCohortView(views: SavedView[], name: string, sourceId: number): SavedView[] {
+  const trimmed = name.trim();
+  if (trimmed === "" || !Number.isInteger(sourceId) || sourceId <= 0) return views;
+  // Overwrite an existing cohort view for the SAME chokepoint (re-pinning #N
+  // shouldn't make a second chip) or the same name, whichever matches first.
+  const existing =
+    findCohortView(views, sourceId) ??
+    views.find((v) => v.name.toLowerCase() === trimmed.toLowerCase()) ??
+    null;
+  const made: SavedView = { id: existing?.id ?? makeId(), name: trimmed, filter: normalizeFilter(emptyViewFilter()), cohort: sourceId };
+  if (existing) return views.map((v) => (v.id === existing.id ? made : v));
+  return [...views, made];
+}
+
+/** F133: an empty ViewFilter — a cohort view carries no facet narrowing. */
+function emptyViewFilter(): ViewFilter {
+  return { query: "", priorities: [], tags: [], hideDone: false };
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed
@@ -366,6 +443,9 @@ function escapeHTML(s: string): string {
  * map it to a prettier label, but the kind is already human-legible). */
 export function describeView(v: SavedView): string {
   const parts: string[] = [];
+  // F133: a cohort bookmark describes itself by its chokepoint, since its filter
+  // is empty (the id-set is re-derived on recall, not stored).
+  if (typeof v.cohort === "number" && v.cohort > 0) parts.push(`waiting on #${v.cohort}`);
   if (v.lens) parts.push(`lens: ${v.lens}`);
   if (v.filter.query) parts.push(`"${v.filter.query}"`);
   if (v.filter.priorities.length) parts.push(`priority: ${v.filter.priorities.join("/")}`);
@@ -421,6 +501,17 @@ export interface ViewChipOpts {
   lensGlyph?: (lens: string) => string;
   /** F119: id of a view to flash once with an `is-flash` highlight class. */
   flashId?: string | null;
+  /**
+   * F133: the chokepoint id of the currently-focused cohort, or null. A cohort
+   * chip (F133's panel pin) has an EMPTY filter, so the F32/F104 filter-equality
+   * highlight would light EVERY cohort chip on an empty-filter board. Instead a
+   * cohort chip is "active" only when `activeCohort` equals its captured cohort
+   * id — so exactly the pinned chokepoint you're focused on lights up. Omitting
+   * it leaves cohort chips un-highlighted (the safe default).
+   */
+  activeCohort?: number | null;
+  /** F133: a fixed leading glyph for cohort chips (the ↑ chokepoint marker). */
+  cohortGlyph?: string;
 }
 
 export function renderViewChips(
@@ -436,9 +527,16 @@ export function renderViewChips(
   const lensAware = opts.liveLens !== undefined;
   return views
     .map((v) => {
-      const isActive = lensAware
-        ? viewMatches(v, filter, opts.liveLens ?? null)
-        : filtersEqual(v.filter, filter);
+      // F133: a cohort bookmark (empty filter, no lens, a captured chokepoint)
+      // is "active" only when its chokepoint is the live focus — NOT via filter
+      // equality (its empty filter would match every empty-filter board). For
+      // non-cohort views the F104/F32 match below decides.
+      const cohortPin = isCohortView(v);
+      const isActive = cohortPin
+        ? opts.activeCohort != null && v.cohort === opts.activeCohort
+        : lensAware
+          ? viewMatches(v, filter, opts.liveLens ?? null)
+          : filtersEqual(v.filter, filter);
       const active = isActive ? " is-active" : "";
       const lensed = v.lens ? " is-lensed" : "";
       // F119: flash a freshly-pinned chip once so the user sees WHERE the pin
@@ -448,9 +546,15 @@ export function renderViewChips(
       // F112: a pure-lens bookmark (lens + empty filter) wears the lens's own
       // glyph + an is-lens-pin class so it reads as a "lens bookmark" distinct
       // from a filter bookmark. A lens+facet drill keeps the plain chip.
+      // F133: a cohort bookmark wears a fixed ↑ chokepoint glyph + an
+      // is-cohort-pin class so it reads distinct from both filter and lens chips.
       const pin = isPureLensView(v);
-      const glyph = pin && opts.lensGlyph ? opts.lensGlyph(v.lens!) : "";
-      const pinClass = pin ? " is-lens-pin" : "";
+      let glyph = pin && opts.lensGlyph ? opts.lensGlyph(v.lens!) : "";
+      let pinClass = pin ? " is-lens-pin" : "";
+      if (cohortPin) {
+        glyph = opts.cohortGlyph ?? "";
+        pinClass = " is-cohort-pin";
+      }
       const glyphSpan = glyph
         ? `<span class="view-chip-lens-glyph" aria-hidden="true">${escapeHTML(glyph)}</span> `
         : "";

@@ -183,8 +183,21 @@ export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): s
  * The three affordances are sibling buttons inside a flex row (a button can't
  * nest another button), so each click target is disjoint — back / clear / walk
  * never overlap. main.ts wraps the whole return in the `.stats-cohort` block.
+ *
+ * F133: an optional trailing PIN star (data-cohort-pin) lets you bookmark the
+ * focused chokepoint as a saved "cohort view" — re-focus "what waits on #N" in
+ * one click next session (the id-set is re-derived live on recall). The star is
+ * ★ (filled) when this chokepoint is already pinned and ☆ (hollow) when not, so
+ * it doubles as a pinned-state readout; main.ts passes `pinned` from
+ * findCohortView. Omitted (`pinned` undefined) renders no star, keeping older
+ * callers/tests byte-identical. The star sits after the walk button as a fourth
+ * disjoint sibling.
  */
-export function renderCohortPanelLine(focus: CohortFocus | null, historyDepth = 0): string {
+export function renderCohortPanelLine(
+  focus: CohortFocus | null,
+  historyDepth = 0,
+  pinned?: boolean,
+): string {
   if (focus === null) return "";
   const summary = escapeHTML(cohortSummary(focus));
   const title = `Focused on the ${focus.ids.length === 1 ? "task" : "tasks"} waiting on #${focus.sourceId} — click to clear`;
@@ -196,14 +209,24 @@ export function renderCohortPanelLine(focus: CohortFocus | null, historyDepth = 
     const backTitle =
       historyDepth > 1
         ? `Step back to the previous cohort (${historyDepth} in history)`
-        : "Step back to the previous cohort";
+        : `Step back to the previous cohort`;
     back = `<button type="button" class="stat-cohort-back" data-cohort-back title="${escapeHTML(backTitle)}" aria-label="${escapeHTML(backTitle)}">&#8249;${depthBadge}</button>`;
   }
   const clear = `<button type="button" class="stat-cohort-line" data-cohort-clear title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}"><span class="stat-cohort-label">Focused</span> <span class="stat-cohort-val">${summary}</span> <span class="stat-cohort-x" aria-hidden="true">&times;</span></button>`;
   // F128: the walk affordance — open the dependent chain-drill for the chokepoint.
   const walkTitle = `Walk the tasks waiting on #${focus.sourceId}`;
   const walk = `<button type="button" class="stat-cohort-walk" data-waiting-walk="${focus.sourceId}" title="${escapeHTML(walkTitle)}" aria-label="${escapeHTML(walkTitle)}">walk</button>`;
-  return `<div class="stat-cohort-row">${back}${clear}${walk}</div>`;
+  // F133: the pin star — bookmark / un-bookmark this chokepoint as a cohort view.
+  let pin = "";
+  if (pinned !== undefined) {
+    const star = pinned ? "\u2605" : "\u2606"; // ★ / ☆
+    const pinTitle = pinned
+      ? `Unpin the cohort waiting on #${focus.sourceId}`
+      : `Pin the cohort waiting on #${focus.sourceId} as a saved view`;
+    const pinClass = pinned ? "stat-cohort-pin is-pinned" : "stat-cohort-pin";
+    pin = `<button type="button" class="${pinClass}" data-cohort-pin="${focus.sourceId}" title="${escapeHTML(pinTitle)}" aria-label="${escapeHTML(pinTitle)}" aria-pressed="${pinned ? "true" : "false"}">${star}</button>`;
+  }
+  return `<div class="stat-cohort-row">${back}${clear}${walk}${pin}</div>`;
 }
 
 /**

@@ -17,6 +17,9 @@ import {
   pureLensViewName,
   findPureLensView,
   isPureLensView,
+  isCohortView,
+  findCohortView,
+  addCohortView,
   chipClippedX,
   canAnimateChipExit,
   UNPIN_EXIT_MS,
@@ -512,4 +515,99 @@ test("UNPIN_EXIT_MS is a positive duration the CSS keyframe can match", () => {
   // The deferred removeView timer keys off this; it must be a real positive ms.
   assert.equal(typeof UNPIN_EXIT_MS, "number");
   assert.ok(UNPIN_EXIT_MS > 0);
+});
+
+// --- F133: cohort bookmark views -------------------------------------------
+
+const emptyF = (): ViewFilter => ({ query: "", priorities: [], tags: [], hideDone: false });
+
+test("isCohortView is true for a chokepoint id with no filter or lens", () => {
+  const v: SavedView = { id: "a", name: "waiting on #1", filter: emptyF(), cohort: 1 };
+  assert.equal(isCohortView(v), true);
+});
+
+test("isCohortView is false when a filter or lens rides along", () => {
+  // A cohort id plus a filter is not a pure cohort bookmark.
+  assert.equal(
+    isCohortView({ id: "a", name: "x", filter: { ...emptyF(), tags: ["dev"] }, cohort: 1 }),
+    false,
+  );
+  // A cohort id plus a lens is not a pure cohort bookmark either.
+  assert.equal(
+    isCohortView({ id: "a", name: "x", filter: emptyF(), cohort: 1, lens: "overdue" }),
+    false,
+  );
+  // No cohort id at all -> not a cohort view.
+  assert.equal(isCohortView({ id: "a", name: "x", filter: emptyF() }), false);
+});
+
+test("addCohortView creates a cohort bookmark with an empty filter", () => {
+  const out = addCohortView([], "waiting on #3", 3);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].cohort, 3);
+  assert.equal(out[0].name, "waiting on #3");
+  assert.equal(isCohortView(out[0]), true);
+  assert.equal(filterIsEmpty(out[0].filter), true);
+});
+
+test("addCohortView rejects a blank name or a non-positive id", () => {
+  assert.deepEqual(addCohortView([], "  ", 3), []);
+  assert.deepEqual(addCohortView([], "x", 0), []);
+  assert.deepEqual(addCohortView([], "x", -2), []);
+});
+
+test("addCohortView re-pinning the same chokepoint overwrites, never duplicates", () => {
+  const a = addCohortView([], "waiting on #5", 5);
+  const b = addCohortView(a, "renamed #5", 5); // same chokepoint, new name
+  assert.equal(b.length, 1); // overwritten in place, not appended
+  assert.equal(b[0].cohort, 5);
+  assert.equal(b[0].name, "renamed #5");
+  assert.equal(b[0].id, a[0].id); // id preserved across the overwrite
+});
+
+test("findCohortView returns the bookmark for a chokepoint or null", () => {
+  const views = addCohortView(addCohortView([], "#1", 1), "#4", 4);
+  assert.equal(findCohortView(views, 4)!.cohort, 4);
+  assert.equal(findCohortView(views, 1)!.cohort, 1);
+  assert.equal(findCohortView(views, 9), null);
+});
+
+test("normalizeViews carries a positive cohort id and drops a bad one", () => {
+  const ok = normalizeViews([{ name: "c", filter: {}, cohort: 7 }]);
+  assert.equal(ok[0].cohort, 7);
+  // A non-integer / non-positive cohort is dropped (degrades to a plain view).
+  const bad = normalizeViews([{ name: "c", filter: {}, cohort: -1 }]);
+  assert.equal(bad[0].cohort, undefined);
+  const frac = normalizeViews([{ name: "c", filter: {}, cohort: 2.5 }]);
+  assert.equal(frac[0].cohort, undefined);
+});
+
+test("a cohort view round-trips through serialize/parse", () => {
+  const views = addCohortView([], "waiting on #2", 2);
+  const back = parseViews(serializeViews(views));
+  assert.equal(back[0].cohort, 2);
+  assert.equal(isCohortView(back[0]), true);
+});
+
+test("describeView names the chokepoint for a cohort view", () => {
+  const v = addCohortView([], "c", 8)[0];
+  assert.match(describeView(v), /waiting on #8/);
+});
+
+test("renderViewChips marks a cohort chip active only when its chokepoint is focused", () => {
+  const views = addCohortView(addCohortView([], "#1", 1), "#4", 4);
+  // Focused on #4's cohort -> only the #4 chip is active.
+  const html = renderViewChips(views, emptyF(), { activeCohort: 4, cohortGlyph: "\u2191" });
+  // The #4 chip carries is-active + is-cohort-pin + the ↑ glyph.
+  assert.match(html, /class="view-chip is-active is-cohort-pin"[^>]*>[\s\S]*?#4/);
+  // Exactly one chip is active (the #1 chip is not).
+  assert.equal((html.match(/is-active/g) ?? []).length, 1);
+  // The ↑ cohort glyph is present.
+  assert.match(html, /view-chip-lens-glyph[^>]*>\u2191</);
+});
+
+test("renderViewChips leaves cohort chips inactive when nothing is focused", () => {
+  const views = addCohortView([], "#1", 1);
+  const html = renderViewChips(views, emptyF(), { activeCohort: null, cohortGlyph: "\u2191" });
+  assert.doesNotMatch(html, /is-active/);
 });

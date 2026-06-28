@@ -492,3 +492,34 @@ test("jumpCohortHistory is a no-op for an out-of-range index", () => {
   assert.deepEqual(jumpCohortHistory(ts, [1], -1), { stack: [1], focus: null });
   assert.deepEqual(jumpCohortHistory(ts, [1], 5), { stack: [1], focus: null });
 });
+
+// --- F133: panel pin star --------------------------------------------------
+
+test("renderCohortPanelLine omits the pin star when pinned is undefined", () => {
+  const html = renderCohortPanelLine({ sourceId: 1, ids: [2] });
+  assert.doesNotMatch(html, /data-cohort-pin/);
+  // Byte-identical to the historyless no-star form.
+  assert.equal(html, renderCohortPanelLine({ sourceId: 1, ids: [2] }, 0));
+});
+
+test("renderCohortPanelLine shows a hollow star (un-pinned) and a filled star (pinned)", () => {
+  const unpinned = renderCohortPanelLine({ sourceId: 1, ids: [2] }, 0, false);
+  assert.match(unpinned, /data-cohort-pin="1"/);
+  assert.match(unpinned, /\u2606/); // ☆ hollow when not pinned
+  assert.match(unpinned, /aria-pressed="false"/);
+  const pinned = renderCohortPanelLine({ sourceId: 1, ids: [2] }, 0, true);
+  assert.match(pinned, /\u2605/); // ★ filled when pinned
+  assert.match(pinned, /is-pinned/);
+  assert.match(pinned, /aria-pressed="true"/);
+});
+
+test("renderCohortPanelLine pin star is the last disjoint sibling in the row", () => {
+  const html = renderCohortPanelLine({ sourceId: 2, ids: [3] }, 1, false);
+  // Order: back < clear < walk < pin, each its own button.
+  const back = html.indexOf("data-cohort-back");
+  const clear = html.indexOf("data-cohort-clear");
+  const walk = html.indexOf("data-waiting-walk");
+  const pin = html.indexOf("data-cohort-pin");
+  assert.ok(back >= 0 && clear >= 0 && walk >= 0 && pin >= 0);
+  assert.ok(back < clear && clear < walk && walk < pin);
+});

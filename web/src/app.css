@@ -1556,6 +1556,18 @@ button.lens-legend-item:focus-visible {
 .view-chip.is-lens-pin.is-active .view-chip-lens-glyph {
   opacity: 1;
 }
+/* F133: a COHORT bookmark (F133's panel pin: a chokepoint id + no filter/lens)
+   reuses the leading-glyph slot for its ↑ chokepoint marker, but tinted with the
+   accent (not the lens-alert hue) so it reads as a "cohort bookmark" distinct
+   from both filter and lens chips. The active state (its chokepoint is the live
+   focus) brightens the glyph, mirroring the lens-pin treatment. */
+.view-chip.is-cohort-pin .view-chip-lens-glyph {
+  color: var(--color-accent, var(--accent));
+  opacity: 0.7;
+}
+.view-chip.is-cohort-pin.is-active .view-chip-lens-glyph {
+  opacity: 1;
+}
 
 /* F119: a one-shot flash on a freshly-pinned chip (F110/F115's one-click pin)
    so the user sees WHERE the pin landed in the Views row — the spatial
@@ -2724,7 +2736,8 @@ button.stat-metric:focus-visible .lens-key {
   gap: var(--sp-1, 4px);
 }
 .stat-cohort-back,
-.stat-cohort-walk {
+.stat-cohort-walk,
+.stat-cohort-pin {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2743,13 +2756,24 @@ button.stat-metric:focus-visible .lens-key {
   font-style: italic;
   flex: 0 0 auto;
 }
+.stat-cohort-pin {
+  flex: 0 0 auto;
+}
+/* F133: the pin star glows amber when this chokepoint is already a saved cohort
+   view (★), echoing the lens pin star's pinned tint. */
+.stat-cohort-pin.is-pinned {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
 .stat-cohort-back:hover,
-.stat-cohort-walk:hover {
+.stat-cohort-walk:hover,
+.stat-cohort-pin:hover {
   border-color: var(--color-accent);
   color: var(--color-text);
 }
 .stat-cohort-back:focus-visible,
-.stat-cohort-walk:focus-visible {
+.stat-cohort-walk:focus-visible,
+.stat-cohort-pin:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }

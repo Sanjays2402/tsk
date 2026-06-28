@@ -225,6 +225,9 @@ import {
   lensProvenanceNote,
   pureLensViewName,
   findPureLensView,
+  isCohortView,
+  findCohortView,
+  addCohortView,
   renderViewChips,
   chipClippedX,
   canAnimateChipExit,
@@ -1455,7 +1458,12 @@ async function refreshStats(): Promise<void> {
     // (sibling of the clear) when the cohort has history — the panel sibling of
     // the chip's ‹ glyph and the F122 help breadcrumb, so a mouse user can step
     // back through the drill from the panel too.
-    const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length);
+    // F133: pass whether THIS chokepoint is already saved as a cohort view so
+    // the panel line grows a ★/☆ pin star (bookmark "what waits on #N" for
+    // one-click recall next session). findCohortView reads the live views list.
+    const cohortPinned =
+      focusCohort !== null ? findCohortView(views, focusCohort.sourceId) !== null : undefined;
+    const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length, cohortPinned);
     if (cohortLine !== "") html = `<div class="stats-cohort">${cohortLine}</div>` + html;
     // F132: under the F126/F127 cohort line, render the WHOLE back-stack as a
     // breadcrumb trail ("#A › #B › #current") so a multi-step drill shows its
@@ -3162,6 +3170,42 @@ function cohortJumpTo(index: number): void {
 }
 
 /**
+ * F133: pin (or unpin) the focused cohort's chokepoint as a saved "cohort view"
+ * — a re-derivable bookmark of "the tasks waiting on #N". The panel star drives
+ * this: when the chokepoint isn't pinned yet, save a cohort view named
+ * "waiting on #N" (recalling the SAME view re-focuses the cohort live); when it
+ * IS pinned, drop the bookmark (the star toggles ★/☆). A no-op when nothing's
+ * focused. Symmetric with the lens star (F131/F125): pin = addCohortView (or
+ * recall-if-exists, no duplicate), unpin = removeView with the F134 leave-fade.
+ */
+function togglePinCohort(): void {
+  if (focusCohort === null) return;
+  const sourceId = focusCohort.sourceId;
+  const existing = findCohortView(views, sourceId);
+  if (existing) {
+    // Already pinned — unpin it (drop the bookmark; the cohort stays focused).
+    views = removeView(views, existing.id);
+    if (recalledViewId === existing.id) recalledViewId = null;
+    saveViews();
+    render();
+    refreshStats(); // re-render the panel star as ☆ (now unpinned)
+    setStatus(`unpinned cohort "${existing.name}"`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const name = `waiting on #${sourceId}`;
+  views = addCohortView(views, name, sourceId);
+  saveViews();
+  // F119: flash the freshly-created chip so the user sees where the pin landed.
+  const pinned = findCohortView(views, sourceId);
+  pendingPinFlashViewId = pinned ? pinned.id : null;
+  render();
+  refreshStats(); // re-render the panel star as ★ (now pinned)
+  setStatus(`pinned cohort "${name}"`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
  * F103: the id of the current biggest chokepoint (the undone task the most
  * others wait on), or null on a flat board. Computed over the same live list +
  * whole-list done-index the F92 sidebar line uses, so the Cmd-K "Focus biggest
@@ -3274,6 +3318,11 @@ function renderViewsRow(): void {
     },
     // F119: flash a just-pinned chip once so the user sees where the pin landed.
     flashId: pendingPinFlashViewId,
+    // F133: a cohort chip is "active" only when ITS chokepoint is the live focus
+    // (its empty filter would otherwise match every empty-filter board), and it
+    // wears a fixed ↑ chokepoint glyph so it reads distinct from filter/lens chips.
+    activeCohort: focusCohort ? focusCohort.sourceId : null,
+    cohortGlyph: "\u2191", // ↑ — the chokepoint marker echoing the chip + panel
   });
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial
@@ -3428,6 +3477,17 @@ function defaultViewName(f: ViewFilter, lens: LensKind): string {
 function recallView(id: string): void {
   const v = views.find((x) => x.id === id);
   if (!v) return;
+  // F133: a cohort bookmark (empty filter, no lens, a captured chokepoint) is
+  // recalled by RE-FOCUSING its chokepoint live — the id-set is re-derived via
+  // buildCohort (setCohort), not applied as a filter. setCohort degrades
+  // gracefully ("nothing waits on #N") if the chokepoint has since cleared.
+  if (isCohortView(v)) {
+    recalledViewId = id;
+    setCohort(v.cohort!);
+    setStatus(`view: ${v.name}`, false);
+    setTimeout(() => setStatus("ready", false), 1_500);
+    return;
+  }
   // Make sure the filter bar is reachable + the search box reflects the query.
   filter = {
     ...emptyFilter(),
@@ -3714,6 +3774,13 @@ els.statsPanel.addEventListener("click", (e) => {
   // focus buttons so a click on the line itself doesn't fall through to a walk.
   // (The F128 "walk" button on the same line carries data-waiting-walk, handled
   // by the existing chokepoint-walk branch below.)
+  // F133: the pin star (data-cohort-pin) bookmarks / un-bookmarks the focused
+  // chokepoint as a saved cohort view — checked before clear so a star click
+  // doesn't fall through to clearing the focus.
+  if (target?.closest("[data-cohort-pin]")) {
+    togglePinCohort();
+    return;
+  }
   if (target?.closest("[data-cohort-clear]")) {
     clearCohort();
     return;
