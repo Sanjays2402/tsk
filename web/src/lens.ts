@@ -341,6 +341,36 @@ export function lensPinToggleAction(
 }
 
 /**
+ * F136: the action the lens-pin STAR's keyboard handler should take, given the
+ * key, the shift modifier, the active lens, and whether it's already pinned. The
+ * star is a real <button> so Enter/Space already fire a native click (→ pin /
+ * recall), but there's no keyboard equivalent of the mouse's right-click /
+ * long-press UNPIN. This makes the star's keys explicit + unit-tested, mirroring
+ * the mouse affordances rather than the global `*` toggle (F131):
+ *   - no active lens                 -> "none"  (the star is hidden anyway)
+ *   - a non-activation key           -> "none"  (let it bubble)
+ *   - Shift + Enter/Space, pinned    -> "unpin" (the keyboard right-click)
+ *   - Shift + Enter/Space, unpinned  -> "none"  (nothing to unpin)
+ *   - Enter/Space (no shift)         -> "pin"   (pinCurrentLens recalls if pinned)
+ * Distinct from lensPinToggleAction: the star pins on plain activation and unpins
+ * only with Shift (matching click vs right-click), where `*` toggles. main.ts
+ * preventDefaults on a handled key so the native button click can't double-fire.
+ * Pure → unit-tested.
+ */
+export function lensStarKeyAction(
+  key: string,
+  shift: boolean,
+  kind: LensKind | null,
+  pinned: boolean,
+): "none" | "pin" | "unpin" {
+  if (kind === null) return "none";
+  const activate = key === "Enter" || key === " " || key === "Spacebar";
+  if (!activate) return "none";
+  if (shift) return pinned ? "unpin" : "none";
+  return "pin";
+}
+
+/**
  * F90: render the FULL lens digit map as a live mini-legend for the help
  * overlay — every lens with its number-key shortcut inline ("1 ⛔ blocked ·
  * 2 ⚠ overdue · …"), in LENS_ORDER so it can't drift from the keyboard map.

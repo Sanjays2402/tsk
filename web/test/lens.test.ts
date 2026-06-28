@@ -10,6 +10,7 @@ import {
   activeLensSummary,
   renderActiveLensHelp,
   lensPinToggleAction,
+  lensStarKeyAction,
   renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
@@ -283,6 +284,34 @@ test("lensPinToggleAction pins an active, unpinned lens", () => {
 test("lensPinToggleAction unpins an active, already-pinned lens", () => {
   // Mirrors the star's pin-vs-unpin state, so the key + star + commands agree.
   assert.equal(lensPinToggleAction("blocked", true), "unpin");
+});
+
+// --- F136: keyboard pin/unpin from the star's own focus ---------------------
+
+test("lensStarKeyAction is none without an active lens or on a non-activation key", () => {
+  // No lens -> nothing to pin (the star is hidden anyway).
+  assert.equal(lensStarKeyAction("Enter", false, null, false), "none");
+  // A non-activation key bubbles (e.g. Tab moves focus on).
+  assert.equal(lensStarKeyAction("Tab", false, "overdue", false), "none");
+  assert.equal(lensStarKeyAction("a", false, "overdue", true), "none");
+});
+
+test("lensStarKeyAction pins on plain Enter/Space (no shift)", () => {
+  // Plain activation pins (pinCurrentLens recalls if already pinned), mirroring
+  // the star's left-click.
+  assert.equal(lensStarKeyAction("Enter", false, "overdue", false), "pin");
+  assert.equal(lensStarKeyAction(" ", false, "overdue", false), "pin");
+  assert.equal(lensStarKeyAction("Spacebar", false, "overdue", true), "pin");
+});
+
+test("lensStarKeyAction unpins on Shift+Enter/Space when pinned", () => {
+  // Shift is the keyboard sibling of the mouse right-click / long-press unpin.
+  assert.equal(lensStarKeyAction("Enter", true, "blocked", true), "unpin");
+  assert.equal(lensStarKeyAction(" ", true, "blocked", true), "unpin");
+});
+
+test("lensStarKeyAction Shift on an unpinned lens is a no-op (nothing to unpin)", () => {
+  assert.equal(lensStarKeyAction("Enter", true, "blocked", false), "none");
 });
 
 test("renderActiveLensHelp shows BOTH provenance and pinned when both apply", () => {

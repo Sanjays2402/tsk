@@ -63,6 +63,7 @@ import {
   lensForDigit,
   renderActiveLensHelp,
   lensPinToggleAction,
+  lensStarKeyAction,
   renderLensDigitMap,
   computeLensBreakdown,
   renderLensBreakdown,
@@ -3688,6 +3689,22 @@ els.filterBlocked.addEventListener("click", () => {
 // star falls through to the default menu (nothing to unpin).
 els.filterLensPin.addEventListener("click", () => {
   pinCurrentLens();
+});
+// F136: drive the pin lifecycle from the star's OWN keyboard focus — so a
+// keyboard user tabbing the filter bar can pin/unpin from the star, not only via
+// the global `*` (F131). The star is a <button>, so Enter/Space natively fire a
+// click (→ pin/recall); this adds the missing UNPIN path as Shift+Enter/Space
+// (the keyboard sibling of the mouse right-click / long-press). lensStarKeyAction
+// decides from the same active-lens + pinned state the click/contextmenu read, so
+// the surfaces can't disagree. We preventDefault on a handled activation key so
+// the native button click can't ALSO fire pinCurrentLens (double-dispatch).
+els.filterLensPin.addEventListener("keydown", (e) => {
+  const pinned = activeLens !== null && findPureLensView(views, activeLens) !== null;
+  const action = lensStarKeyAction(e.key, e.shiftKey, activeLens, pinned);
+  if (action === "none") return; // let non-activation keys (Tab, etc.) bubble
+  e.preventDefault(); // suppress the native button click so pin can't double-fire
+  if (action === "pin") pinCurrentLens();
+  else unpinCurrentLens();
 });
 els.filterLensPin.addEventListener("contextmenu", (e) => {
   if (activeLens !== null && findPureLensView(views, activeLens) !== null) {
