@@ -888,6 +888,34 @@ test("describeViewsRowSummary drops the task half when nothing matches", () => {
   assert.equal(describeViewsRowSummary({ views: 0, tasks: 0 }), "");
 });
 
+// --- F154: views-summary names the busiest inline --------------------------
+
+test("describeViewsRowSummary appends the busiest headline when supplied", () => {
+  assert.equal(
+    describeViewsRowSummary({ views: 3, tasks: 17 }, { name: "#work", count: 9 }),
+    "3 views \u00b7 17 tasks \u00b7 busiest: #work (9)",
+  );
+});
+
+test("describeViewsRowSummary keeps the bare readout with no busiest winner", () => {
+  // null / omitted busiest -> byte-identical to the F148 readout.
+  assert.equal(describeViewsRowSummary({ views: 2, tasks: 5 }, null), "2 views \u00b7 5 tasks");
+  assert.equal(describeViewsRowSummary({ views: 2, tasks: 5 }), "2 views \u00b7 5 tasks");
+  // An empty-name busiest (defensive) is treated as no winner.
+  assert.equal(
+    describeViewsRowSummary({ views: 2, tasks: 5 }, { name: "", count: 0 }),
+    "2 views \u00b7 5 tasks",
+  );
+});
+
+test("describeViewsRowSummary omits the busiest headline on an all-empty board", () => {
+  // No task half means no pile-up to name, even if a busiest is passed.
+  assert.equal(
+    describeViewsRowSummary({ views: 3, tasks: 0 }, { name: "#work", count: 0 }),
+    "3 views",
+  );
+});
+
 // --- F152: actionable hide-done count badge --------------------------------
 
 test("badgeHidesDone is true for a show-all view holding done tasks", () => {

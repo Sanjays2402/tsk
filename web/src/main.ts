@@ -3661,8 +3661,23 @@ function renderViewsRow(): void {
   // per-view count reuses the IDENTICAL resolver the F141 badge + F142 marker
   // read, so the summary can't disagree with the chips it sits above. Hidden
   // when there are no views (the row itself is hidden then anyway).
+  // F154: when there's a clear busiest view (the F142 winner), the readout gains
+  // a trailing "· busiest: <name> (K)" so the row head doubles as the triage
+  // headline. The name + count read the SAME currentBusiestViewId + count
+  // resolver the marker / F149 command use, so the headline names exactly the
+  // chip the row marks is-busiest.
+  const busiestForSummary = (() => {
+    const id = currentBusiestViewId();
+    const v = id ? views.find((x) => x.id === id) : undefined;
+    if (!v) return null;
+    return {
+      name: v.name,
+      count: countViewMatches(v, viewMatchPool(), viewMatchCounters()),
+    };
+  })();
   const summaryText = describeViewsRowSummary(
     viewsRowSummary(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
+    busiestForSummary,
   );
   els.viewsSummary.textContent = summaryText;
   els.viewsSummary.hidden = summaryText === "";

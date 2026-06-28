@@ -641,12 +641,30 @@ export function viewsRowSummary(
  * nothing, the task half is dropped ("3 views") rather than reading "· 0 tasks",
  * keeping the readout quiet on an all-empty board. Pure + tiny so it can't drift
  * from viewsRowSummary.
+ *
+ * F154: when a `busiest` {name, count} is supplied (the F142 densest winner,
+ * which busiestViewId resolves to null on a tie / empty board so there's never
+ * an ambiguous headline), the readout gains a trailing "· busiest: <name> (K)"
+ * so the row head doubles as the triage headline — "where's the pile-up?" is
+ * answered without scanning the chips. Omitted / null busiest (no clear winner)
+ * keeps the bare "N views · M tasks", so existing callers stay byte-identical.
+ * The busiest clause is only appended when the summary already has a task half
+ * (tasks > 0) — on an all-empty board there's no pile-up to name.
  */
-export function describeViewsRowSummary(s: ViewsRowSummary): string {
+export interface BusiestViewLabel {
+  name: string;
+  count: number;
+}
+
+export function describeViewsRowSummary(s: ViewsRowSummary, busiest?: BusiestViewLabel | null): string {
   if (s.views === 0) return "";
   const v = `${s.views} view${s.views === 1 ? "" : "s"}`;
   if (s.tasks === 0) return v;
-  return `${v} \u00b7 ${s.tasks} task${s.tasks === 1 ? "" : "s"}`;
+  const base = `${v} \u00b7 ${s.tasks} task${s.tasks === 1 ? "" : "s"}`;
+  if (busiest && busiest.name !== "") {
+    return `${base} \u00b7 busiest: ${busiest.name} (${busiest.count})`;
+  }
+  return base;
 }
 
 /**
