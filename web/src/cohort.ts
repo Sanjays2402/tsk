@@ -476,6 +476,30 @@ export function cohortTrailCounts(
 }
 
 /**
+ * F155: the index of the densest ancestor in an ALREADY-COMPUTED count array —
+ * the click-target for the trail's "jump to densest" button. F147's
+ * densestCohortAncestorIndex re-derives the counts from a waiterCount callback
+ * (used keyboard-side at Alt+D dispatch); this is the pure argmax over the
+ * cohortTrailCounts array the trail ALREADY rendered (F150's superscripts), so
+ * the button can't point at a different segment than the numbers shown. Returns
+ * the index of the first maximum with a positive count, or -1 when the array is
+ * empty or every count is 0 (no ancestor has waiters worth jumping to — the
+ * button then isn't rendered). First-max-wins matches densestCohortAncestorIndex
+ * so the click target and the Alt+D target agree on ties. Pure → unit-tested.
+ */
+export function densestCountIndex(counts: readonly number[]): number {
+  let bestIndex = -1;
+  let bestCount = 0;
+  for (let i = 0; i < counts.length; i++) {
+    if (counts[i] > bestCount) {
+      bestCount = counts[i];
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+/**
  * F132: render the cohort back-stack as a compact breadcrumb TRAIL for the stats
  * panel — the multi-step sibling of F127's single back-step button. F108/F113
  * track a per-session cohort history but the chip / F127 panel button only ever
@@ -545,5 +569,20 @@ export function renderCohortTrail(
   const chainText = formatCohortTrailText(focus, history);
   const copyTitle = `Copy the drill chain (${chainText}) \u2014 Alt-click for markdown`;
   const copy = `<button type="button" class="cohort-trail-copy" data-cohort-copy title="${escapeHTML(copyTitle)}" aria-label="${escapeHTML(copyTitle)}">&#10697;</button>`;
-  return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}${copy}</div>`;
+  // F155: when per-segment counts are supplied (F150) and at least one ancestor
+  // has waiters, a trailing "jump to densest" button leaps straight to the
+  // heaviest ancestor by CLICK — the mouse sister of F147's Alt+D. Its index is
+  // densestCountIndex over the SAME waiterCounts the superscripts render from, so
+  // the click lands on exactly the segment wearing the biggest number. Omitted /
+  // an all-zero array renders no button (nothing worth jumping to), keeping
+  // count-less callers byte-identical.
+  const densestIdx = waiterCounts ? densestCountIndex(waiterCounts) : -1;
+  const densest =
+    densestIdx >= 0
+      ? (() => {
+          const dTitle = `Jump to the densest ancestor (#${history[densestIdx]}, ${waiterCounts![densestIdx]} waiting)`;
+          return `<button type="button" class="cohort-trail-densest" data-cohort-densest="${densestIdx}" title="${escapeHTML(dTitle)}" aria-label="${escapeHTML(dTitle)}">&#9650;</button>`;
+        })()
+      : "";
+  return `<div class="cohort-trail" role="group" aria-label="Cohort drill history">${[...steps, current].join(sep)}${copy}${densest}</div>`;
 }

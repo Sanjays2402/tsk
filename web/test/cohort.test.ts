@@ -18,6 +18,7 @@ import {
   cohortTrailKeyTarget,
   densestCohortAncestorIndex,
   cohortTrailCounts,
+  densestCountIndex,
   formatCohortTrailText,
   formatCohortTrailMarkdown,
   type CohortFocus,
@@ -707,4 +708,43 @@ test("renderCohortTrail skips a zero/missing per-segment count gracefully", () =
   const partial = renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], [3]);
   assert.match(partial, /#1<sup[^>]*>3<\/sup>/);
   assert.doesNotMatch(partial, /#4<sup/);
+});
+
+// --- F155: cohort-trail "jump to densest" button ---------------------------
+
+test("densestCountIndex returns the index of the first maximum count", () => {
+  assert.equal(densestCountIndex([2, 7, 3]), 1);
+  // First-max-wins on a tie (matches densestCohortAncestorIndex).
+  assert.equal(densestCountIndex([5, 2, 5]), 0);
+});
+
+test("densestCountIndex returns -1 for an empty or all-zero array", () => {
+  assert.equal(densestCountIndex([]), -1);
+  assert.equal(densestCountIndex([0, 0, 0]), -1);
+});
+
+test("densestCountIndex agrees with densestCohortAncestorIndex on the same counts", () => {
+  const history = [1, 4, 9];
+  const counts: Record<number, number> = { 1: 2, 4: 7, 9: 3 };
+  const viaCallback = densestCohortAncestorIndex(history, (id) => counts[id] ?? 0);
+  const viaArray = densestCountIndex(cohortTrailCounts(history, (id) => counts[id] ?? 0));
+  assert.equal(viaArray, viaCallback);
+});
+
+test("renderCohortTrail adds a densest-jump button at the heaviest ancestor index", () => {
+  // history [1, 4, 9] counts [2, 7, 3] -> densest is index 1 (#4).
+  const html = renderCohortTrail({ sourceId: 12, ids: [13] }, [1, 4, 9], [2, 7, 3]);
+  assert.match(html, /class="cohort-trail-densest"[^>]*data-cohort-densest="1"/);
+  // The title names the target ancestor + its waiter count.
+  assert.match(html, /#4, 7 waiting/);
+});
+
+test("renderCohortTrail omits the densest button without counts or when all zero", () => {
+  // No waiterCounts -> no button (byte-identical to before F155 for this path).
+  assert.doesNotMatch(renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4]), /cohort-trail-densest/);
+  // All-zero counts -> nothing worth jumping to -> no button.
+  assert.doesNotMatch(
+    renderCohortTrail({ sourceId: 9, ids: [10] }, [1, 4], [0, 0]),
+    /cohort-trail-densest/,
+  );
 });

@@ -4163,6 +4163,18 @@ els.statsPanel.addEventListener("click", (e) => {
     if (Number.isFinite(index)) cohortJumpTo(index);
     return;
   }
+  // F155: the trail's trailing "jump to densest" button (▲) leaps to the
+  // heaviest ancestor by CLICK — the mouse sister of F147's Alt+D. Its
+  // data-cohort-densest carries the same index densestCountIndex computed over
+  // the rendered F150 counts, so it routes through the SAME cohortJumpTo the
+  // per-segment buttons use. Checked alongside the jump segments (both are trail
+  // affordances) so it never falls through to the back/clear handlers below.
+  const densest = target?.closest<HTMLElement>("[data-cohort-densest]");
+  if (densest) {
+    const index = Number(densest.dataset.cohortDensest);
+    if (Number.isFinite(index)) cohortJumpTo(index);
+    return;
+  }
   // F127: the panel cohort line's leading ‹ back button steps back one level
   // through the cohort drill (the SAME cohortBack the chip's ‹ glyph, Escape,
   // and the F122 help breadcrumb drive) instead of clearing — checked FIRST so

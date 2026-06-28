@@ -2852,6 +2852,35 @@ button.stat-metric:focus-visible .lens-key {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
+/* F155: the trail's "jump to densest" button (▲) — the mouse sister of F147's
+   Alt+D. Sits after the copy button as the last trail affordance; shares the
+   copy button's chip styling but wears the accent hue so it reads as the "go to
+   the pile-up" action, distinct from the neutral copy. Only rendered when an
+   ancestor actually has waiters (densestCountIndex >= 0). */
+.cohort-trail-densest {
+  margin-left: var(--sp-1, 4px);
+  padding: 1px var(--sp-1, 4px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface, transparent);
+  color: var(--color-accent, #d98a16);
+  font: inherit;
+  font-size: var(--fs-xs, 11px);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.cohort-trail-densest:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+.cohort-trail-densest:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
 /* F127/F128: the active-cohort line is a flex row of disjoint buttons — an
    optional leading ‹ back step (when the cohort has history), the clear
    readout (flex-grows to fill), and a trailing "walk" into the dependent
