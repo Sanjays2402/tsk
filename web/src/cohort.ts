@@ -377,6 +377,42 @@ export function cohortTrailKeyTarget(historyLength: number, dir: "step" | "root"
 }
 
 /**
+ * F147: the back-stack index of the DENSEST ancestor in the cohort drill — the
+ * ancestor whose chokepoint has the most live waiters (the worst bottleneck you
+ * walked through). F132's trail lets you eyeball the ancestry and F137 walks it
+ * step/root; this lets a key (Alt+D) leap STRAIGHT to the heaviest one, which is
+ * usually the real thing to go fix.
+ *
+ * `waiterCount(sourceId)` is injected (the live cohort size lives in the graph;
+ * keeping cohort.ts decoupled mirrors the buildCohort-via-main.ts pattern) —
+ * main.ts backs it with buildCohort(...).ids.length over the live tasks. We scan
+ * only `history` (the ancestors), NOT the current focus: you're already ON the
+ * current cohort, so "jump to densest" means densest ANCESTOR. The first (oldest,
+ * lowest-index) ancestor wins a tie — the ancestor closer to the drill root is
+ * the more fundamental bottleneck when two are equally heavy, and a stable rule
+ * keeps repeated presses deterministic. A dead ancestor (its chokepoint cleared,
+ * count 0) is never a candidate; if EVERY ancestor is dead/empty (or the history
+ * is empty), returns -1 so the caller declines to act. Pure → unit-tested; the
+ * returned index is handed to cohortJumpTo (which itself skips-dead, so a live
+ * winner here always lands cleanly).
+ */
+export function densestCohortAncestorIndex(
+  history: readonly number[],
+  waiterCount: (sourceId: number) => number,
+): number {
+  let bestIndex = -1;
+  let bestCount = 0;
+  for (let i = 0; i < history.length; i++) {
+    const c = waiterCount(history[i]);
+    if (c > bestCount) {
+      bestCount = c;
+      bestIndex = i;
+    }
+  }
+  return bestIndex;
+}
+
+/**
  * F140: format the cohort drill path as plain copyable text — "#A › #B ›
  * #current" — for the F132 trail's "copy chain" affordance. The trail buttons
  * let you JUMP through the ancestry; this lets you lift the whole bottleneck

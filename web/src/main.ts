@@ -93,6 +93,7 @@ import {
   pushCohortHistory,
   popCohortHistory,
   cohortTrailKeyTarget,
+  densestCohortAncestorIndex,
   formatCohortTrailText,
   formatCohortTrailMarkdown,
   type CohortFocus,
@@ -4799,6 +4800,37 @@ document.addEventListener("keydown", (e) => {
       return;
     }
   }
+  // F147: Alt+D leaps STRAIGHT to the DENSEST ancestor in the cohort drill — the
+  // one whose chokepoint has the most live waiters (the worst bottleneck you
+  // walked through), usually the real thing to go fix. The keyboard sibling of
+  // eyeballing F132's trail and clicking the heaviest segment. densestCohort-
+  // AncestorIndex scans only the ancestry (not the current focus, which you're
+  // already on), backed by a live waiter-count over the graph; cohortJumpTo then
+  // routes through jumpCohortHistory (skip-dead). Same guards + BEFORE-the-modifier
+  // -return placement as F137 so the combo reaches here; a no-op (every ancestor
+  // dead / empty history -> index -1) falls through to leave Alt+D free otherwise.
+  if (
+    e.altKey &&
+    !e.metaKey &&
+    !e.ctrlKey &&
+    (e.key === "d" || e.key === "D") &&
+    !isTypingTarget(e.target) &&
+    !editing &&
+    !duePicking &&
+    !notesEditing &&
+    focusCohort !== null &&
+    cohortHistory.length > 0
+  ) {
+    const target = densestCohortAncestorIndex(cohortHistory, (sourceId) => {
+      const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
+      return c ? c.ids.length : 0;
+    });
+    if (target >= 0) {
+      e.preventDefault();
+      cohortJumpTo(target);
+      return;
+    }
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (isTypingTarget(e.target)) return;
   if (editing || duePicking || notesEditing) return; // inline edit / due picker / notes handle their own keys
@@ -5030,6 +5062,7 @@ const HELP_ROWS: ReadonlyArray<[string, string]> = [
   ["1 \u2026 5", "Toggle a stats lens (blocked / overdue / today / week / no-due)"],
   ["*", "Pin / unpin the active lens"],
   ["alt \u2190 / \u2192", "Step back / leap to root through the cohort drill"],
+  ["alt D", "Jump to the densest ancestor in the cohort drill"],
   ["f", "Focus the shifted chokepoint (while a shift toast is up)"],
   ["x / del", "Delete the selected task (undoable)"],
   ["cmd/shift-click", "Bulk-select rows (then toggle / delete many)"],

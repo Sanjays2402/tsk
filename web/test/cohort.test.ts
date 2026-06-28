@@ -16,6 +16,7 @@ import {
   pushCohortHistory,
   popCohortHistory,
   cohortTrailKeyTarget,
+  densestCohortAncestorIndex,
   formatCohortTrailText,
   formatCohortTrailMarkdown,
   type CohortFocus,
@@ -618,4 +619,42 @@ test("formatCohortTrailMarkdown is empty under the same conditions as the text f
   assert.equal(formatCohortTrailMarkdown(null, [1, 2]), "");
   assert.equal(formatCohortTrailMarkdown({ sourceId: 3, ids: [4] }, []), "");
   assert.equal(formatCohortTrailMarkdown(null, []), "");
+});
+
+// --- F147: jump to the densest ancestor in the cohort drill ----------------
+
+test("densestCohortAncestorIndex returns the heaviest ancestor's index", () => {
+  // history [1, 4, 9] with waiter counts 2, 7, 3 -> #4 (index 1) is densest.
+  const counts: Record<number, number> = { 1: 2, 4: 7, 9: 3 };
+  assert.equal(densestCohortAncestorIndex([1, 4, 9], (id) => counts[id] ?? 0), 1);
+});
+
+test("densestCohortAncestorIndex breaks a tie toward the oldest ancestor", () => {
+  // #1 and #9 both have 5 waiters; the lower index (closer to the drill root)
+  // wins so repeated presses are deterministic.
+  const counts: Record<number, number> = { 1: 5, 4: 2, 9: 5 };
+  assert.equal(densestCohortAncestorIndex([1, 4, 9], (id) => counts[id] ?? 0), 0);
+});
+
+test("densestCohortAncestorIndex ignores dead ancestors and empty history", () => {
+  // All-dead ancestry (every count 0) -> -1, the caller declines to act.
+  assert.equal(densestCohortAncestorIndex([1, 4], () => 0), -1);
+  // Empty history -> -1.
+  assert.equal(densestCohortAncestorIndex([], () => 9), -1);
+  // A single live ancestor among dead ones is picked.
+  const counts: Record<number, number> = { 1: 0, 4: 3, 9: 0 };
+  assert.equal(densestCohortAncestorIndex([1, 4, 9], (id) => counts[id] ?? 0), 1);
+});
+
+test("densestCohortAncestorIndex result feeds jumpCohortHistory cleanly", () => {
+  // A live winner here lands on a real cohort via jumpCohortHistory (skip-dead).
+  // #2,#3,#4 wait on #1 (count 3); #5 waits on #4 (count 1). History [1, 4].
+  const ts = graph();
+  const idx = densestCohortAncestorIndex([1, 4], (id) => {
+    const c = buildCohort(ts, id);
+    return c ? c.ids.length : 0;
+  });
+  assert.equal(idx, 0); // #1 (3 waiters) beats #4 (1 waiter)
+  const jump = jumpCohortHistory(ts, [1, 4], idx);
+  assert.equal(jump.focus?.sourceId, 1);
 });
