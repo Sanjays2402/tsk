@@ -2555,33 +2555,133 @@ Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after the T26
 trail-keyboard / copy-chain / stale-chip / cohort-pin-command / chip-count
 cluster:
 
-- [ ] **F142** Views-row total-count summary: with F141's per-chip "·N" badges
+- [x] **F142** Views-row total-count summary: with F141's per-chip "·N" badges
       live, add a tiny leading "Σ" or "N views" readout at the row head that sums
       the active board's coverage (e.g. "5 views"), or — more useful — a one-shot
       "busiest view" highlight: the chip with the highest live match-count gets a
       subtle marker so the densest bucket pops. Pure busiestView(views, counts).
-- [ ] **F143** Cohort-trail copy as MARKDDOWN: F140 copies "#1 › #4 › #9" as
+      (tick T27 2026-06-28 — busiestViewId + is-busiest amber marker; +5 tests)
+- [x] **F143** Cohort-trail copy as MARKDDOWN: F140 copies "#1 › #4 › #9" as
       plain text; add a modifier (Alt-click / a second button) that copies a
       markdown task-link chain ("[#1](…) → [#4](…)") or a checkbox list of the
       cohort, so the standup paste is richer. Pure formatCohortTrailMarkdown.
-- [ ] **F144** Stale-chip bulk sweep: F138 self-cleans ONE dead cohort chip on
+      (tick T27 2026-06-28 — Alt-click copies "#1 → #4 → #9" arrow chain; +6 tests)
+- [x] **F144** Stale-chip bulk sweep: F138 self-cleans ONE dead cohort chip on
       recall; add a "forget all stale" affordance (a Cmd-K command + a Views-row
       button when ≥1 stale chip exists) that drops every dead cohort bookmark in
       one go. Pure staleCohortViewIds(views, hasLiveCohort) → the id list to remove.
-- [ ] **F145** Match-count badge on lens/cohort chips reflects DONE-state filter:
+      (tick T27 2026-06-28 — forgetStaleCohortsCommand + views-sweep button +
+      F134 leave-fade batch removal; +7 tests)
+- [x] **F145** Match-count badge on lens/cohort chips reflects DONE-state filter:
       F141 counts over the live pool, but a hideDone view and a show-all view read
       differently — surface that the badge respects the view's own hideDone, and
       add a tooltip breakdown ("12 open · 3 done") on hover for filter views. Pure
       countViewMatchesBreakdown returning {open, done}.
+      (tick T27 2026-06-28 — open/done badge tooltip via matchTitle resolver; +9 tests)
 - [ ] **F146** Keyboard recall of a numbered view (F25 views) from the palette
       WITHOUT opening it: a "Peek view (<name>)" command that previews the match
       count + describeView in the preview slot (F89-style) so you can compare
       views before committing to a recall. Pure peekViewLabel(view, count).
-- [ ] **F147** Cohort-trail "jump to densest ancestor": with F141's counts, a
+- [x] **F147** Cohort-trail "jump to densest ancestor": with F141's counts, a
       trail segment could show its own waiter-count, and a key (Alt+D) could jump
       straight to the ancestor with the most waiters (the worst bottleneck in the
       drill). Pure densestCohortAncestorIndex(history, cohortIds).
+      (tick T27 2026-06-28 — Alt+D jumps to densest ancestor; +4 tests)
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a per-row dep mini-sparkline, a saved-view
 import/export, a per-tag saved-view group, keyboard reordering of the Views row).
+
+---
+
+## Web tick T27 — 2026-06-28 07:40 PT
+
+Shipped 5/5 web slices on `main` (F142, F145, F143, F147, F144), gated once,
+pushed clean. Workdir note: the canonical `/Volumes/Projects/tsk` external SSD
+WAS mounted this tick (git resolved cleanly on `main`, clean tree) — no fallback
+to the internal worktree needed this time.
+
+### Features (one commit each + the bundle rebuild)
+- **F142+F145** `599a7f3` — Views-row badge depth. views.ts: pure
+  countViewMatchesBreakdown(view, tasks, counters, isDone) -> {open, done} (a
+  cohort is all-open by construction) + describeViewMatchBreakdown for the text;
+  busiestViewId(views, count) returns the unique densest view id or null on a
+  tie / empty board. renderViewChips gains matchTitle (richer "12 open · 3 done"
+  badge tooltip) + busiestId (is-busiest amber left-accent) opts. main.ts hoists
+  viewMatchPool() + viewMatchCounters() so F141's count, F145's tooltip, and
+  F142's marker all read the IDENTICAL live pool + predicates. app.css
+  .view-chip.is-busiest. +14 views tests.
+- **F143** `dc25dbc` — copy the cohort drill chain as markdown. cohort.ts pure
+  formatCohortTrailMarkdown(focus, history) -> "#1 -> #4 -> #9" (arrow U+2192,
+  distinct from F140's chevron U+203A; same segment order + empty conditions).
+  main.ts copyCohortChain(markdown) reuses the one guarded-clipboard path; the
+  trail copy button title advertises "Alt-click for markdown"; the stats-panel
+  click reads e.altKey. +6 cohort tests.
+- **F147** `486d719` — Alt+D jumps to the densest cohort-drill ancestor. cohort.ts
+  pure densestCohortAncestorIndex(history, waiterCount) scans only the ancestry
+  (not the current focus), oldest-ancestor tie-break, all-dead/empty -> -1. main.ts
+  wires Alt+D with the SAME guards + before-the-modifier-return placement as F137's
+  Alt-arrows, backing the count with buildCohort and routing the winning index
+  through cohortJumpTo (skip-dead). HELP_ROWS row. +4 cohort tests.
+- **F144** `ca400b8` — forget-all-stale cohort sweep. views.ts pure
+  staleCohortViewIds(views, hasLiveCohort) (isStaleCohortView mapped over the
+  list). palette.ts forgetStaleCohortsCommand(staleCount) + a new staleCohortCount
+  on CommandReasonContext + "no stale cohort views" reason. main.ts
+  forgetStaleCohorts() drops every dead chip through the F134 leave-fade (overlap
+  fades, one store update); shared currentStaleCohortIds() backs the command
+  count, the disabled-reason context, and a new "forget stale (N)" Views-row
+  button (shown only when >=1 stale). app.css .views-sweep. +7 tests (3 views, 4
+  palette).
+- `26affe9` — web_dist bundle rebuild (41 modules, JS 42.49KB gz, CSS 11.06KB gz).
+
+### Gates
+- web check: tests 857 -> 882 (+25), 0 fail; tsc app + test/tsconfig.json clean;
+  web build green (41 modules).
+- gofmt clean / go vet clean / go build clean; go test ./... green (commands
+  82.6s, serve cached-green with the freshly-embedded T27 bundle).
+- live `tsk serve --addr 127.0.0.1:7951`: GET / 200; served JS carried all new
+  hooks (is-busiest, "Forget all stale cohort views", cohort-forget-stale,
+  "Alt-click for markdown", data-views-sweep, "no stale cohort views", "Jump to
+  the densest ancestor", literal arrow + middot glyphs); /api/tasks exposed
+  depends_on for #2/#3; POST /api/tasks/2/toggle round-tripped to .tsk.md
+  preserving depends:1 + adding completed:. Storage contract intact. Fixtures +
+  binary cleaned up.
+
+### Deferred
+F146 (peek-view-without-recall) — deferred to T28, the one backlog item not
+sized into this tick's badge/cohort-trail/sweep cluster. Standing long-carries:
+F48 (context-menu submenus), F49 (autocomplete in edit/filter), F50 (dep
+mini-graph), F54 (touch context menu).
+
+### T28 — depth (appended T27 2026-06-28 so the loop never starves)
+
+Standing unstarted: F48, F49, F50, F54, F146. Fresh follow-ons after the T27
+busiest-marker / open-done-tooltip / markdown-copy / densest-jump / stale-sweep
+cluster:
+
+- [ ] **F146** Keyboard "Peek view (<name>)" command: preview a view's match
+      count + describeView in the palette preview slot (F89-style) WITHOUT
+      recalling it, so you can compare views before committing. Pure peekViewLabel.
+- [ ] **F148** Views-row "N views, M tasks" header readout: with F141 counts +
+      F142's busiest marker live, add a tiny leading summary at the row head that
+      sums coverage across all chips (distinct views, total matched tasks). Pure
+      viewsRowSummary(views, counts).
+- [ ] **F149** Busiest-marker as a Cmd-K jump: a "Recall busiest view (<name>, N)"
+      command that recalls whatever F142 marks as densest, so the keyboard path
+      reaches the triage winner without eyeballing the row. Pure builder over
+      busiestViewId + the view name/count.
+- [ ] **F150** Cohort-trail segment waiter-counts: render each trail segment's own
+      live waiter-count as a tiny superscript ("#4 7") so the F147 densest jump is
+      visible in the trail itself, not just reachable by key. Pure
+      cohortTrailCounts(history, waiterCount) -> per-segment counts.
+- [ ] **F151** Stale-sweep undo: F144 drops every dead cohort bookmark; add a
+      single-shot undo toast ("forgot 3 stale views — undo") that restores the
+      swept set (mirroring F8's delete-undo), so a misfire is recoverable. Pure
+      part = the swept-set snapshot; main.ts holds it for the toast window.
+- [ ] **F152** Open/done badge filter action: clicking the F145 "·N" badge on a
+      show-all view recalls it AND toggles hideDone so you land on just the open
+      slice — the badge's done count becomes an actionable "hide these" affordance.
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, a
+per-row dep mini-sparkline, a saved-view import/export, keyboard reordering of
+the Views row, a per-tag saved-view group).
