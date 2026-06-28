@@ -240,6 +240,8 @@ import {
   findCohortView,
   isStaleCohortView,
   staleCohortViewIds,
+  snapshotViews,
+  restoreSweptViews,
   countViewMatches,
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
@@ -3484,6 +3486,11 @@ function currentStaleCohortIds(): string[] {
  * SAME F134 leave-fade path the chip × + single unpin use, so the row animates
  * the sweep instead of snapping. A no-op (with a quiet status) when nothing's
  * stale. Persists + repaints once after the batch.
+ *
+ * F151: snapshot the swept set BEFORE removing it and show an undo toast
+ * ("forgot N stale views — undo"), mirroring F8's delete-undo, so a misfire is
+ * recoverable. The snapshot (a detached copy via snapshotViews) is fed to
+ * restoreSweptViews on undo, putting the forgotten bookmarks back.
  */
 function forgetStaleCohorts(): void {
   const ids = currentStaleCohortIds();
@@ -3493,6 +3500,9 @@ function forgetStaleCohorts(): void {
     return;
   }
   const n = ids.length;
+  // F151: capture the to-be-swept views as a detached snapshot so an undo can
+  // restore them even after later edits to the live list.
+  const snapshot = snapshotViews(views, ids);
   setStatus(`forgot ${n} stale cohort view${n === 1 ? "" : "s"}`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
   // Fade each dead chip out, then remove all in one store update + repaint. The
@@ -3506,8 +3516,30 @@ function forgetStaleCohorts(): void {
     if (recalledViewId !== null && ids.includes(recalledViewId)) recalledViewId = null;
     saveViews();
     renderViewsRow();
+    // F151: surface a single-shot undo toast AFTER the sweep lands, so the user
+    // can put the forgotten bookmarks back if the sweep was a misfire.
+    showInfoToast(
+      `forgot ${n} stale view${n === 1 ? "" : "s"}`,
+      6,
+      { label: "Undo", run: () => undoForgetStaleCohorts(snapshot) },
+    );
   };
   for (const id of ids) animateChipExitThenRemove(id, commit);
+}
+
+/**
+ * F151: restore a stale-sweep snapshot — the action behind the sweep's undo
+ * toast. Puts every forgotten cohort bookmark back (restoreSweptViews skips any
+ * that were re-pinned in the meantime, so it can't duplicate), persists, and
+ * repaints. A quiet status confirms the restore.
+ */
+function undoForgetStaleCohorts(snapshot: SavedView[]): void {
+  views = restoreSweptViews(views, snapshot);
+  saveViews();
+  renderViewsRow();
+  const n = snapshot.length;
+  setStatus(`restored ${n} view${n === 1 ? "" : "s"}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
 }
 
 /** Repaint the saved-views chip row + the enabled state of "save view". */

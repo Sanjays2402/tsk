@@ -21,6 +21,8 @@ import {
   findCohortView,
   isStaleCohortView,
   staleCohortViewIds,
+  snapshotViews,
+  restoreSweptViews,
   countViewMatches,
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
@@ -880,4 +882,71 @@ test("staleCohortViewIds preserves list order and agrees with isStaleCohortView"
   const expected = views.filter((v) => isStaleCohortView(v, dead)).map((v) => v.id);
   assert.deepEqual(ids, expected);
   assert.equal(ids.length, 2);
+});
+
+// --- F151: stale-sweep undo (snapshot + restore) ---------------------------
+
+test("snapshotViews captures the named views as detached copies, in list order", () => {
+  let views = addCohortView([], "a", 1);
+  views = addCohortView(views, "b", 2);
+  views = addView(views, "work", { ...emptyF(), tags: ["work"] });
+  const ids = [views[2].id, views[0].id]; // out-of-order request
+  const snap = snapshotViews(views, ids);
+  // Returned in LIST order (#a, then work), not request order.
+  assert.deepEqual(snap.map((v) => v.name), ["a", "work"]);
+  // Detached: mutating the live list doesn't touch the snapshot.
+  views = removeView(views, views[0].id);
+  assert.equal(snap.length, 2);
+  assert.equal(snap[0].name, "a");
+});
+
+test("snapshotViews returns [] for an empty id set or no matches", () => {
+  const views = addCohortView([], "a", 1);
+  assert.deepEqual(snapshotViews(views, []), []);
+  assert.deepEqual(snapshotViews(views, ["nope"]), []);
+});
+
+test("restoreSweptViews re-appends every missing snapshot view", () => {
+  let views = addCohortView([], "a", 1);
+  views = addCohortView(views, "b", 2);
+  const snap = snapshotViews(views, views.map((v) => v.id));
+  // Sweep them, then restore from the snapshot.
+  const swept = views.filter((v) => v.cohort === 1); // keep only #a
+  const restored = restoreSweptViews(swept, snap);
+  // Both snapshot views are present again (the surviving #a is not duplicated).
+  assert.equal(restored.length, 2);
+  assert.deepEqual(new Set(restored.map((v) => v.name)), new Set(["a", "b"]));
+});
+
+test("restoreSweptViews is idempotent on id (no duplicates if already present)", () => {
+  let views = addCohortView([], "a", 1);
+  views = addCohortView(views, "b", 2);
+  const snap = snapshotViews(views, views.map((v) => v.id));
+  // Restoring into the SAME list (nothing swept) adds nothing — same reference.
+  const restored = restoreSweptViews(views, snap);
+  assert.equal(restored, views);
+  assert.equal(restored.length, 2);
+});
+
+test("restoreSweptViews is a no-op for an empty snapshot", () => {
+  const views = addCohortView([], "a", 1);
+  assert.equal(restoreSweptViews(views, []), views);
+});
+
+test("snapshotViews + restoreSweptViews round-trip a stale-sweep faithfully", () => {
+  // The real flow: two stale cohorts get swept, then undone.
+  let views = addCohortView([], "wait 1", 1);
+  views = addCohortView(views, "wait 2", 2);
+  views = addView(views, "work", { ...emptyF(), tags: ["work"] });
+  const dead = (id: number) => id === 99; // both cohorts stale
+  const staleIds = staleCohortViewIds(views, dead);
+  assert.equal(staleIds.length, 2);
+  const snap = snapshotViews(views, staleIds);
+  // Sweep: drop the stale ids.
+  let swept = staleIds.reduce((acc, id) => removeView(acc, id), views);
+  assert.equal(swept.length, 1); // only the filter view remains
+  // Undo: restore.
+  swept = restoreSweptViews(swept, snap);
+  assert.equal(swept.length, 3);
+  assert.deepEqual(new Set(swept.map((v) => v.cohort)), new Set([1, 2, undefined]));
 });

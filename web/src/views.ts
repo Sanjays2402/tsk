@@ -399,6 +399,44 @@ export function staleCohortViewIds(
 }
 
 /**
+ * F151: snapshot a set of views about to be removed — the data half of the
+ * stale-sweep undo. F144's "forget all stale" drops every dead cohort bookmark
+ * in one go; a misfire (a chokepoint that was momentarily unreachable, a hand
+ * that fat-fingered the button) would silently lose those bookmarks. This
+ * captures the to-be-swept views (a deep-ish copy via the serialize round-trip,
+ * so the held snapshot can't be mutated by later edits to the live list) so an
+ * undo toast can put them back, mirroring F8's delete-undo.
+ *
+ * Returns the views whose ids are in `ids`, in the SAME order they appear in
+ * `views` (stable), as fresh objects detached from the live list. An empty id
+ * set (or no matches) returns []. Pure → unit-tested; main.ts holds the result
+ * for the toast window and feeds it to restoreSweptViews on undo.
+ */
+export function snapshotViews(views: SavedView[], ids: readonly string[]): SavedView[] {
+  const want = new Set(ids);
+  return parseViews(serializeViews(views.filter((v) => want.has(v.id))));
+}
+
+/**
+ * F151: restore a snapshot of swept views back into the live list — the action
+ * half of the stale-sweep undo. Re-inserts every snapshot view that isn't
+ * already present (matched by id), so an undo after F144's bulk sweep puts the
+ * forgotten cohort bookmarks back. Idempotent on id: a view already in `current`
+ * (e.g. re-pinned between sweep and undo) is left as-is rather than duplicated.
+ * Restored views are appended after the current list (their original positions
+ * aren't tracked — order within the Views row isn't load-bearing, and appending
+ * keeps the undo simple + predictable). Returns a NEW array; an empty snapshot
+ * is a no-op (returns the same reference). Pure → unit-tested.
+ */
+export function restoreSweptViews(current: SavedView[], snapshot: readonly SavedView[]): SavedView[] {
+  if (snapshot.length === 0) return current;
+  const have = new Set(current.map((v) => v.id));
+  const missing = snapshot.filter((v) => !have.has(v.id));
+  if (missing.length === 0) return current;
+  return [...current, ...missing.map((v) => ({ ...v }))];
+}
+
+/**
  * F133: add a COHORT bookmark capturing `sourceId` (or recall semantics via the
  * caller when one already exists — this just keeps the store clean by
  * overwriting any same-name OR same-chokepoint cohort view rather than
