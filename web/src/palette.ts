@@ -348,6 +348,8 @@ export interface CommandReasonContext {
   staleCohortCount: number;
   /** F149: is there a single unambiguous busiest view (so "recall busiest view" is meaningful)? */
   hasBusiestView: boolean;
+  /** F156: how many views the last stale sweep removed and can still be restored (0 = nothing stashed). */
+  staleSweepCount: number;
 }
 
 /**
@@ -607,6 +609,30 @@ export function peekBusiestViewCommand(name: string | null, count: number | null
   };
 }
 
+/**
+ * F156: build an "Undo last stale sweep (N)" command — the keyboard-reachable
+ * sibling of F151's undo TOAST. F144 sweeps every dead cohort bookmark and F151
+ * offers a 6s "forgot N stale views — Undo" toast; but once that toast window
+ * lapses the restore is gone. This stashes the last swept snapshot and exposes
+ * its restore from Cmd-K, so a misfire is recoverable past the toast.
+ *
+ * `count` is how many views the last sweep removed (the held snapshot's size),
+ * or 0 when nothing's been swept this session / the stash was already consumed —
+ * then the command reads plainly and is disabled (commandDisabledReason explains
+ * "nothing to restore"). Its id is the static "cohort-undo-sweep"; runCommand
+ * restores via the SAME restoreSweptViews path F151's toast button uses, then
+ * clears the stash (a one-shot, like the toast). Pure → unit-tested.
+ */
+export function undoStaleSweepCommand(count: number): Command {
+  return {
+    id: "cohort-undo-sweep",
+    title: count > 0 ? `Undo last stale sweep (${count})` : "Undo last stale sweep",
+    group: "Views",
+    keywords: ["undo", "restore", "stale", "sweep", "cohort", "forgot", "bookmark", "recover", "back", "view"],
+    disabled: count <= 0,
+  };
+}
+
 /** F107: the minimal chokepoint shape these helpers rank over (id + waiter count). */
 export interface ChokepointLike {
   id: number;
@@ -730,5 +756,7 @@ export function commandDisabledReason(id: string, ctx: CommandReasonContext): st
   if (id === "view-busiest" && !ctx.hasBusiestView) return "no busiest view";
   // F153: the peek-busiest command shares the F149 "no clear winner" gate.
   if (id === "peek-busiest" && !ctx.hasBusiestView) return "no busiest view";
+  // F156: the undo-sweep command is live only while a swept snapshot is stashed.
+  if (id === "cohort-undo-sweep" && ctx.staleSweepCount <= 0) return "nothing to restore";
   return null;
 }

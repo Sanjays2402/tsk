@@ -24,6 +24,7 @@ import {
   forgetStaleCohortsCommand,
   recallBusiestViewCommand,
   peekBusiestViewCommand,
+  undoStaleSweepCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -389,7 +390,7 @@ test("renderDisabledReason escapes its text", () => {
 
 // --- F89: general disabled-reason hints for every gated command ------------
 
-const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true, staleCohortCount: 2, hasBusiestView: true };
+const FULL_CTX = { hasSel: true, canUndo: true, hasTasks: true, onTag: true, hasLens: true, lensPinned: true, hasCohort: true, hasChokepoint: true, cohortPinned: true, staleCohortCount: 2, hasBusiestView: true, staleSweepCount: 2 };
 
 test("commandDisabledReason: selection-gated verbs say 'select a task first' with no selection", () => {
   const ctx = { ...FULL_CTX, hasSel: false };
@@ -772,6 +773,35 @@ test("commandDisabledReason explains a no-winner peek-busiest command", () => {
     "no busiest view",
   );
   assert.equal(commandDisabledReason("peek-busiest", FULL_CTX), null);
+});
+
+// --- F156: undo last stale sweep command -----------------------------------
+
+test("undoStaleSweepCommand names the count and is enabled when > 0", () => {
+  const c = undoStaleSweepCommand(3);
+  assert.equal(c.id, "cohort-undo-sweep");
+  assert.equal(c.title, "Undo last stale sweep (3)");
+  assert.equal(c.group, "Views");
+  assert.equal(c.disabled, false);
+});
+
+test("undoStaleSweepCommand reads plainly and is disabled with nothing stashed", () => {
+  const c = undoStaleSweepCommand(0);
+  assert.equal(c.title, "Undo last stale sweep");
+  assert.equal(c.disabled, true);
+});
+
+test("undoStaleSweepCommand is fuzzy-findable by 'undo' and 'restore'", () => {
+  assert.equal(filterCommands([undoStaleSweepCommand(2)], "undo")[0].id, "cohort-undo-sweep");
+  assert.equal(filterCommands([undoStaleSweepCommand(2)], "restore")[0].id, "cohort-undo-sweep");
+});
+
+test("commandDisabledReason explains an empty undo-sweep command", () => {
+  assert.equal(
+    commandDisabledReason("cohort-undo-sweep", { ...FULL_CTX, staleSweepCount: 0 }),
+    "nothing to restore",
+  );
+  assert.equal(commandDisabledReason("cohort-undo-sweep", FULL_CTX), null);
 });
 
 test("commandDisabledReason explains an absent busiest view", () => {

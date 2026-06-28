@@ -175,6 +175,7 @@ import {
   forgetStaleCohortsCommand,
   recallBusiestViewCommand,
   peekBusiestViewCommand,
+  undoStaleSweepCommand,
   focusChokepointCommand,
   buildChokepointFocusCommands,
   focusShiftedChokepointCommand,
@@ -476,6 +477,17 @@ let recalledViewId: string | null = null;
  * `is-flash` class rides exactly one paint. Null when there's no pending flash.
  */
 let pendingPinFlashViewId: string | null = null;
+
+/**
+ * F156: the last stale-sweep snapshot still available to restore from Cmd-K — a
+ * detached copy (via snapshotViews) of the views F144's sweep removed. F151's
+ * undo TOAST holds the same snapshot for its 6s window; this stash keeps it past
+ * that window so the "Undo last stale sweep (N)" command can restore it later.
+ * Set by forgetStaleCohorts after a sweep, consumed (cleared) on restore — and
+ * also cleared when the toast's own undo fires, so the two paths never
+ * double-restore. Null when nothing's been swept this session.
+ */
+let lastStaleSweep: SavedView[] | null = null;
 
 /**
  * F66: the single active render-pipeline LENS, or null. A lens narrows the
@@ -3554,6 +3566,9 @@ function forgetStaleCohorts(): void {
   // F151: capture the to-be-swept views as a detached snapshot so an undo can
   // restore them even after later edits to the live list.
   const snapshot = snapshotViews(views, ids);
+  // F156: also stash it past the toast window so the "Undo last stale sweep"
+  // Cmd-K command can restore it later (the toast's undo clears this too).
+  lastStaleSweep = snapshot;
   setStatus(`forgot ${n} stale cohort view${n === 1 ? "" : "s"}`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
   // Fade each dead chip out, then remove all in one store update + repaint. The
@@ -3586,10 +3601,37 @@ function forgetStaleCohorts(): void {
  */
 function undoForgetStaleCohorts(snapshot: SavedView[]): void {
   views = restoreSweptViews(views, snapshot);
+  // F156: consume the stash so the Cmd-K "Undo last stale sweep" command can't
+  // double-restore what this toast already put back.
+  lastStaleSweep = null;
   saveViews();
   renderViewsRow();
   const n = snapshot.length;
   setStatus(`restored ${n} view${n === 1 ? "" : "s"}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
+ * F156: restore the last stale-sweep from the Cmd-K "Undo last stale sweep"
+ * command — the keyboard-reachable sister of F151's undo toast, working past the
+ * toast's 6s window. Reads the held lastStaleSweep stash, restores it through the
+ * SAME restoreSweptViews path the toast button uses (idempotent on id, so a
+ * re-pinned view isn't duplicated), then clears the stash (a one-shot). A no-op
+ * with a quiet status when nothing's stashed (the command is disabled then).
+ */
+function undoLastStaleSweep(): void {
+  const snapshot = lastStaleSweep;
+  if (!snapshot || snapshot.length === 0) {
+    setStatus("nothing to restore", false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  views = restoreSweptViews(views, snapshot);
+  lastStaleSweep = null;
+  saveViews();
+  renderViewsRow();
+  const n = snapshot.length;
+  setStatus(`restored ${n} stale view${n === 1 ? "" : "s"}`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
 }
 
@@ -5620,6 +5662,9 @@ function buildCommands(): Command[] {
     // in the preview slot without recalling, so you can confirm the pile-up
     // before the F149 jump. Same disabled gate (no clear winner).
     ...maybePeekBusiestViewCommand(),
+    // F156: restore the last stale-sweep from the keyboard, past F151's 6s undo
+    // toast window. Disabled ("nothing to restore") when no snapshot is stashed.
+    undoStaleSweepCommand(lastStaleSweep ? lastStaleSweep.length : 0),
     // F114: when the biggest chokepoint JUST shifted (tracked in refresh(),
     // independent of the stats panel), lead the focus group with "Focus the new
     // biggest chokepoint (#N, was #M)" so the keyboard path opens straight onto
@@ -5843,6 +5888,13 @@ function runCommand(id: string): void {
       setTimeout(() => setStatus("ready", false), 3_000);
     }
   }
+  // F156: restore the last stale-sweep from the keyboard, past F151's toast
+  // window. undoLastStaleSweep reads the stashed snapshot, restores it through
+  // the same restoreSweptViews path, and clears the stash (a no-op if nothing's
+  // stashed — the command is disabled then anyway).
+  if (id === "cohort-undo-sweep") {
+    undoLastStaleSweep();
+  }
   // F107: dynamic per-chokepoint focus commands (id shaped "cohort-focus-<id>",
   // distinct from the static "cohort-focus-biggest"). Decode the target id and
   // route through the same setCohort path the sidebar focus buttons + the
@@ -5998,6 +6050,7 @@ function paintPaletteDuePreview(): void {
             focusCohort !== null && findCohortView(views, focusCohort.sourceId) !== null,
           staleCohortCount: currentStaleCohortIds().length,
           hasBusiestView: currentBusiestViewId() !== null,
+          staleSweepCount: lastStaleSweep ? lastStaleSweep.length : 0,
         })
       : null;
   if (reason !== null) {
