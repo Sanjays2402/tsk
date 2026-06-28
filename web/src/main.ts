@@ -249,6 +249,7 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
+  peekViewLabel,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -5378,6 +5379,18 @@ function buildCommands(): Command[] {
     group: "Views",
     keywords: ["saved", "filter", "recall", ...v.filter.tags, ...v.filter.priorities],
   }));
+  // F146: a "Peek view (<name>)" command per saved view — highlight it to see
+  // the view's live match-count + facet summary in the preview slot WITHOUT
+  // recalling it, so you can compare views before committing. Distinct id shape
+  // ("peek:<id>") so the preview painter + runCommand can tell peek from recall;
+  // the peek run() is a no-op echo (it never changes the board — looking, not
+  // jumping). Kept separate from viewCommands so the recall group stays clean.
+  const peekCommands: Command[] = views.map((v) => ({
+    id: `peek:${v.id}`,
+    title: `Peek view (${v.name})`,
+    group: "Views",
+    keywords: ["peek", "preview", "look", "inspect", "compare", "saved", "view", ...v.filter.tags],
+  }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -5554,6 +5567,9 @@ function buildCommands(): Command[] {
         activeViewWithLens(views, currentViewFilter(), activeLens) !== null,
     },
     ...viewCommands,
+    // F146: the per-view "Peek view (<name>)" commands sit after the recall
+    // group so they're discoverable but don't crowd the recall list head.
+    ...peekCommands,
   ];
 }
 
@@ -5704,6 +5720,19 @@ function runCommand(id: string): void {
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
   if (id.startsWith("view:")) {
     recallView(id.slice("view:".length));
+  }
+  // F146: the "Peek view (<id>)" commands are look-don't-touch — the value is
+  // the preview slot (the match-count + facet summary), shown while the command
+  // is highlighted. Running one (Enter) doesn't recall it; it just echoes the
+  // peek into the status line so a keyboard user gets confirmation rather than a
+  // silent close. To actually open it, use the sibling "View: <name>" recall.
+  if (id.startsWith("peek:")) {
+    const v = views.find((x) => x.id === id.slice("peek:".length));
+    if (v) {
+      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+      setStatus(`peek ${v.name}: ${peekViewLabel(v, count)}`, false);
+      setTimeout(() => setStatus("ready", false), 3_000);
+    }
   }
   // F149: recall the busiest (densest) saved view — the F142 triage winner —
   // keyboard-only. Reads the live busiest id at dispatch time (the board may have
@@ -5876,6 +5905,22 @@ function paintPaletteDuePreview(): void {
     line.hidden = false;
     line.innerHTML = renderDisabledReason(reason);
     return;
+  }
+  // F146: a highlighted "Peek view (<name>)" command previews the view's live
+  // match-count + facet summary in the slot WITHOUT recalling it, so you can
+  // compare saved views before committing. Reuses the SAME countViewMatches the
+  // F141 badge reads, over the same live pool, so the peek can't disagree with
+  // the chip. Rendered with the faint `.due-preview is-empty` style (it's a
+  // readout, not a live parse).
+  if (cmd && cmd.id.startsWith("peek:")) {
+    paletteDueParseSeq++; // invalidate any in-flight due parse — peek wins the slot
+    const v = views.find((x) => x.id === cmd.id.slice("peek:".length));
+    if (v) {
+      const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
+      line.hidden = false;
+      line.innerHTML = renderDisabledReason(peekViewLabel(v, count));
+      return;
+    }
   }
   // F77: a highlighted "Set priority" command previews the level change
   // synchronously from the selected task's current priority.

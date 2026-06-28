@@ -29,6 +29,7 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
+  peekViewLabel,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -884,6 +885,34 @@ test("describeViewsRowSummary drops the task half when nothing matches", () => {
   assert.equal(describeViewsRowSummary({ views: 3, tasks: 0 }), "3 views");
   // No views at all -> empty (the row + readout hide).
   assert.equal(describeViewsRowSummary({ views: 0, tasks: 0 }), "");
+});
+
+// --- F146: peek view (preview without recall) ------------------------------
+
+test("peekViewLabel combines the live count with the facet description", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  assert.equal(peekViewLabel(v, 12), "12 tasks \u00b7 tags: #work");
+  // Singularizes one task.
+  assert.equal(peekViewLabel(v, 1), "1 task \u00b7 tags: #work");
+});
+
+test("peekViewLabel reads 'no matches' for a zero count", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  assert.equal(peekViewLabel(v, 0), "no matches \u00b7 tags: #work");
+});
+
+test("peekViewLabel drops the count half for a null/undefined count", () => {
+  const v: SavedView = { id: "f", name: "work", filter: { ...emptyF(), tags: ["work"] } };
+  // Description-only (describeView never returns "").
+  assert.equal(peekViewLabel(v, null), "tags: #work");
+  assert.equal(peekViewLabel(v, undefined), "tags: #work");
+});
+
+test("peekViewLabel describes a cohort + a lens view by their kind", () => {
+  const cohort = addCohortView([], "#5", 5)[0];
+  assert.equal(peekViewLabel(cohort, 3), "3 tasks \u00b7 waiting on #5");
+  const lensView: SavedView = { id: "l", name: "(overdue)", filter: emptyF(), lens: "overdue" };
+  assert.equal(peekViewLabel(lensView, 7), "7 tasks \u00b7 lens: overdue");
 });
 
 // --- F144: stale cohort-view bulk sweep ------------------------------------

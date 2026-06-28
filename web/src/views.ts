@@ -650,6 +650,30 @@ export function describeViewsRowSummary(s: ViewsRowSummary): string {
 }
 
 /**
+ * F146: the preview text for a "Peek view (<name>)" command — a view's live
+ * match-count + a compact description of what it filters, shown in the palette's
+ * preview slot WITHOUT recalling it, so you can compare saved views before
+ * committing to one. The per-view recall commands (F25) jump straight in; this
+ * lets you look first.
+ *
+ * Combines the live `count` (the SAME countViewMatches the F141 badge reads,
+ * passed in so views.ts stays decoupled) with describeView's facet summary into
+ * one line: "12 tasks · tags: #work" (or "no matches · lens: overdue" when the
+ * count is 0, so an empty bucket reads honestly). A null/undefined count drops
+ * the count half ("tags: #work") — used when a count isn't meaningful. The
+ * description half is always present (describeView never returns ""). Pure →
+ * unit-tested; main.ts renders the returned text into the preview slot via the
+ * shared `.due-preview` style.
+ */
+export function peekViewLabel(view: SavedView, count: number | null | undefined): string {
+  const desc = describeView(view);
+  if (typeof count !== "number") return desc;
+  const countText =
+    count === 0 ? "no matches" : `${count} task${count === 1 ? "" : "s"}`;
+  return `${countText} \u00b7 ${desc}`;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed
