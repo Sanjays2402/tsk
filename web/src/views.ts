@@ -602,6 +602,54 @@ export function busiestViewId(
 }
 
 /**
+ * F148: the at-a-glance coverage summary for the Views row head — "N views · M
+ * tasks". With F141's per-chip counts + F142's busiest marker live, the row is a
+ * triage dashboard; this adds a tiny leading readout that sums the whole row so
+ * you see the totals without eyeballing every chip. The number of distinct saved
+ * views (the chip count) plus the total matched tasks across them.
+ *
+ * The per-view count is the SAME resolver F141's badge + F142's marker read
+ * (injected, backed by countViewMatches over the live board), so the summary
+ * can't disagree with the chips it sits above. Tasks matched by multiple views
+ * ARE counted once per view (the sum is "total chip coverage", not a de-duped
+ * unique-task count) — that matches what the per-chip badges already show, so
+ * summing them is consistent; a null/undefined/negative count contributes 0.
+ * Returns { views, tasks }. An empty list is { views: 0, tasks: 0 }. Pure →
+ * unit-tested; describeViewsRowSummary turns it into the readout text.
+ */
+export interface ViewsRowSummary {
+  views: number;
+  tasks: number;
+}
+
+export function viewsRowSummary(
+  views: SavedView[],
+  count: (view: SavedView) => number | null | undefined,
+): ViewsRowSummary {
+  let tasks = 0;
+  for (const v of views) {
+    const c = count(v);
+    if (typeof c === "number" && c > 0) tasks += c;
+  }
+  return { views: views.length, tasks };
+}
+
+/**
+ * F148: render the Views-row summary as "N views · M tasks" (singularizing both
+ * nouns). With no views it returns "" so the readout stays hidden (the row is
+ * itself hidden then anyway). When there ARE views but they currently match
+ * nothing, the task half is dropped ("3 views") rather than reading "· 0 tasks",
+ * keeping the readout quiet on an all-empty board. Pure + tiny so it can't drift
+ * from viewsRowSummary.
+ */
+export function describeViewsRowSummary(s: ViewsRowSummary): string {
+  if (s.views === 0) return "";
+  const v = `${s.views} view${s.views === 1 ? "" : "s"}`;
+  if (s.tasks === 0) return v;
+  return `${v} \u00b7 ${s.tasks} task${s.tasks === 1 ? "" : "s"}`;
+}
+
+/**
  * F124: is a chip horizontally clipped by its (overflow-scrolling) container —
  * i.e. would the just-flashed pin (F119) be off-screen when the highlight plays?
  * F119 flashes the freshly-pinned chip, but when the Views row has overflowed

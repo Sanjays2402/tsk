@@ -1510,6 +1510,19 @@ button.lens-legend-item:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+/* F148: a quiet "N views · M tasks" coverage readout at the row head, summing
+   the F141 per-chip counts so the row's totals are legible at a glance. Dim +
+   mono so it reads as a stat caption, not an action. */
+.views-summary {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.views-summary[hidden] {
+  display: none;
+}
 .views-chips {
   display: flex;
   flex-wrap: wrap;

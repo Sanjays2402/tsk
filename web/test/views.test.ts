@@ -27,6 +27,8 @@ import {
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
   busiestViewId,
+  viewsRowSummary,
+  describeViewsRowSummary,
   addCohortView,
   chipClippedX,
   canAnimateChipExit,
@@ -847,6 +849,41 @@ test("renderViewChips omits is-busiest when busiestId is null/absent", () => {
   const views = addView([], "a", { ...emptyF(), tags: ["a"] });
   assert.doesNotMatch(renderViewChips(views, emptyF(), { busiestId: null }), /is-busiest/);
   assert.doesNotMatch(renderViewChips(views, emptyF(), {}), /is-busiest/);
+});
+
+// --- F148: Views-row coverage summary --------------------------------------
+
+test("viewsRowSummary sums distinct views + total matched tasks", () => {
+  const a: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  const b: SavedView = { id: "b", name: "b", filter: { ...emptyF(), tags: ["b"] } };
+  const c: SavedView = { id: "c", name: "c", filter: { ...emptyF(), tags: ["c"] } };
+  const counts: Record<string, number> = { a: 3, b: 9, c: 5 };
+  assert.deepEqual(viewsRowSummary([a, b, c], (v) => counts[v.id]), { views: 3, tasks: 17 });
+});
+
+test("viewsRowSummary treats null/zero/negative counts as zero", () => {
+  const a: SavedView = { id: "a", name: "a", filter: { ...emptyF(), tags: ["a"] } };
+  const b: SavedView = { id: "b", name: "b", filter: { ...emptyF(), tags: ["b"] } };
+  // null + a real count -> only the real one contributes; views still counts both.
+  assert.deepEqual(viewsRowSummary([a, b], (v) => (v.id === "a" ? null : 4)), { views: 2, tasks: 4 });
+  assert.deepEqual(viewsRowSummary([a, b], () => 0), { views: 2, tasks: 0 });
+  assert.deepEqual(viewsRowSummary([a, b], () => -1), { views: 2, tasks: 0 });
+});
+
+test("viewsRowSummary is zeros for an empty list", () => {
+  assert.deepEqual(viewsRowSummary([], () => 5), { views: 0, tasks: 0 });
+});
+
+test("describeViewsRowSummary renders the readout, singularizing both nouns", () => {
+  assert.equal(describeViewsRowSummary({ views: 3, tasks: 17 }), "3 views \u00b7 17 tasks");
+  assert.equal(describeViewsRowSummary({ views: 1, tasks: 1 }), "1 view \u00b7 1 task");
+});
+
+test("describeViewsRowSummary drops the task half when nothing matches", () => {
+  // Views exist but match nothing -> "3 views", not "3 views · 0 tasks".
+  assert.equal(describeViewsRowSummary({ views: 3, tasks: 0 }), "3 views");
+  // No views at all -> empty (the row + readout hide).
+  assert.equal(describeViewsRowSummary({ views: 0, tasks: 0 }), "");
 });
 
 // --- F144: stale cohort-view bulk sweep ------------------------------------

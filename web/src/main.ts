@@ -246,6 +246,8 @@ import {
   countViewMatchesBreakdown,
   describeViewMatchBreakdown,
   busiestViewId,
+  viewsRowSummary,
+  describeViewsRowSummary,
   addCohortView,
   renderViewChips,
   chipClippedX,
@@ -323,6 +325,7 @@ root.innerHTML = `
       <div class="filter-tags" data-filter-tags role="group" aria-label="Filter by tag"></div>
       <div class="filter-views" data-views-row hidden>
         <span class="views-label">Views</span>
+        <span class="views-summary" data-views-summary aria-live="polite"></span>
         <div class="views-chips" data-views-chips role="group" aria-label="Saved views"></div>
         <button class="views-sweep" data-views-sweep type="button" title="Forget every stale cohort view (its chokepoint cleared)" hidden>forget stale</button>
         <button class="views-save" data-views-save type="button" title="Save the current filter as a named view">+ save view</button>
@@ -373,6 +376,7 @@ const els = {
   filterLensFrom: must<HTMLElement>("[data-filter-lens-from]"),
   filterCohort: must<HTMLButtonElement>("[data-filter-cohort]"),
   viewsRow: must<HTMLElement>("[data-views-row]"),
+  viewsSummary: must<HTMLElement>("[data-views-summary]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
   viewsSave: must<HTMLButtonElement>("[data-views-save]"),
   viewsSweep: must<HTMLButtonElement>("[data-views-sweep]"),
@@ -3611,6 +3615,16 @@ function renderViewsRow(): void {
     // at most one unambiguous winner is ever marked.
     busiestId: busiestViewId(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
   });
+  // F148: a leading "N views · M tasks" coverage readout at the row head, so the
+  // row's totals are legible without summing the per-chip badges by eye. The
+  // per-view count reuses the IDENTICAL resolver the F141 badge + F142 marker
+  // read, so the summary can't disagree with the chips it sits above. Hidden
+  // when there are no views (the row itself is hidden then anyway).
+  const summaryText = describeViewsRowSummary(
+    viewsRowSummary(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
+  );
+  els.viewsSummary.textContent = summaryText;
+  els.viewsSummary.hidden = summaryText === "";
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial
   // "it landed here" confirmation is lost. Scroll it into view (horizontally)
