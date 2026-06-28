@@ -2446,35 +2446,141 @@ T26 backlog (F137-F141) appended below so the loop never starves.
 Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after the T25 cohort
 trail / cohort-pin / chip-leave-fade / f-focus-mirror / star-keyboard cluster:
 
-- [ ] **F137** Cohort trail keyboard navigation: the F132 trail is mouse-only
+- [x] **F137** Cohort trail keyboard navigation: the F132 trail is mouse-only
       (click a segment to jump). Add a keyboard path — when the stats panel has
       focus, Alt+‹ / Alt+› (or `[`/`]` while a cohort is focused) step the trail
       one ancestor at a time, mirroring the existing cohortBack/cohortJumpTo so a
       keyboard user can walk the whole drill ancestry. Pure helper picks the
       target index from the current focus + a direction; main.ts wires the keys.
-- [ ] **F138** Cohort-view chips survive a chokepoint that completes: F133's
+      (tick T26 2026-06-28 — Alt+Left=step one ancestor back, Alt+Right=leap to
+      root; pure cohortTrailKeyTarget; +10 tests)
+- [x] **F138** Cohort-view chips survive a chokepoint that completes: F133's
       recall calls setCohort, which no-ops with "nothing waits on #N" when the
       chokepoint cleared — but the dead chip lingers. Add a small "stale" marker
       on a cohort chip whose chokepoint is done/gone (computed at render from the
       live graph), and offer a one-click "forget" on recall-of-a-dead-cohort so
       the row self-cleans. Pure isStaleCohortView(view, tasks) → unit-tested.
-- [ ] **F139** "Pin current cohort" Cmd-K command: F133 added the panel star, but
+      (tick T26 2026-06-28 — is-stale-cohort chip mark + recall self-clean; +6 tests)
+- [x] **F139** "Pin current cohort" Cmd-K command: F133 added the panel star, but
       the keyboard-first path (Cmd-K) can't pin/unpin the focused cohort. Add a
       pinCohortCommand / unpinCohortCommand (mirroring F110's lens pin commands)
       that reads the focused chokepoint + its pinned state, so the whole cohort
       pin lifecycle is reachable from the palette too. Pure command builder +
-      label ("Pin cohort waiting on #N").
-- [ ] **F140** Cohort trail "copy chain" affordance: a trailing button on the
+      label ("Pin cohort waiting on #N"). (tick T26 2026-06-28 — pin/recall/unpin
+      commands + cohortPinned ctx; shared pinFocusedCohort/unpinFocusedCohort; +8 tests)
+- [x] **F140** Cohort trail "copy chain" affordance: a trailing button on the
       F132 trail copies the whole drill path as text ("#1 › #4 › #9") to the
       clipboard — useful for pasting a bottleneck-walk into a standup note. Pure
       formatCohortTrailText(focus, history); main.ts wires navigator.clipboard
       with the F-style guarded fallback (test env / no clipboard → status hint).
-- [ ] **F141** Saved-view chip count badges: a filter view chip could show how
+      (tick T26 2026-06-28 — data-cohort-copy button + guarded clipboard; +5 tests)
+- [x] **F141** Saved-view chip count badges: a filter view chip could show how
       many tasks it currently matches (a tiny "·12" badge) computed live from the
       board, so the Views row doubles as an at-a-glance triage dashboard. Pure
       countViewMatches(view, tasks) reusing the filter/lens/cohort predicates;
       render a quiet badge in renderViewChips; opt-in via a ViewChipOpts flag so
-      existing callers/tests stay byte-identical.
+      existing callers/tests stay byte-identical. (tick T26 2026-06-28 — injected
+      filter/lens/cohort counters; ·N badge opt-in; +8 tests)
+
+When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
+stack beyond single delete, a per-row dep mini-sparkline, a saved-view
+import/export, a per-tag saved-view group, keyboard reordering of the Views row).
+
+---
+
+## Web tick T26 — 2026-06-28 02:20 PT
+
+Shipped 5/5 web slices on `main` (F137-F141), gated once, pushed clean
+`cf0e23a..37dc6ef` (6 commits: 5 features + the web_dist bundle rebuild).
+
+### Features
+- **F137** `03f1463` — cohort-trail keyboard navigation. cohort.ts pure
+  cohortTrailKeyTarget(historyLength, dir): "step" -> historyLength-1 (most-recent
+  ancestor, one level back = the Escape/cohortBack landing); "root" -> 0 (drill
+  origin); empty -> -1. main.ts wires Alt+Left="step" / Alt+Right="root", handled
+  BEFORE the modifier early-return guard, gated on a focused cohort with history +
+  the not-typing/editing guards, routing through cohortJumpTo (shares the
+  skip-dead-ancestor walk). HELP_ROWS row added. +10 cohort tests.
+- **F140** `92b7feb` — copy-chain affordance on the trail. cohort.ts pure
+  formatCohortTrailText(focus, history) -> "#A › #B › #current" (same segment
+  order + separator glyph as renderCohortTrail; "" when no focus/history).
+  renderCohortTrail appends a trailing data-cohort-copy button (disjoint sibling
+  after the current segment, title carries the chain). main.ts copyCohortChain()
+  guards navigator.clipboard (test/no-API/reject -> status-hint fallback that
+  still shows the chain); stats-panel click routes copy first. app.css
+  .cohort-trail-copy. +5 cohort tests.
+- **F138** `bafd9df` — stale cohort chips self-clean. views.ts pure
+  isStaleCohortView(view, hasLiveCohort) with an injected live-cohort check
+  (decoupled, mirroring lensGlyph/cohortGlyph injection): cohort bookmark is stale
+  iff its chokepoint has no live cohort; non-cohort views never stale.
+  renderViewChips staleCohort resolver opt -> is-stale-cohort class + "— stale,
+  recall to clear" title. main.ts passes the predicate (buildCohort over the live
+  graph) + recallView self-cleans a dead cohort view (drop with F134 leave-fade +
+  status) instead of the bare setCohort no-op. app.css dims/strikes the chip.
+  +6 views tests.
+- **F139** `3386db5` — Cmd-K cohort pin/unpin. palette.ts pinCohortCommand
+  ("Pin cohort (<summary>)" / "Recall pinned cohort" when pinned) +
+  unpinCohortCommand (enabled only when pinned); CommandReasonContext gains
+  cohortPinned; commandDisabledReason adds "no cohort active" / "cohort not
+  pinned" (mirrors the lens-unpin split). main.ts splits togglePinCohort into
+  shared pinFocusedCohort/unpinFocusedCohort (star + commands drive one path
+  each), wires build+run+ctx. +8 palette tests.
+- **F141** `e9686aa` — view-chip match-count badges. views.ts pure
+  countViewMatches(view, tasks, counters) with the 3 per-kind predicates injected
+  (cohort -> id-set size; lens-bearing -> filter AND lens; plain -> filter).
+  renderViewChips matchCount resolver opt -> quiet "·N" badge (null/no-resolver ->
+  nothing). main.ts supplies counters backed by real matchesFilter/matchesLens/
+  buildCohort over the same live pool the board narrows from (tag route applied).
+  app.css .view-chip-count (dim, tabular-nums, brightens when active). +8 views tests.
+- `37dc6ef` — web_dist bundle rebuild (41 modules, JS 41.73KB gz, CSS 11.01KB gz).
+
+### Gates
+- web check: tests 829 -> 857 (+28), 0 fail; tsc app + test/tsconfig.json clean
+- web build green (41 modules); gofmt clean / go vet clean / go build clean
+- go test ./... green (commands 67.7s, rest cached)
+- live `tsk serve --addr 127.0.0.1:7937`: GET / 200; served JS/CSS carried all new
+  hooks (data-cohort-copy, cohort-trail-copy, is-stale-cohort, "stale, recall to
+  clear", cohort-pin, "Recall pinned cohort", "Unpin cohort", "cohort not
+  pinned", view-chip-count); /api/tasks exposed depends_on:[1] for #2/#3;
+  POST /api/tasks/2/toggle round-tripped to .tsk.md preserving depends:1 + adding
+  completed:. Storage contract intact. Fixtures + binary cleaned up.
+
+### Deferred
+Nothing. Standing long-carries: F48 (context-menu submenus), F49 (autocomplete in
+edit/filter), F50 (dep mini-graph), F54 (touch context menu).
+
+### T27 — depth (appended T26 2026-06-28 so the loop never starves)
+
+Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after the T26
+trail-keyboard / copy-chain / stale-chip / cohort-pin-command / chip-count
+cluster:
+
+- [ ] **F142** Views-row total-count summary: with F141's per-chip "·N" badges
+      live, add a tiny leading "Σ" or "N views" readout at the row head that sums
+      the active board's coverage (e.g. "5 views"), or — more useful — a one-shot
+      "busiest view" highlight: the chip with the highest live match-count gets a
+      subtle marker so the densest bucket pops. Pure busiestView(views, counts).
+- [ ] **F143** Cohort-trail copy as MARKDDOWN: F140 copies "#1 › #4 › #9" as
+      plain text; add a modifier (Alt-click / a second button) that copies a
+      markdown task-link chain ("[#1](…) → [#4](…)") or a checkbox list of the
+      cohort, so the standup paste is richer. Pure formatCohortTrailMarkdown.
+- [ ] **F144** Stale-chip bulk sweep: F138 self-cleans ONE dead cohort chip on
+      recall; add a "forget all stale" affordance (a Cmd-K command + a Views-row
+      button when ≥1 stale chip exists) that drops every dead cohort bookmark in
+      one go. Pure staleCohortViewIds(views, hasLiveCohort) → the id list to remove.
+- [ ] **F145** Match-count badge on lens/cohort chips reflects DONE-state filter:
+      F141 counts over the live pool, but a hideDone view and a show-all view read
+      differently — surface that the badge respects the view's own hideDone, and
+      add a tooltip breakdown ("12 open · 3 done") on hover for filter views. Pure
+      countViewMatchesBreakdown returning {open, done}.
+- [ ] **F146** Keyboard recall of a numbered view (F25 views) from the palette
+      WITHOUT opening it: a "Peek view (<name>)" command that previews the match
+      count + describeView in the preview slot (F89-style) so you can compare
+      views before committing to a recall. Pure peekViewLabel(view, count).
+- [ ] **F147** Cohort-trail "jump to densest ancestor": with F141's counts, a
+      trail segment could show its own waiter-count, and a key (Alt+D) could jump
+      straight to the ancestor with the most waiters (the worst bottleneck in the
+      drill). Pure densestCohortAncestorIndex(history, cohortIds).
 
 When fewer than 5 remain, append more (recurring-task UI, archive view, an undo
 stack beyond single delete, a per-row dep mini-sparkline, a saved-view
