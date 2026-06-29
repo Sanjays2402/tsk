@@ -34,6 +34,7 @@ import {
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
   staleSweepTitle,
+  viewsSummaryTooltip,
   peekOpenOnlyLabel,
   peekViewLabel,
   peekCommandTitle,
@@ -1065,6 +1066,19 @@ test("staleSweepTitle falls back to the generic phrase with no names", () => {
 test("staleSweepSegmentHTML folds the names into the button title (escaped)", () => {
   const html = staleSweepSegmentHTML(2, ["waiting on #7", "x<y"]);
   assert.match(html, /title="Forget: waiting on #7, x&lt;y"/);
+});
+
+// --- F167: views-summary headline hover tooltip -----------------------------
+
+test("viewsSummaryTooltip combines busiest and stale", () => {
+  assert.equal(viewsSummaryTooltip({ name: "#work", count: 9 }, 2), "busiest: #work (9) \u00b7 2 stale");
+});
+
+test("viewsSummaryTooltip drops absent clauses", () => {
+  assert.equal(viewsSummaryTooltip({ name: "#work", count: 9 }, 0), "busiest: #work (9)");
+  assert.equal(viewsSummaryTooltip(null, 3), "3 stale");
+  assert.equal(viewsSummaryTooltip(null, 0), "");
+  assert.equal(viewsSummaryTooltip({ name: "", count: 0 }, 0), "");
 });
 
 

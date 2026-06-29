@@ -760,6 +760,25 @@ export function staleSweepTitle(names?: readonly string[]): string {
 }
 
 /**
+ * F167: the hover tooltip for the whole Views-row summary headline — a one-line
+ * breakdown of the busiest pile-up + the stale-bookmark count, so resting on the
+ * readout explains the row's state without clicking. The visible headline is
+ * terse ("3 views · 17 tasks"); this expands to "busiest: #work (9) · 2 stale"
+ * on hover. A null busiest drops its clause; zero stale drops the stale clause;
+ * neither present returns "" (no title attr needed). Pure → unit-tested; main.ts
+ * sets els.viewsSummary.title from it (escaping happens at the title boundary).
+ */
+export function viewsSummaryTooltip(
+  busiest: BusiestViewLabel | null | undefined,
+  staleCount: number,
+): string {
+  const parts: string[] = [];
+  if (busiest && busiest.name !== "") parts.push(`busiest: ${busiest.name} (${busiest.count})`);
+  if (staleCount > 0) parts.push(`${staleCount} stale`);
+  return parts.join(" \u00b7 ");
+}
+
+/**
  * F146: the preview text for a "Peek view (<name>)" command — a view's live
  * match-count + a compact description of what it filters, shown in the palette's
  * preview slot WITHOUT recalling it, so you can compare saved views before

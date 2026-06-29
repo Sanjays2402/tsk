@@ -255,6 +255,7 @@ import {
   viewsRowDoneCount,
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
+  viewsSummaryTooltip,
   peekViewLabel,
   peekCommandTitle,
   peekOpenOnlyTitle,
@@ -3803,6 +3804,8 @@ function renderViewsRow(): void {
     const hasTasks = !/^\d+ views?$/.test(baseText); // task half present
     const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
     els.viewsSummary.innerHTML = baseText + busiestHTML + staleSweepSegmentHTML(staleN, staleNames);
+    // F167: rest on the headline → busiest + stale breakdown explains the row.
+    els.viewsSummary.title = viewsSummaryTooltip(hasTasks ? busiestForSummary : null, staleN);
     els.viewsSummary.hidden = false;
   }
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
