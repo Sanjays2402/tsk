@@ -232,6 +232,8 @@ import {
 import {
   parseViews,
   serializeViews,
+  exportViewsDoc,
+  importViewsDoc,
   addView,
   removeView,
   updateView,
@@ -255,11 +257,14 @@ import {
   viewsRowDoneCount,
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
+  staleSweepTitleAged,
+  type StaleViewAge,
   doneSegmentHTML,
   viewsSummaryTooltip,
   peekViewLabel,
   peekCommandTitle,
   peekOpenOnlyTitle,
+  peekOpenRecallTitle,
   peekOpenOnlyLabel,
   enrichCohortPeek,
   badgeHidesDone,
@@ -267,6 +272,7 @@ import {
   addCohortView,
   renderViewChips,
   groupViewsByTag,
+  viewDividerLabelBefore,
   describeViewGroups,
   chipClippedX,
   canAnimateChipExit,
@@ -346,6 +352,7 @@ root.innerHTML = `
         <span class="views-summary" data-views-summary aria-live="polite"></span>
         <div class="views-chips" data-views-chips role="group" aria-label="Saved views"></div>
         <button class="views-sweep" data-views-sweep type="button" title="Forget every stale cohort view (its chokepoint cleared)" hidden>forget stale</button>
+        <button class="views-copy" data-views-copy type="button" title="Copy all saved views as JSON to the clipboard" hidden>copy views</button>
         <button class="views-save" data-views-save type="button" title="Save the current filter as a named view">+ save view</button>
       </div>
     </div>
@@ -397,6 +404,7 @@ const els = {
   viewsSummary: must<HTMLElement>("[data-views-summary]"),
   viewsChips: must<HTMLElement>("[data-views-chips]"),
   viewsSave: must<HTMLButtonElement>("[data-views-save]"),
+  viewsCopy: must<HTMLButtonElement>("[data-views-copy]"),
   viewsSweep: must<HTMLButtonElement>("[data-views-sweep]"),
   statsToggle: must<HTMLButtonElement>("[data-stats-toggle]"),
   statsPanel: must<HTMLElement>("[data-stats-panel]"),
@@ -501,6 +509,10 @@ let pendingPinFlashViewId: string | null = null;
  * double-restore. Null when nothing's been swept this session.
  */
 let lastStaleSweep: SavedView[] | null = null;
+// F184: track WHEN each cohort bookmark first went stale, so the sweep tooltip
+// can age each name ("dead 3d"). Keyed by view id; pruned to the live stale set
+// on each renderViewsRow so a revived/forgotten view drops its timestamp.
+const cohortStaleSince = new Map<string, number>();
 
 /**
  * F66: the single active render-pipeline LENS, or null. A lens narrows the
@@ -3699,7 +3711,14 @@ function renderViewsRow(): void {
     filtersEqual(recalled.filter, f) &&
     (recalled.lens ?? null) === lens;
   const updatableId = recalled && !recalledMatches && savable ? recalled.id : null;
-  els.viewsChips.innerHTML = renderViewChips(views, f, {
+  // F183: cluster the views by first tag so the chips render group-by-group and
+  // each cluster can be led by a "#tag" divider. groupViewsByTag is stable
+  // (first-appearance order, untagged last), so with one cluster the order is
+  // unchanged and dividers stay off — drag-reorder semantics are untouched.
+  const groups = groupViewsByTag(views);
+  const orderedViews = groups.length >= 2 ? groups.flatMap((g) => g.views) : views;
+  const dividerFor = groups.length >= 2 ? viewDividerLabelBefore(groups) : null;
+  els.viewsChips.innerHTML = renderViewChips(orderedViews, f, {
     draggable: true,
     updatableId,
     liveLens: lens, // F104: lens-aware active-chip highlight
@@ -3758,11 +3777,15 @@ function renderViewsRow(): void {
     // resolver the badge renders from, and returns null on a tie / empty board so
     // at most one unambiguous winner is ever marked.
     busiestId: busiestViewId(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
+    // F183: when the row carries 2+ tag clusters, render chips in cluster order
+    // and lead each cluster with a thin "#tag" divider span so a big row reads
+    // as labeled groups. Single cluster -> no dividers, natural drag order kept.
+    dividerLabel: dividerFor ? (v) => dividerFor(v.id) : undefined,
   });
   // F176: when the Views row carries 2+ tag clusters, set a hover tooltip that
   // groups the chips by first tag ("#work: 3 · #home: 2 · untagged: 1") so a big
   // row's tag layout is legible at a glance. Single cluster / empty -> "" clears it.
-  els.viewsChips.title = describeViewGroups(groupViewsByTag(views));
+  els.viewsChips.title = describeViewGroups(groups);
   // F148: a leading "N views · M tasks" coverage readout at the row head, so the
   // row's totals are legible without summing the per-chip badges by eye. The
   // per-view count reuses the IDENTICAL resolver the F141 badge + F142 marker
@@ -3804,6 +3827,23 @@ function renderViewsRow(): void {
   const staleNames = currentStaleCohortIds()
     .map((id) => views.find((v) => v.id === id)?.name)
     .filter((n): n is string => typeof n === "string");
+  // F184: track each stale cohort's first-seen-stale timestamp so the sweep
+  // tooltip can age each name ("dead 3d"). Record fresh ids now; prune any id
+  // that's no longer stale so a revived/forgotten bookmark drops its clock.
+  const staleIdsNow = currentStaleCohortIds();
+  const liveStale = new Set(staleIdsNow);
+  for (const id of [...cohortStaleSince.keys()]) {
+    if (!liveStale.has(id)) cohortStaleSince.delete(id);
+  }
+  for (const id of staleIdsNow) {
+    if (!cohortStaleSince.has(id)) cohortStaleSince.set(id, Date.now());
+  }
+  const staleAged: StaleViewAge[] = staleIdsNow.map((id) => {
+    const name = views.find((v) => v.id === id)?.name ?? "";
+    const since = cohortStaleSince.get(id) ?? Date.now();
+    const days = Math.floor((Date.now() - since) / 86_400_000);
+    return { name, days };
+  });
   if (baseText === "") {
     els.viewsSummary.textContent = "";
     els.viewsSummary.hidden = true;
@@ -3812,7 +3852,7 @@ function renderViewsRow(): void {
     const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
     // F178: the "M done" total doubles as a one-click recall of everything done.
     const doneHTML = hasTasks ? doneSegmentHTML(doneTotal) : "";
-    els.viewsSummary.innerHTML = baseText + doneHTML + busiestHTML + staleSweepSegmentHTML(staleN, staleNames);
+    els.viewsSummary.innerHTML = baseText + doneHTML + busiestHTML + staleSweepSegmentHTML(staleN, staleNames, staleSweepTitleAged(staleAged));
     // F167: rest on the headline → busiest + stale breakdown explains the row.
     els.viewsSummary.title = viewsSummaryTooltip(hasTasks ? busiestForSummary : null, staleN);
     els.viewsSummary.hidden = false;
@@ -3852,6 +3892,9 @@ function renderViewsRow(): void {
   // way. The count rides into the label so the row reads "forget stale (3)".
   els.viewsSweep.hidden = staleN === 0;
   els.viewsSweep.textContent = staleN > 0 ? `forget stale (${staleN})` : "forget stale";
+  // F181: the "copy views" affordance shows only when there ARE views to copy,
+  // so a fresh board stays clean. Click copies the whole row as a tsk.views doc.
+  els.viewsCopy.hidden = views.length === 0;
 }
 
 /** Prompt for a name and save the current filter as a view.
@@ -3881,6 +3924,71 @@ function saveCurrentView(): void {
   render();
   setStatus(`saved view "${trimmed}"`, false);
   setTimeout(() => setStatus("ready", false), 2_000);
+}
+
+/**
+ * F181: copy the whole Views row as a portable JSON document to the clipboard,
+ * so a saved-view set can be pasted onto another machine (F182 imports it). The
+ * payload is exportViewsDoc's {tsk:"tsk.views",v:1,views:[...]} envelope — the
+ * SAME shape importViewsDoc round-trips. navigator.clipboard is guarded for the
+ * test / no-API / insecure-context env exactly like copyCohortChain: when the
+ * write can't fire we degrade to a status hint showing the count, so the user
+ * always gets feedback. A no-op (with a hint) when there are no views to copy.
+ */
+function copyViews(): void {
+  if (views.length === 0) {
+    setStatus("no views to copy", true);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const doc = exportViewsDoc(views);
+  const n = views.length;
+  const ok = (): void => {
+    setStatus(`copied ${n} view${n === 1 ? "" : "s"} to clipboard`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+  };
+  const hint = (): void => {
+    setStatus(`${n} view${n === 1 ? "" : "s"} ready — clipboard blocked`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.writeText === "function") {
+    clip.writeText(doc).then(ok, () => hint());
+  } else {
+    hint();
+  }
+}
+
+/**
+ * F182: paste a Views document from the clipboard and MERGE it into the row.
+ * Reads navigator.clipboard, runs importViewsDoc (de-dups by name, fresh ids,
+ * garbage-rejecting), persists, and reports the merged count. When the clipboard
+ * API is unavailable (test / insecure context) falls back to a prompt() so the
+ * action stays reachable. A doc that adds nothing (all names already present /
+ * not a views doc) reports "0 added". Guarded so a rejected read just reports.
+ */
+function pasteViews(): void {
+  const merge = (text: string): void => {
+    const before = views.length;
+    views = importViewsDoc(views, text);
+    const added = views.length - before;
+    if (added > 0) {
+      saveViews();
+      render();
+    }
+    setStatus(`pasted views: +${added} added`, added === 0);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.readText === "function") {
+    clip.readText().then(merge, () => {
+      const t = typeof prompt === "function" ? prompt("Paste views JSON:") : null;
+      if (t) merge(t);
+    });
+  } else {
+    const t = typeof prompt === "function" ? prompt("Paste views JSON:") : null;
+    if (t) merge(t);
+  }
 }
 
 /**
@@ -4247,6 +4355,9 @@ els.filterClear.addEventListener("click", () => {
 // --- F25: saved-views wiring -----------------------------------------------
 
 els.viewsSave.addEventListener("click", saveCurrentView);
+// F181: the "copy views" button writes the whole row as a tsk.views JSON doc to
+// the clipboard; F182's Cmd-K "Paste views" merges one back. Mouse + keyboard pair.
+els.viewsCopy.addEventListener("click", copyViews);
 // F144: the "forget stale" sweep button drops every dead cohort bookmark at
 // once (the mouse sister of the Cmd-K "Forget all stale cohort views" command).
 els.viewsSweep.addEventListener("click", forgetStaleCohorts);
@@ -5662,6 +5773,27 @@ function buildCommands(): Command[] {
       group: "Views",
       keywords: ["peek", "open", "preview", "look", "view", "done", ...v.filter.tags],
     }));
+  // F185: a "Recall open-only (<name>)" command per actionable view — the
+  // keyboard sibling of F171's PEEK that COMMITS the recall+hideDone jump in one
+  // keystroke (look-and-touch). Same view set + open count F165/F166 use, so the
+  // peek and the recall pair appear together; folds the live "·N" open count so
+  // depth is visible before firing. id "recall-open-kbd:<id>".
+  const recallOpenKbdCommands: Command[] = views
+    .filter((v) =>
+      badgeHidesDone(
+        v,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
+      ),
+    )
+    .map((v) => ({
+      id: `recall-open-kbd:${v.id}`,
+      title: peekOpenRecallTitle(
+        v.name,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).open,
+      ),
+      group: "Views",
+      keywords: ["recall", "open", "jump", "commit", "hide", "done", "view", ...v.filter.tags],
+    }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -5844,6 +5976,23 @@ function buildCommands(): Command[] {
         (filterIsEmpty(currentViewFilter()) && activeLens === null) ||
         activeViewWithLens(views, currentViewFilter(), activeLens) !== null,
     },
+    // F181: copy the whole Views row as a tsk.views JSON doc — keyboard sibling
+    // of the "copy views" button. Disabled with no views to copy.
+    {
+      id: "copy-views",
+      title: "Copy views to clipboard",
+      group: "Views",
+      keywords: ["export", "share", "json", "clipboard", "backup"],
+      disabled: views.length === 0,
+    },
+    // F182: paste a tsk.views doc from the clipboard and merge it (de-dups by
+    // name, fresh ids). Always reachable — even an empty row imports a set.
+    {
+      id: "paste-views",
+      title: "Paste views from clipboard",
+      group: "Views",
+      keywords: ["import", "merge", "json", "clipboard", "restore"],
+    },
     ...viewCommands,
     // F146: the per-view "Peek view (<name>)" commands sit after the recall
     // group so they're discoverable but don't crowd the recall list head.
@@ -5854,6 +6003,8 @@ function buildCommands(): Command[] {
     // F165: per-view "Peek open-only (<name>)" — look-don't-touch sibling of the
     // recall-open command, previews just the open count before committing.
     ...peekOpenCommands,
+    // F185: per-view "Recall open-only" — keyboard commit of the open-slice jump.
+    ...recallOpenKbdCommands,
   ];
 }
 
@@ -6000,6 +6151,12 @@ function runCommand(id: string): void {
     case "save-view":
       saveCurrentView();
       break;
+    case "copy-views":
+      copyViews();
+      break;
+    case "paste-views":
+      pasteViews();
+      break;
   }
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
   if (id.startsWith("view:")) {
@@ -6031,7 +6188,12 @@ function runCommand(id: string): void {
   // F158: "Recall <name> (open only)" recalls a show-all view AND hides its done
   // slice in one jump — the keyboard sibling of F152's actionable badge click.
   // Same recallViewHideDone path the badge uses, so they can't diverge.
-  if (id.startsWith("recall-open:")) {
+  // F185: "Recall open-only (<name>)" commits the open-slice jump from the
+  // keyboard — checked BEFORE recall-open: because that's a prefix of this id.
+  // Same recallViewHideDone path as the badge / F158, so they can't diverge.
+  if (id.startsWith("recall-open-kbd:")) {
+    recallViewHideDone(id.slice("recall-open-kbd:".length));
+  } else if (id.startsWith("recall-open:")) {
     recallViewHideDone(id.slice("recall-open:".length));
   }
   // F149: recall the busiest (densest) saved view — the F142 triage winner —

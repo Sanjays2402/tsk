@@ -1556,6 +1556,19 @@ button.lens-legend-item:focus-visible {
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+.view-group-divider {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-text-dim);
+  opacity: 0.7;
+  padding: 0 var(--sp-1);
+  align-self: center;
+  white-space: nowrap;
+  user-select: none;
+}
 .view-chip {
   display: inline-flex;
   align-items: center;

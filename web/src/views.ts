@@ -258,6 +258,27 @@ export function viewGroupDividers(groups: ViewGroup[]): ViewGroupDivider[] {
   }));
 }
 
+/**
+ * F183: a resolver that maps a view id to the divider label that should render
+ * BEFORE its chip, or "" when no divider belongs there. Built from
+ * viewGroupDividers: a label is keyed to the FIRST id of each cluster, so a
+ * single thin "#tag" span leads each group and the rest of the cluster's chips
+ * follow unmarked. Returns a function so renderViewChips can ask per-chip
+ * without rebuilding the map; fewer than 2 groups yields a resolver that always
+ * answers "" (one cluster needs no dividers). Pure → unit-tested; main.ts builds
+ * it from groupViewsByTag(views) and the flattened group order so the chips
+ * render in cluster order with their labels interleaved.
+ */
+export function viewDividerLabelBefore(groups: ViewGroup[]): (id: string) => string {
+  const dividers = viewGroupDividers(groups);
+  if (dividers.length === 0) return () => "";
+  const first = new Map<string, string>();
+  for (const d of dividers) {
+    if (d.ids.length > 0) first.set(d.ids[0], d.label);
+  }
+  return (id: string) => first.get(id) ?? "";
+}
+
 /** Generate a reasonably-unique id without a dependency. */
 export function makeId(): string {
   return `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -875,9 +896,10 @@ export function busiestHeadlineHTML(busiest: BusiestViewLabel | null | undefined
  * keeping a clean board byte-identical. Pure → unit-tested; main.ts appends it
  * after the busiest segment and the existing delegated sweep handler fires.
  */
-export function staleSweepSegmentHTML(staleCount: number, names?: readonly string[]): string {
+export function staleSweepSegmentHTML(staleCount: number, names?: readonly string[], title?: string): string {
   if (staleCount <= 0) return "";
-  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="${escapeHTML(staleSweepTitle(names))}">${staleCount} stale</button>`;
+  const tip = title && title !== "" ? title : staleSweepTitle(names);
+  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="${escapeHTML(tip)}">${staleCount} stale</button>`;
 }
 
 /**
@@ -1187,6 +1209,16 @@ export interface ViewChipOpts {
    * the marker only appears when there's an unambiguous busiest view.
    */
   busiestId?: string | null;
+  /**
+   * F183: a resolver giving the divider label that should render BEFORE a chip
+   * (a thin "#tag" span leading each tag cluster), or "" for no divider. Built
+   * from viewDividerLabelBefore(groupViewsByTag(views)): only the FIRST chip of
+   * each cluster gets a label, so a big Views row reads as labeled groups. The
+   * caller renders chips in cluster order (groupViewsByTag flatten) so labels
+   * land where the groups change. Omitting it renders no dividers, keeping
+   * existing callers byte-identical.
+   */
+  dividerLabel?: (view: SavedView) => string;
 }
 
 /**
@@ -1360,7 +1392,13 @@ export function renderViewChips(
       // (busiestViewId resolves a tie / empty board to null), so at most one chip
       // wears is-busiest; omitting busiestId marks nothing.
       const busiest = opts.busiestId && opts.busiestId === v.id ? " is-busiest" : "";
-      return `<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      // F183: a thin "#tag" divider span leads the first chip of each tag
+      // cluster so a big Views row reads as labeled groups. Only the cluster's
+      // first chip gets a label (resolver returns "" otherwise); omitting the
+      // resolver renders no dividers, so existing callers stay byte-identical.
+      const dl = opts.dividerLabel ? opts.dividerLabel(v) : "";
+      const divider = dl ? `<span class="view-group-divider" aria-hidden="true">${escapeHTML(dl)}</span>` : "";
+      return `${divider}<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }

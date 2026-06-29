@@ -52,6 +52,7 @@ import {
   groupViewsByTag,
   describeViewGroups,
   viewGroupDividers,
+  viewDividerLabelBefore,
   exportViewsDoc,
   importViewsDoc,
   doneSegmentHTML,
@@ -1425,4 +1426,36 @@ test("peekOpenRecallTitle folds the open count when present", () => {
   assert.equal(peekOpenRecallTitle("Work", 9), "Recall open-only (Work) \u00b79");
   assert.equal(peekOpenRecallTitle("Work", 0), "Recall open-only (Work) \u00b70");
   assert.equal(peekOpenRecallTitle("Work", null), "Recall open-only (Work)");
+});
+
+// F183: per-chip divider label resolver — only the first id of each cluster.
+test("viewDividerLabelBefore labels only the first chip of each cluster", () => {
+  let vs = addView([], "A", { ...EMPTY, tags: ["work"] });
+  vs = addView(vs, "B", { ...EMPTY, tags: ["work"] });
+  vs = addView(vs, "C", { ...EMPTY, tags: ["home"] });
+  const groups = groupViewsByTag(vs);
+  const ids = groups.flatMap((g) => g.views.map((v) => v.id));
+  const at = viewDividerLabelBefore(groups);
+  assert.equal(at(ids[0]), "#work"); // first work chip leads
+  assert.equal(at(ids[1]), ""); // second work chip no divider
+  assert.equal(at(ids[2]), "#home"); // first home chip leads
+});
+
+test("viewDividerLabelBefore answers empty under 2 groups", () => {
+  const vs = addView([], "A", { ...EMPTY, tags: ["work"] });
+  const at = viewDividerLabelBefore(groupViewsByTag(vs));
+  assert.equal(at(vs[0].id), "");
+});
+
+// F184: aged sweep title override on the summary segment.
+test("staleSweepSegmentHTML accepts an aged title override", () => {
+  const aged = staleSweepTitleAged([{ name: "a", days: 3 }]);
+  const html = staleSweepSegmentHTML(1, ["a"], aged);
+  assert.match(html, /Forget: a \(dead 3d\)/);
+  assert.match(html, />1 stale<\/button>/);
+});
+
+test("staleSweepSegmentHTML falls back to names when no title given", () => {
+  const html = staleSweepSegmentHTML(2, ["a", "b"]);
+  assert.match(html, /Forget: a, b/);
 });
