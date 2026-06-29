@@ -683,6 +683,38 @@ export function appendStaleSegment(summary: string, staleCount: number): string 
 }
 
 /**
+ * F159: render the F154 busiest headline as a CLICKABLE recall affordance so the
+ * triage answer doubles as a one-click jump to the pile-up. F154 names the
+ * busiest view as plain text in describeViewsRowSummary; this returns the same
+ * "· busiest: <name> (K)" tail but with the name wrapped in a `data-view-recall`
+ * button so a click recalls that view — reusing the SAME hook every chip recall
+ * uses (so no new dispatch). Returns the leading "·" separator + segment so it
+ * composes after the escaped "N views · M tasks" base. An empty name / null
+ * busiest returns "" (no winner to jump to), keeping a clean board's HTML the
+ * bare base. Name is escaped for the markup. Pure → unit-tested; main.ts builds
+ * the viewsSummary innerHTML from base + this + the stale segment.
+ */
+export function busiestHeadlineHTML(busiest: BusiestViewLabel | null | undefined, viewId: string): string {
+  if (!busiest || busiest.name === "") return "";
+  return ` \u00b7 busiest: <button type="button" class="views-summary-recall" data-view-recall="${escapeHTML(viewId)}" title="Recall ${escapeHTML(busiest.name)}">${escapeHTML(busiest.name)}</button> (${busiest.count})`;
+}
+
+/**
+ * F164: render the F163 "· N stale" segment as a CLICKABLE sweep affordance so
+ * the row-head readout of dead cohort bookmarks doubles as the F144 sweep
+ * trigger. F163 tacks "· N stale" on as plain text; this returns the same tail
+ * with the count wrapped in a `data-views-sweep` button so a click forgets every
+ * stale cohort view (the SAME action the standalone "forget stale" button + the
+ * F156 command run). A zero/negative count returns "" (nothing to sweep),
+ * keeping a clean board byte-identical. Pure → unit-tested; main.ts appends it
+ * after the busiest segment and the existing delegated sweep handler fires.
+ */
+export function staleSweepSegmentHTML(staleCount: number): string {
+  if (staleCount <= 0) return "";
+  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="Forget every stale cohort view">${staleCount} stale</button>`;
+}
+
+/**
  * F146: the preview text for a "Peek view (<name>)" command — a view's live
  * match-count + a compact description of what it filters, shown in the palette's
  * preview slot WITHOUT recalling it, so you can compare saved views before
@@ -967,8 +999,26 @@ export function badgeHidesDone(view: SavedView, breakdown: ViewMatchBreakdown): 
  * the badge would be actionable. Pure → unit-tested; main.ts maps the command id
  * "recall-open:<id>" through the same recallViewHideDone path the badge click uses.
  */
-export function recallOpenOnlyTitle(name: string): string {
-  return `Recall ${name} (open only)`;
+export function recallOpenOnlyTitle(name: string, openCount?: number | null): string {
+  const base = `Recall ${name} (open only)`;
+  return typeof openCount === "number" ? `${base} \u00b7${openCount}` : base;
+}
+
+/**
+ * F165: the preview text for a "Peek open-only (<name>)" command — the look-don't-
+ * touch sibling of F158's recall-open command. F158 jumps straight to a view's
+ * OPEN slice (recall + hideDone); this lets you preview just that open count
+ * first, the same way F146/F157 preview the full count. Renders "<open> open ·
+ * <desc>" so you see how many tasks remain if you commit to the open-only jump
+ * ("9 open · tags: #work"); a zero open count reads "all done" honestly. A
+ * null/undefined open count drops the count half. Pure → unit-tested; main.ts
+ * builds it from the same open/done breakdown F152's badge + F158 read.
+ */
+export function peekOpenOnlyLabel(view: SavedView, openCount: number | null | undefined): string {
+  const desc = describeView(view);
+  if (typeof openCount !== "number") return desc;
+  const countText = openCount === 0 ? "all done" : `${openCount} open`;
+  return `${countText} \u00b7 ${desc}`;
 }
 
 export function renderViewChips(

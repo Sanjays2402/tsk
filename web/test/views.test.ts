@@ -30,6 +30,9 @@ import {
   viewsRowSummary,
   describeViewsRowSummary,
   appendStaleSegment,
+  busiestHeadlineHTML,
+  staleSweepSegmentHTML,
+  peekOpenOnlyLabel,
   peekViewLabel,
   peekCommandTitle,
   enrichCohortPeek,
@@ -973,6 +976,74 @@ test("recallOpenOnlyTitle names the view as the open-only recall", () => {
 test("recallOpenOnlyTitle preserves the name verbatim (unicode/parens)", () => {
   assert.equal(recallOpenOnlyTitle("(overdue)"), "Recall (overdue) (open only)");
   assert.equal(recallOpenOnlyTitle("#bug \u2192 fix"), "Recall #bug \u2192 fix (open only)");
+});
+
+// --- F159: busiest headline is a clickable recall ---------------------------
+
+test("busiestHeadlineHTML wraps the busiest name in a recall button", () => {
+  const html = busiestHeadlineHTML({ name: "#work", count: 9 }, "v1");
+  assert.match(html, /busiest:/);
+  assert.match(html, /data-view-recall="v1"/);
+  assert.match(html, />#work<\/button> \(9\)/);
+  assert.match(html, /^ \u00b7 busiest:/); // leads with the separator so it composes onto the base
+});
+
+test("busiestHeadlineHTML escapes the view name in markup", () => {
+  const html = busiestHeadlineHTML({ name: "<b>x</b>", count: 3 }, "v2");
+  assert.match(html, /&lt;b&gt;x&lt;\/b&gt;/);
+  assert.doesNotMatch(html, /<b>x<\/b>/);
+});
+
+test("busiestHeadlineHTML is empty with no clear winner", () => {
+  assert.equal(busiestHeadlineHTML(null, "v1"), "");
+  assert.equal(busiestHeadlineHTML(undefined, "v1"), "");
+  assert.equal(busiestHeadlineHTML({ name: "", count: 0 }, "v1"), "");
+});
+
+// --- F164: stale segment is a clickable sweep -------------------------------
+
+test("staleSweepSegmentHTML wraps the count in a sweep button", () => {
+  const html = staleSweepSegmentHTML(3);
+  assert.match(html, /data-views-sweep/);
+  assert.match(html, />3 stale<\/button>/);
+  assert.match(html, /^ \u00b7 /); // composes after the busiest segment
+});
+
+test("staleSweepSegmentHTML is empty for zero/negative stale", () => {
+  assert.equal(staleSweepSegmentHTML(0), "");
+  assert.equal(staleSweepSegmentHTML(-2), "");
+});
+
+// --- F165: peek open-only preview label -------------------------------------
+
+test("peekOpenOnlyLabel renders the open count + facet summary", () => {
+  const v = addView([], "work", { ...EMPTY, tags: ["work"] })[0];
+  assert.match(peekOpenOnlyLabel(v, 9), /^9 open \u00b7 /);
+  assert.match(peekOpenOnlyLabel(v, 1), /^1 open \u00b7 /);
+});
+
+test("peekOpenOnlyLabel reads 'all done' at zero open", () => {
+  const v = addView([], "work", { ...EMPTY, tags: ["work"] })[0];
+  assert.match(peekOpenOnlyLabel(v, 0), /^all done \u00b7 /);
+});
+
+test("peekOpenOnlyLabel drops the count half for a null/undefined open count", () => {
+  const v = addView([], "work", { ...EMPTY, tags: ["work"] })[0];
+  assert.doesNotMatch(peekOpenOnlyLabel(v, null), /open/);
+  assert.doesNotMatch(peekOpenOnlyLabel(v, undefined), /open/);
+});
+
+// --- F166: recall-open title carries the open count -------------------------
+
+test("recallOpenOnlyTitle folds a quiet open count onto the title", () => {
+  assert.equal(recallOpenOnlyTitle("work", 9), "Recall work (open only) \u00b79");
+  assert.equal(recallOpenOnlyTitle("work", 0), "Recall work (open only) \u00b70");
+});
+
+test("recallOpenOnlyTitle keeps the plain title with no open count", () => {
+  assert.equal(recallOpenOnlyTitle("work"), "Recall work (open only)");
+  assert.equal(recallOpenOnlyTitle("work", null), "Recall work (open only)");
+  assert.equal(recallOpenOnlyTitle("work", undefined), "Recall work (open only)");
 });
 
 test("renderViewChips emits an actionable button badge only when hideDoneBadge is true", () => {

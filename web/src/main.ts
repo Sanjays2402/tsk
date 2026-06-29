@@ -252,9 +252,11 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
-  appendStaleSegment,
+  busiestHeadlineHTML,
+  staleSweepSegmentHTML,
   peekViewLabel,
   peekCommandTitle,
+  peekOpenOnlyLabel,
   enrichCohortPeek,
   badgeHidesDone,
   recallOpenOnlyTitle,
@@ -1510,7 +1512,17 @@ async function refreshStats(): Promise<void> {
     // one-click recall next session). findCohortView reads the live views list.
     const cohortPinned =
       focusCohort !== null ? findCohortView(views, focusCohort.sourceId) !== null : undefined;
-    const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length, cohortPinned);
+    // F162: a densest-jump ▲ on the panel line too — the heaviest ancestor by
+    // the SAME live-graph waiter count the F132 trail reads, so the panel line
+    // and the trail jump to the same segment. -1 (no denser ancestor) hides it.
+    const cohortDensest =
+      focusCohort !== null
+        ? densestCohortAncestorIndex(cohortHistory, (sourceId) => {
+            const c = buildCohort(currentTasks as DepStatsTask[], sourceId);
+            return c ? c.ids.length : 0;
+          })
+        : -1;
+    const cohortLine = renderCohortPanelLine(focusCohort, cohortHistory.length, cohortPinned, cohortDensest);
     if (cohortLine !== "") html = `<div class="stats-cohort">${cohortLine}</div>` + html;
     // F132: under the F126/F127 cohort line, render the WHOLE back-stack as a
     // breadcrumb trail ("#A › #B › #current") so a multi-step drill shows its
@@ -3751,26 +3763,35 @@ function renderViewsRow(): void {
   // headline. The name + count read the SAME currentBusiestViewId + count
   // resolver the marker / F149 command use, so the headline names exactly the
   // chip the row marks is-busiest.
+  const busiestId = currentBusiestViewId();
   const busiestForSummary = (() => {
-    const id = currentBusiestViewId();
-    const v = id ? views.find((x) => x.id === id) : undefined;
+    const v = busiestId ? views.find((x) => x.id === busiestId) : undefined;
     if (!v) return null;
     return {
       name: v.name,
       count: countViewMatches(v, viewMatchPool(), viewMatchCounters()),
     };
   })();
-  const summaryText = describeViewsRowSummary(
+  // F148: the bare "N views · M tasks" base — numeric only, safe as text.
+  const baseText = describeViewsRowSummary(
     viewsRowSummary(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
-    busiestForSummary,
+    null,
   );
-  // F163: append "· N stale" when dead cohort bookmarks exist, so the sweep need
-  // (F144's button) is legible at the row head without scanning for greyed chips.
-  // currentStaleCohortIds is the SAME set F138 marks + F144 sweeps, so the count
-  // can't disagree with the chips. Zero stale leaves the headline byte-identical.
-  const summaryWithStale = appendStaleSegment(summaryText, currentStaleCohortIds().length);
-  els.viewsSummary.textContent = summaryWithStale;
-  els.viewsSummary.hidden = summaryWithStale === "";
+  // F159: the busiest headline is now a CLICKABLE recall (jump to the pile-up) —
+  // only when there's a clear winner AND a task half to hang it off. F164: the
+  // "· N stale" segment becomes a CLICKABLE sweep, reusing the same data-views-
+  // sweep hook the standalone button + F156 command fire. Both compose after the
+  // numeric base; an empty board / clean board renders just the base text.
+  const staleN = currentStaleCohortIds().length;
+  if (baseText === "") {
+    els.viewsSummary.textContent = "";
+    els.viewsSummary.hidden = true;
+  } else {
+    const hasTasks = !/^\d+ views?$/.test(baseText); // task half present
+    const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
+    els.viewsSummary.innerHTML = baseText + busiestHTML + staleSweepSegmentHTML(staleN);
+    els.viewsSummary.hidden = false;
+  }
   // F124: if the just-pinned chip (F119) sits past the visible edge of an
   // overflowed Views row, the flash highlight plays off-screen and the spatial
   // "it landed here" confirmation is lost. Scroll it into view (horizontally)
@@ -3804,7 +3825,6 @@ function renderViewsRow(): void {
   // F144: surface the "forget stale" sweep button ONLY when at least one cohort
   // bookmark is dead (its chokepoint cleared) — otherwise it stays out of the
   // way. The count rides into the label so the row reads "forget stale (3)".
-  const staleN = currentStaleCohortIds().length;
   els.viewsSweep.hidden = staleN === 0;
   els.viewsSweep.textContent = staleN > 0 ? `forget stale (${staleN})` : "forget stale";
 }
@@ -4205,6 +4225,21 @@ els.viewsSave.addEventListener("click", saveCurrentView);
 // F144: the "forget stale" sweep button drops every dead cohort bookmark at
 // once (the mouse sister of the Cmd-K "Forget all stale cohort views" command).
 els.viewsSweep.addEventListener("click", forgetStaleCohorts);
+
+// F159/F164: the Views-row summary headline is now interactive — the "busiest:
+// <name>" segment carries data-view-recall (recall the pile-up) and the "N
+// stale" segment carries data-views-sweep (forget every dead cohort view).
+// Delegated so it survives re-renders; reuses the existing recall + sweep paths
+// so the headline can't diverge from the chips / the standalone sweep button.
+els.viewsSummary.addEventListener("click", (e) => {
+  const target = e.target as HTMLElement | null;
+  if (target?.closest("[data-views-sweep]")) {
+    forgetStaleCohorts();
+    return;
+  }
+  const recall = target?.closest<HTMLElement>("[data-view-recall]");
+  if (recall) recallView(recall.dataset.viewRecall ?? "");
+});
 els.viewsChips.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
   const del = target?.closest<HTMLElement>("[data-view-del]");
@@ -5562,9 +5597,33 @@ function buildCommands(): Command[] {
     )
     .map((v) => ({
       id: `recall-open:${v.id}`,
-      title: recallOpenOnlyTitle(v.name),
+      // F166: fold the live OPEN count onto the title ("·9") so the palette names
+      // how many tasks the open-only jump lands on, the F157 sibling for the
+      // recall-open command. Same breakdown F152's badge + F165's peek read.
+      title: recallOpenOnlyTitle(
+        v.name,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).open,
+      ),
       group: "Views",
       keywords: ["recall", "open", "hide", "done", "view", "filter", ...v.filter.tags],
+    }));
+  // F165: a "Peek open-only (<name>)" command per view whose recall-open jump
+  // would be actionable — the look-don't-touch sibling that previews just the
+  // open-slice count before committing (F146/F157 preview the full count; this
+  // previews the open count F158 jumps to). Built for the SAME views F166 builds
+  // recall-open for, so the peek + jump pair appear together. id "peek-open:<id>".
+  const peekOpenCommands: Command[] = views
+    .filter((v) =>
+      badgeHidesDone(
+        v,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done),
+      ),
+    )
+    .map((v) => ({
+      id: `peek-open:${v.id}`,
+      title: `Peek open-only (${v.name})`,
+      group: "Views",
+      keywords: ["peek", "open", "preview", "look", "view", "done", ...v.filter.tags],
     }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
@@ -5755,6 +5814,9 @@ function buildCommands(): Command[] {
     // F158: per-view "Recall <name> (open only)" — only for views whose badge
     // is actionable, so the keyboard reaches F152's recall+hideDone jump.
     ...recallOpenCommands,
+    // F165: per-view "Peek open-only (<name>)" — look-don't-touch sibling of the
+    // recall-open command, previews just the open count before committing.
+    ...peekOpenCommands,
   ];
 }
 
@@ -5916,6 +5978,16 @@ function runCommand(id: string): void {
     if (v) {
       const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
       setStatus(`peek ${v.name}: ${peekViewLabel(v, count)}`, false);
+      setTimeout(() => setStatus("ready", false), 3_000);
+    }
+  }
+  // F165: peek-open is look-don't-touch too — echo the open-slice preview rather
+  // than jumping. The sibling "Recall <name> (open only)" actually opens it.
+  if (id.startsWith("peek-open:")) {
+    const v = views.find((x) => x.id === id.slice("peek-open:".length));
+    if (v) {
+      const open = countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).open;
+      setStatus(`peek ${v.name}: ${peekOpenOnlyLabel(v, open)}`, false);
       setTimeout(() => setStatus("ready", false), 3_000);
     }
   }
@@ -6131,6 +6203,20 @@ function paintPaletteDuePreview(): void {
       const count = countViewMatches(v, viewMatchPool(), viewMatchCounters());
       line.hidden = false;
       line.innerHTML = renderDisabledReason(peekViewLabel(v, count));
+      return;
+    }
+  }
+  // F165: a highlighted "Peek open-only (<name>)" previews just the OPEN slice
+  // count + facets in the slot, so you see how many tasks the F158 recall-open
+  // jump lands on before committing. Open count from the SAME breakdown F152's
+  // badge + F166's title read, so the peek can't disagree with the jump.
+  if (cmd && cmd.id.startsWith("peek-open:")) {
+    paletteDueParseSeq++;
+    const v = views.find((x) => x.id === cmd.id.slice("peek-open:".length));
+    if (v) {
+      const open = countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).open;
+      line.hidden = false;
+      line.innerHTML = renderDisabledReason(peekOpenOnlyLabel(v, open));
       return;
     }
   }

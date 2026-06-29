@@ -1523,6 +1523,31 @@ button.lens-legend-item:focus-visible {
 .views-summary[hidden] {
   display: none;
 }
+/* F159/F164: the busiest-recall + stale-sweep segments in the summary are
+   clickable buttons styled as inline text so the headline still reads as one
+   quiet line — just the actionable spans pick up the accent on hover. */
+.views-summary-recall,
+.views-summary-stale {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--color-accent, #d98a16);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.views-summary-recall:hover,
+.views-summary-stale:hover {
+  color: var(--color-text);
+}
+.views-summary-recall:focus-visible,
+.views-summary-stale:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-accent-soft);
+  border-radius: 2px;
+}
 .views-chips {
   display: flex;
   flex-wrap: wrap;
@@ -2905,6 +2930,31 @@ button.stat-metric:focus-visible .lens-key {
   color: var(--color-text);
 }
 .cohort-trail-densest:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-accent-soft);
+}
+/* F162: the panel cohort line's densest-jump ▲ mirrors the trail's. */
+.stat-cohort-densest {
+  margin-left: var(--sp-1, 4px);
+  padding: 1px var(--sp-1, 4px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-surface, transparent);
+  color: var(--color-accent, #d98a16);
+  font: inherit;
+  font-size: var(--fs-xs, 11px);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+.stat-cohort-densest:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+.stat-cohort-densest:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--color-accent-soft);
 }
