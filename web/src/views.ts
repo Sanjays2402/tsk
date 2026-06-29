@@ -740,9 +740,23 @@ export function busiestHeadlineHTML(busiest: BusiestViewLabel | null | undefined
  * keeping a clean board byte-identical. Pure → unit-tested; main.ts appends it
  * after the busiest segment and the existing delegated sweep handler fires.
  */
-export function staleSweepSegmentHTML(staleCount: number): string {
+export function staleSweepSegmentHTML(staleCount: number, names?: readonly string[]): string {
   if (staleCount <= 0) return "";
-  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="Forget every stale cohort view">${staleCount} stale</button>`;
+  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="${escapeHTML(staleSweepTitle(names))}">${staleCount} stale</button>`;
+}
+
+/**
+ * F172: the hover tooltip for the F164 "N stale" sweep button — names the dead
+ * cohort views the sweep would forget, so you can see WHICH bookmarks are stale
+ * before clicking. F164's button title was a generic "Forget every stale cohort
+ * view"; this turns it into "Forget: a, b, c" so hovering identifies the
+ * casualties. An empty/omitted name list falls back to the generic phrase (the
+ * count is still on the visible label). Names are joined in list order. Pure →
+ * unit-tested; escaping happens at the HTML boundary in staleSweepSegmentHTML.
+ */
+export function staleSweepTitle(names?: readonly string[]): string {
+  if (!names || names.length === 0) return "Forget every stale cohort view";
+  return `Forget: ${names.join(", ")}`;
 }
 
 /**

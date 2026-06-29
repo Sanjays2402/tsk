@@ -3791,13 +3791,18 @@ function renderViewsRow(): void {
   // sweep hook the standalone button + F156 command fire. Both compose after the
   // numeric base; an empty board / clean board renders just the base text.
   const staleN = currentStaleCohortIds().length;
+  // F172: name the stale cohort views in the sweep button's tooltip so hovering
+  // identifies WHICH bookmarks would be forgotten, not just how many.
+  const staleNames = currentStaleCohortIds()
+    .map((id) => views.find((v) => v.id === id)?.name)
+    .filter((n): n is string => typeof n === "string");
   if (baseText === "") {
     els.viewsSummary.textContent = "";
     els.viewsSummary.hidden = true;
   } else {
     const hasTasks = !/^\d+ views?$/.test(baseText); // task half present
     const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
-    els.viewsSummary.innerHTML = baseText + busiestHTML + staleSweepSegmentHTML(staleN);
+    els.viewsSummary.innerHTML = baseText + busiestHTML + staleSweepSegmentHTML(staleN, staleNames);
     els.viewsSummary.hidden = false;
   }
   // F124: if the just-pinned chip (F119) sits past the visible edge of an

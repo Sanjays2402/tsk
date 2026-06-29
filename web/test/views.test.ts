@@ -33,6 +33,7 @@ import {
   appendStaleSegment,
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
+  staleSweepTitle,
   peekOpenOnlyLabel,
   peekViewLabel,
   peekCommandTitle,
@@ -1049,6 +1050,23 @@ test("staleSweepSegmentHTML is empty for zero/negative stale", () => {
   assert.equal(staleSweepSegmentHTML(0), "");
   assert.equal(staleSweepSegmentHTML(-2), "");
 });
+
+// --- F172: stale-segment tooltip names the dead cohort views ----------------
+
+test("staleSweepTitle names the stale views when supplied", () => {
+  assert.equal(staleSweepTitle(["a", "b", "c"]), "Forget: a, b, c");
+});
+
+test("staleSweepTitle falls back to the generic phrase with no names", () => {
+  assert.equal(staleSweepTitle(), "Forget every stale cohort view");
+  assert.equal(staleSweepTitle([]), "Forget every stale cohort view");
+});
+
+test("staleSweepSegmentHTML folds the names into the button title (escaped)", () => {
+  const html = staleSweepSegmentHTML(2, ["waiting on #7", "x<y"]);
+  assert.match(html, /title="Forget: waiting on #7, x&lt;y"/);
+});
+
 
 // --- F165: peek open-only preview label -------------------------------------
 
