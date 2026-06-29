@@ -139,6 +139,52 @@ export function serializeViews(views: SavedView[]): string {
   return JSON.stringify(views);
 }
 
+/**
+ * F176: cluster a saved-view list into groups keyed by each view's FIRST tag, so
+ * a big Views row reads as labeled clusters ("#work: a, b · #home: c") instead
+ * of one long undifferentiated chip strip. The first tag (filter.tags[0]) is the
+ * group key; views with no tag fall into a trailing "" (untagged) bucket. Group
+ * order = first-appearance order of each tag (stable, so the row doesn't shuffle
+ * between renders); the untagged bucket always sorts last so labeled clusters
+ * lead. Views inside a group keep their original list order. Returns [] for an
+ * empty list. Pure → unit-tested; main.ts can label clusters when the row grows
+ * past a threshold without disturbing the F17 drag order within a tag.
+ */
+export interface ViewGroup {
+  tag: string;
+  views: SavedView[];
+}
+
+export function groupViewsByTag(views: SavedView[]): ViewGroup[] {
+  const order: string[] = [];
+  const buckets = new Map<string, SavedView[]>();
+  for (const v of views) {
+    const tag = v.filter.tags.length ? v.filter.tags[0] : "";
+    if (!buckets.has(tag)) {
+      buckets.set(tag, []);
+      order.push(tag);
+    }
+    buckets.get(tag)!.push(v);
+  }
+  // Untagged bucket sorts last so labeled clusters lead; tagged keep appearance order.
+  order.sort((a, b) => (a === "" ? 1 : 0) - (b === "" ? 1 : 0));
+  return order.map((tag) => ({ tag, views: buckets.get(tag)! }));
+}
+
+/**
+ * F176: a one-line readout of the F176 tag clusters — "#work: 3 · #home: 2 ·
+ * untagged: 1" — for the Views-chips hover tooltip so a big row's tag layout is
+ * legible without scanning. Tagged clusters lead with a "#" prefix; the untagged
+ * bucket reads "untagged". Returns "" for fewer than 2 groups (a single cluster
+ * needs no breakdown). Pure → unit-tested.
+ */
+export function describeViewGroups(groups: ViewGroup[]): string {
+  if (groups.length < 2) return "";
+  return groups
+    .map((g) => `${g.tag === "" ? "untagged" : "#" + g.tag}: ${g.views.length}`)
+    .join(" \u00b7 ");
+}
+
 /** Generate a reasonably-unique id without a dependency. */
 export function makeId(): string {
   return `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

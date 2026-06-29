@@ -265,6 +265,8 @@ import {
   recallOpenOnlyTitle,
   addCohortView,
   renderViewChips,
+  groupViewsByTag,
+  describeViewGroups,
   chipClippedX,
   canAnimateChipExit,
   UNPIN_EXIT_MS,
@@ -3756,6 +3758,10 @@ function renderViewsRow(): void {
     // at most one unambiguous winner is ever marked.
     busiestId: busiestViewId(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
   });
+  // F176: when the Views row carries 2+ tag clusters, set a hover tooltip that
+  // groups the chips by first tag ("#work: 3 · #home: 2 · untagged: 1") so a big
+  // row's tag layout is legible at a glance. Single cluster / empty -> "" clears it.
+  els.viewsChips.title = describeViewGroups(groupViewsByTag(views));
   // F148: a leading "N views · M tasks" coverage readout at the row head, so the
   // row's totals are legible without summing the per-chip badges by eye. The
   // per-view count reuses the IDENTICAL resolver the F141 badge + F142 marker

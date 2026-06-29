@@ -49,6 +49,8 @@ import {
   viewMatches,
   describeView,
   renderViewChips,
+  groupViewsByTag,
+  describeViewGroups,
   type ViewFilter,
   type SavedView,
 } from "../src/views.ts";
@@ -1080,6 +1082,33 @@ test("viewsSummaryTooltip drops absent clauses", () => {
   assert.equal(viewsSummaryTooltip(null, 0), "");
   assert.equal(viewsSummaryTooltip({ name: "", count: 0 }, 0), "");
 });
+
+// --- F176: group views by first tag -----------------------------------------
+
+test("groupViewsByTag clusters by first tag, untagged last, order stable", () => {
+  let v = addView([], "a", { ...EMPTY, tags: ["work"] });
+  v = addView(v, "b", { ...EMPTY, tags: ["home"] });
+  v = addView(v, "c", { ...EMPTY, query: "z" }); // untagged but non-empty
+  v = addView(v, "d", { ...EMPTY, tags: ["work", "x"] }); // first tag work
+  const groups = groupViewsByTag(v);
+  assert.deepEqual(groups.map((g) => g.tag), ["work", "home", ""]);
+  assert.deepEqual(groups[0].views.map((x) => x.name), ["a", "d"]);
+  assert.equal(groups[2].views.length, 1);
+});
+
+test("groupViewsByTag returns [] for an empty list", () => {
+  assert.deepEqual(groupViewsByTag([]), []);
+});
+
+test("describeViewGroups reads the cluster breakdown, empty under 2 groups", () => {
+  let v = addView([], "a", { ...EMPTY, tags: ["work"] });
+  v = addView(v, "b", { ...EMPTY, tags: ["work"] });
+  v = addView(v, "c", { ...EMPTY, query: "z" }); // untagged but non-empty
+  assert.equal(describeViewGroups(groupViewsByTag(v)), "#work: 2 \u00b7 untagged: 1");
+  const one = addView([], "a", { ...EMPTY, tags: ["work"] });
+  assert.equal(describeViewGroups(groupViewsByTag(one)), "");
+});
+
 
 
 // --- F165: peek open-only preview label -------------------------------------
