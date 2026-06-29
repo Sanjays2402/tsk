@@ -1008,10 +1008,23 @@ export function busiestHeadlineHTML(busiest: BusiestViewLabel | null | undefined
  * keeping a clean board byte-identical. Pure → unit-tested; main.ts appends it
  * after the busiest segment and the existing delegated sweep handler fires.
  */
-export function staleSweepSegmentHTML(staleCount: number, names?: readonly string[], title?: string): string {
+export function staleSweepSegmentHTML(
+  staleCount: number,
+  names?: readonly string[],
+  title?: string,
+  oldestDays?: number,
+): string {
   if (staleCount <= 0) return "";
   const tip = title && title !== "" ? title : staleSweepTitle(names);
-  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="${escapeHTML(tip)}">${staleCount} stale</button>`;
+  // F202: surface the OLDEST stale age on the button face ("2 stale · 5d") so
+  // the row head reads how long the dead pile has sat without hovering the F179
+  // tooltip. A null/undefined/negative age renders no suffix (back-compat); 0
+  // reads "today" so a freshly-dead sweep still shows the age cue.
+  const ageSuffix =
+    typeof oldestDays === "number" && oldestDays >= 0
+      ? ` <span class="views-summary-stale-age">\u00b7 ${oldestDays === 0 ? "today" : `${oldestDays}d`}</span>`
+      : "";
+  return ` \u00b7 <button type="button" class="views-summary-stale" data-views-sweep title="${escapeHTML(tip)}">${staleCount} stale${ageSuffix}</button>`;
 }
 
 /**

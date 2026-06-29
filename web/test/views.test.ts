@@ -1693,3 +1693,18 @@ test("renderViewChips renders the cluster count on a divider when dividerCount i
   });
   assert.match(html, /view-group-divider-count/);
 });
+
+// F202: staleSweepSegmentHTML surfaces the oldest stale age on the button face.
+test("staleSweepSegmentHTML appends the oldest stale age when supplied", () => {
+  const html = staleSweepSegmentHTML(2, ["a", "b"], undefined, 5);
+  assert.match(html, /views-summary-stale-age/);
+  assert.match(html, /\u00b7 5d/);
+  assert.match(html, />2 stale/);
+});
+
+test("staleSweepSegmentHTML reads a zero age as 'today' and omits a negative one", () => {
+  assert.match(staleSweepSegmentHTML(1, ["a"], undefined, 0), /\u00b7 today/);
+  assert.doesNotMatch(staleSweepSegmentHTML(1, ["a"], undefined, -1), /views-summary-stale-age/);
+  // omitted age stays byte-compatible with the old 3-arg form (no age suffix)
+  assert.doesNotMatch(staleSweepSegmentHTML(1, ["a"]), /views-summary-stale-age/);
+});

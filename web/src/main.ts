@@ -3896,7 +3896,14 @@ function renderViewsRow(): void {
     const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
     // F178: the "M done" total doubles as a one-click recall of everything done.
     const doneHTML = hasTasks ? doneSegmentHTML(doneTotal) : "";
-    els.viewsSummary.innerHTML = baseText + doneHTML + busiestHTML + staleSweepSegmentHTML(staleN, staleNames, staleSweepTitleAged(staleAged));
+    // F202: the oldest stale age across the dead cohort views — surfaced on the
+    // sweep button's face ("N stale · Md") so the row head reads how long the
+    // dead pile has sat without hovering the F179 tooltip. Empty list -> undefined
+    // (no age suffix). Reads the SAME staleAged clock the aged tooltip uses.
+    const oldestStaleDays = staleAged.length
+      ? Math.max(...staleAged.map((s) => s.days))
+      : undefined;
+    els.viewsSummary.innerHTML = baseText + doneHTML + busiestHTML + staleSweepSegmentHTML(staleN, staleNames, staleSweepTitleAged(staleAged), oldestStaleDays);
     // F167: rest on the headline → busiest + stale breakdown explains the row.
     els.viewsSummary.title = viewsSummaryTooltip(hasTasks ? busiestForSummary : null, staleN);
     els.viewsSummary.hidden = false;

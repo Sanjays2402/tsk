@@ -1551,6 +1551,16 @@ button.lens-legend-item:focus-visible {
   box-shadow: 0 0 0 2px var(--color-accent-soft);
   border-radius: 2px;
 }
+/* F202: the oldest-stale-age cue on the sweep button face ("2 stale · 5d") —
+   a quieter, un-underlined suffix tinted with the overdue hue so it reads as a
+   secondary "how long it's sat" marker without competing with the actionable
+   "N stale" label it rides beside. */
+.views-summary-stale-age {
+  color: var(--color-overdue, #c2622b);
+  opacity: 0.85;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
 .views-chips {
   display: flex;
   flex-wrap: wrap;
