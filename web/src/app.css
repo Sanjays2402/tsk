@@ -1762,6 +1762,15 @@ button.view-group-divider.is-recall:hover {
   color: var(--color-accent);
   text-decoration: underline;
 }
+/* F201: the cluster-size count that leads a divider ("#work (3)") — a quieter,
+   slightly smaller sibling of the label so the size reads as a secondary cue,
+   not a competing label. Rides inside the divider span/button so it inherits the
+   recall hover brighten. */
+.view-group-divider-count {
+  font-weight: 500;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
 /* F129/F134: a one-shot fade-out on a chip LEAVING the Views row — the inverse
    of the F119 pin-flash. main.ts marks the leaving chip `is-leaving` and defers
    removeView by UNPIN_EXIT_MS so the user sees WHICH chip left before it

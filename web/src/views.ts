@@ -370,6 +370,27 @@ export function viewDividerLabelBefore(groups: ViewGroup[]): (id: string) => str
   return (id: string) => first.get(id) ?? "";
 }
 
+/**
+ * F201: the size-resolver sibling of viewDividerLabelBefore — maps a view id to
+ * the COUNT of views in the cluster its divider leads, or null when no divider
+ * belongs there. Keyed (like the label resolver) to the FIRST id of each
+ * cluster, so renderViewChips can render "#work (3)" on the heading that leads a
+ * 3-chip cluster. Returns a function so the chip renderer asks per-chip without
+ * rebuilding the map; fewer than 2 groups yields a resolver that always answers
+ * null (one cluster needs no dividers, hence no count). Pure → unit-tested;
+ * main.ts pairs it with viewDividerLabelBefore over the same groupViewsByTag so
+ * the label and its count can't disagree.
+ */
+export function viewGroupSizeBefore(groups: ViewGroup[]): (id: string) => number | null {
+  const dividers = viewGroupDividers(groups);
+  if (dividers.length === 0) return () => null;
+  const first = new Map<string, number>();
+  for (const d of dividers) {
+    if (d.ids.length > 0) first.set(d.ids[0], d.ids.length);
+  }
+  return (id: string) => first.get(id) ?? null;
+}
+
 /** Generate a reasonably-unique id without a dependency. */
 export function makeId(): string {
   return `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -1341,6 +1362,16 @@ export interface ViewChipOpts {
    */
   dividerLabel?: (view: SavedView) => string;
   /**
+   * F201: a resolver giving the COUNT of views in the cluster a chip's divider
+   * leads, so a "#tag" heading can read "#work (3)" — the group size at the
+   * divider, not just the F176 hover tooltip. Paired with dividerLabel (both
+   * keyed to a cluster's FIRST chip via the same groupViewsByTag), so the label
+   * and its count agree. Returns null/undefined (or omitted) to render the bare
+   * label, keeping existing callers byte-identical. Only consulted when a
+   * divider label is actually rendered for that chip.
+   */
+  dividerCount?: (view: SavedView) => number | null | undefined;
+  /**
    * F190: a resolver giving the days-stale for a cohort chip's chokepoint, so a
    * dead bookmark's chip title shows "dead 3d" inline (not just the sweep
    * tooltip, F179). Returns days >= 0 (0 reads "dead today"), or null/undefined
@@ -1458,12 +1489,20 @@ export function peekOpenRecallTitle(name: string, openCount: number | null | und
  * main.ts wires data-divider-tag through setFilter({tags:[tag]}). aria-hidden is
  * dropped for the actionable form so the button is reachable.
  */
-export function renderViewDivider(label: string): string {
+export function renderViewDivider(label: string, count?: number): string {
+  // F201: when a positive group size is supplied, append a quiet "(N)" count so
+  // a big row reads its cluster sizes at the divider, not just the F176 tooltip.
+  // A null/undefined/non-positive count renders the bare label (back-compat).
+  const sizeSuffix =
+    typeof count === "number" && count > 0
+      ? `<span class="view-group-divider-count" aria-hidden="true"> (${count})</span>`
+      : "";
+  const countAria = typeof count === "number" && count > 0 ? ` (${count})` : "";
   if (label.startsWith("#") && label.length > 1) {
     const tag = label.slice(1);
-    return `<button type="button" class="view-group-divider is-recall" data-divider-tag="${escapeHTML(tag)}" title="Filter to ${escapeHTML(label)}">${escapeHTML(label)}</button>`;
+    return `<button type="button" class="view-group-divider is-recall" data-divider-tag="${escapeHTML(tag)}" title="Filter to ${escapeHTML(label)}${countAria}" aria-label="Filter to ${escapeHTML(label)}${countAria}">${escapeHTML(label)}${sizeSuffix}</button>`;
   }
-  return `<span class="view-group-divider" aria-hidden="true">${escapeHTML(label)}</span>`;
+  return `<span class="view-group-divider" aria-hidden="true">${escapeHTML(label)}${sizeSuffix}</span>`;
 }
 
 export function renderViewChips(
@@ -1579,7 +1618,11 @@ export function renderViewChips(
       // first chip gets a label (resolver returns "" otherwise); omitting the
       // resolver renders no dividers, so existing callers stay byte-identical.
       const dl = opts.dividerLabel ? opts.dividerLabel(v) : "";
-      const divider = dl ? renderViewDivider(dl) : "";
+      // F201: when a divider renders, lead it with the cluster's size ("#work
+      // (3)") if a count resolver supplies one — the group size read at the
+      // heading, not just the F176 tooltip. Only consulted when a label exists.
+      const dc = dl && opts.dividerCount ? opts.dividerCount(v) : null;
+      const divider = dl ? renderViewDivider(dl, dc ?? undefined) : "";
       return `${divider}<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${staleBadge}${badge}${update}${copyBtn}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");

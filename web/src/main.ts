@@ -276,6 +276,7 @@ import {
   renderViewChips,
   groupViewsByTag,
   viewDividerLabelBefore,
+  viewGroupSizeBefore,
   describeViewGroups,
   chipClippedX,
   canAnimateChipExit,
@@ -3742,6 +3743,9 @@ function renderViewsRow(): void {
   const groups = groupViewsByTag(views);
   const orderedViews = groups.length >= 2 ? groups.flatMap((g) => g.views) : views;
   const dividerFor = groups.length >= 2 ? viewDividerLabelBefore(groups) : null;
+  // F201: the cluster size that leads each divider ("#work (3)"), keyed to the
+  // same first-chip as dividerFor so the label and its count can't disagree.
+  const dividerCountFor = groups.length >= 2 ? viewGroupSizeBefore(groups) : null;
   els.viewsChips.innerHTML = renderViewChips(orderedViews, f, {
     draggable: true,
     updatableId,
@@ -3813,6 +3817,9 @@ function renderViewsRow(): void {
     // and lead each cluster with a thin "#tag" divider span so a big row reads
     // as labeled groups. Single cluster -> no dividers, natural drag order kept.
     dividerLabel: dividerFor ? (v) => dividerFor(v.id) : undefined,
+    // F201: lead each rendered divider with the cluster's size ("#work (3)") so
+    // a big row's group sizes read at the heading, not just the F176 tooltip.
+    dividerCount: dividerCountFor ? (v) => dividerCountFor(v.id) : undefined,
     // F196: offer a per-chip "copy this view" button on every chip — the
     // per-chip sister of F181's whole-row copy, so a single bookmark can be
     // shared without exporting the entire row. The click is wired through the

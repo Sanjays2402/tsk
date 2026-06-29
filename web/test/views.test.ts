@@ -59,6 +59,7 @@ import {
   importViewsDocAfter,
   previewImportViews,
   renderViewDivider,
+  viewGroupSizeBefore,
   chipStaleTitle,
   chipStaleBadge,
   doneSegmentHTML,
@@ -1642,4 +1643,53 @@ test("importViewsDocAfter de-dups by name + fresh id, garbage returns unchanged"
   const src = addView([], "C", { query: "c", priorities: [], tags: [], hideDone: false });
   const after = importViewsDocAfter(row, exportSingleViewDoc(src[0]), row[0].id);
   assert.notEqual(after[1].id, src[0].id);
+});
+
+// F201: viewGroupSizeBefore maps a cluster's first-chip id to its group size.
+test("viewGroupSizeBefore counts each cluster on its first chip", () => {
+  let vs = addView([], "w1", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  vs = addView(vs, "w2", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  vs = addView(vs, "h1", { query: "", priorities: [], tags: ["home"], hideDone: false });
+  const groups = groupViewsByTag(vs);
+  const sizeFor = viewGroupSizeBefore(groups);
+  const ordered = groups.flatMap((g) => g.views);
+  // first chip of the #work cluster reports 2; the #home cluster's first reports 1
+  assert.equal(sizeFor(ordered[0].id), 2);
+  assert.equal(sizeFor(ordered[2].id), 1);
+  // a non-leading chip reports null (no divider there)
+  assert.equal(sizeFor(ordered[1].id), null);
+});
+
+test("viewGroupSizeBefore answers null under 2 groups", () => {
+  const vs = addView([], "w1", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  const sizeFor = viewGroupSizeBefore(groupViewsByTag(vs));
+  assert.equal(sizeFor(vs[0].id), null);
+});
+
+// F201: renderViewDivider folds the cluster size into "#work (3)" when given.
+test("renderViewDivider folds a positive count into the heading", () => {
+  const html = renderViewDivider("#work", 3);
+  assert.match(html, /view-group-divider-count/);
+  assert.match(html, /\(3\)/);
+  assert.match(html, /data-divider-tag="work"/);
+});
+
+test("renderViewDivider omits the count for a null/zero size (back-compat)", () => {
+  assert.doesNotMatch(renderViewDivider("#work"), /view-group-divider-count/);
+  assert.doesNotMatch(renderViewDivider("#work", 0), /view-group-divider-count/);
+});
+
+// F201: renderViewChips threads dividerCount into the leading divider.
+test("renderViewChips renders the cluster count on a divider when dividerCount is supplied", () => {
+  let vs = addView([], "w1", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  vs = addView(vs, "h1", { query: "", priorities: [], tags: ["home"], hideDone: false });
+  const groups = groupViewsByTag(vs);
+  const ordered = groups.flatMap((g) => g.views);
+  const labelFor = (id: string) => (id === ordered[0].id ? "#work" : id === ordered[1].id ? "#home" : "");
+  const sizeFor = viewGroupSizeBefore(groups);
+  const html = renderViewChips(ordered, EMPTY, {
+    dividerLabel: (v) => labelFor(v.id),
+    dividerCount: (v) => sizeFor(v.id),
+  });
+  assert.match(html, /view-group-divider-count/);
 });
