@@ -56,6 +56,7 @@ import {
   exportViewsDoc,
   exportSingleViewDoc,
   importViewsDoc,
+  importViewsDocAfter,
   previewImportViews,
   renderViewDivider,
   chipStaleTitle,
@@ -1598,4 +1599,47 @@ test("renderViewChips omits the copy button when copyable is absent", () => {
   const vs = addView([], "Work", { query: "", priorities: [], tags: ["work"], hideDone: false });
   const html = renderViewChips(vs, EMPTY, {});
   assert.doesNotMatch(html, /data-view-copy/);
+});
+
+// F199: importViewsDocAfter merges like importViewsDoc but inserts the new
+// view(s) right after the anchor chip instead of appending at the end.
+test("importViewsDocAfter inserts the new view right after the anchor", () => {
+  const row = addView(
+    addView([], "A", { query: "a", priorities: [], tags: [], hideDone: false }),
+    "B",
+    { query: "b", priorities: [], tags: [], hideDone: false },
+  );
+  const doc = exportSingleViewDoc(
+    addView([], "C", { query: "c", priorities: [], tags: [], hideDone: false })[0],
+  );
+  // anchor on A (the first chip) → C lands between A and B
+  const after = importViewsDocAfter(row, doc, row[0].id);
+  assert.deepEqual(after.map((v) => v.name), ["A", "C", "B"]);
+});
+
+test("importViewsDocAfter with a null/unknown anchor appends like importViewsDoc", () => {
+  const row = addView([], "A", { query: "a", priorities: [], tags: [], hideDone: false });
+  const doc = exportSingleViewDoc(
+    addView([], "C", { query: "c", priorities: [], tags: [], hideDone: false })[0],
+  );
+  assert.deepEqual(importViewsDocAfter(row, doc, null).map((v) => v.name), ["A", "C"]);
+  // unknown anchor id also falls back to append
+  assert.deepEqual(importViewsDocAfter(row, doc, "nope").map((v) => v.name), ["A", "C"]);
+});
+
+test("importViewsDocAfter de-dups by name + fresh id, garbage returns unchanged", () => {
+  const row = addView([], "A", { query: "a", priorities: [], tags: [], hideDone: false });
+  // a doc whose only view collides by name adds nothing (yours wins)
+  const dup = exportViewsDoc(row);
+  assert.deepEqual(importViewsDocAfter(row, dup, row[0].id).map((v) => v.name), ["A"]);
+  // garbage / wrong envelope returns the row unchanged
+  assert.equal(importViewsDocAfter(row, "not json", row[0].id).length, 1);
+  assert.equal(
+    importViewsDocAfter(row, JSON.stringify({ tsk: "other", v: 1, views: [] }), row[0].id).length,
+    1,
+  );
+  // a genuinely-new inserted view gets a fresh id (not the source's)
+  const src = addView([], "C", { query: "c", priorities: [], tags: [], hideDone: false });
+  const after = importViewsDocAfter(row, exportSingleViewDoc(src[0]), row[0].id);
+  assert.notEqual(after[1].id, src[0].id);
 });

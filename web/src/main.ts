@@ -235,6 +235,7 @@ import {
   exportViewsDoc,
   exportSingleViewDoc,
   importViewsDoc,
+  importViewsDocAfter,
   previewImportViews,
   addView,
   removeView,
@@ -4111,6 +4112,59 @@ function undoPasteViews(priorRow: SavedView[], added: number): void {
 }
 
 /**
+ * F199: paste a copied view doc and land the new view(s) RIGHT AFTER a target
+ * chip — the position-aware sister of pasteViews (which appends at the row's
+ * end). Reads the clipboard, previews the merge (same "+N" confirm as F182),
+ * then merges via importViewsDocAfter so a single-view "paste after" slots in
+ * beside the chip you aimed at instead of orphaning at the tail of a long row.
+ * De-dup / fresh-id / garbage-rejection are byte-identical to pasteViews; the
+ * only difference is placement. Guarded clipboard with a prompt() fallback, and
+ * a single-shot undo toast (restoring the pre-paste row) like F195.
+ */
+function pasteViewsAfter(afterId: string): void {
+  const anchor = views.find((v) => v.id === afterId);
+  const merge = (text: string): void => {
+    const added = previewImportViews(views, text);
+    if (added === 0) {
+      setStatus("pasted views: nothing new to add", true);
+      setTimeout(() => setStatus("ready", false), 3_000);
+      return;
+    }
+    const where = anchor ? ` after “${anchor.name}”` : "";
+    const proceed =
+      typeof confirm === "function"
+        ? confirm(`Add ${added} view${added === 1 ? "" : "s"}${where}?`)
+        : true;
+    if (!proceed) {
+      setStatus("paste cancelled", false);
+      setTimeout(() => setStatus("ready", false), 2_000);
+      return;
+    }
+    const priorRow = parseViews(serializeViews(views));
+    views = importViewsDocAfter(views, text, afterId);
+    saveViews();
+    render();
+    setStatus(`pasted views: +${added} added${where}`, false);
+    setTimeout(() => setStatus("ready", false), 3_000);
+    showInfoToast(
+      `Pasted +${added} view${added === 1 ? "" : "s"}${where}`,
+      6,
+      { label: "Undo", run: () => undoPasteViews(priorRow, added) },
+    );
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.readText === "function") {
+    clip.readText().then(merge, () => {
+      const t = typeof prompt === "function" ? prompt("Paste views JSON:") : null;
+      if (t) merge(t);
+    });
+  } else {
+    const t = typeof prompt === "function" ? prompt("Paste views JSON:") : null;
+    if (t) merge(t);
+  }
+}
+
+/**
  * F134: fade a chip out before removing its saved view — the shared exit helper
  * the lens unpin (F129), the cohort unpin (F133), and the chip × delete all run
  * through, so EVERY chip removal gets the same spatial "this one left"
@@ -5953,6 +6007,16 @@ function buildCommands(): Command[] {
     group: "Views",
     keywords: ["copy", "share", "export", "clipboard", "view", "single", ...v.filter.tags],
   }));
+  // F199: a "Paste view(s) after (<name>)" command per saved view — the
+  // position-aware sister of the whole-row "Paste views" (F182), landing the
+  // merged view(s) right AFTER this chip instead of at the row's end. id shaped
+  // "paste-after:<id>", routed through pasteViewsAfter. One per view.
+  const pasteAfterCommands: Command[] = views.map((v) => ({
+    id: `paste-after:${v.id}`,
+    title: `Paste view(s) after (${v.name})`,
+    group: "Views",
+    keywords: ["paste", "after", "insert", "position", "clipboard", "view", ...v.filter.tags],
+  }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -6167,6 +6231,9 @@ function buildCommands(): Command[] {
     // F198: per-view "Copy view (<name>)" — keyboard sibling of F196's per-chip
     // copy button, copies one bookmark's portable doc to the clipboard.
     ...copyViewCommands,
+    // F199: per-view "Paste view(s) after (<name>)" — position-aware paste that
+    // lands the merged view(s) right after this chip (sister of "Paste views").
+    ...pasteAfterCommands,
   ];
 }
 
@@ -6329,6 +6396,11 @@ function runCommand(id: string): void {
   // Same copySingleView path the button click uses, so they can't diverge.
   if (id.startsWith("copy-view:")) {
     copySingleView(id.slice("copy-view:".length));
+  }
+  // F199: per-view "Paste view(s) after (<name>)" — position-aware paste landing
+  // the merged view(s) right after this chip. Same pasteViewsAfter path.
+  if (id.startsWith("paste-after:")) {
+    pasteViewsAfter(id.slice("paste-after:".length));
   }
   // F146: the "Peek view (<id>)" commands are look-don't-touch — the value is
   // the preview slot (the match-count + facet summary), shown while the command

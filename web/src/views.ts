@@ -204,6 +204,50 @@ export function importViewsDoc(current: SavedView[], doc: string): SavedView[] {
 }
 
 /**
+ * F199: import a portable views document like importViewsDoc, but INSERT the
+ * genuinely-new views right AFTER a target chip instead of appending at the end
+ * — the position-aware sister of importViewsDoc, so a single-view "paste after"
+ * lands the bookmark beside the chip you aimed at (not orphaned at the tail of a
+ * long row). De-dup, fresh-id, and garbage-rejection are byte-identical to
+ * importViewsDoc (yours wins on a name collision; a non-views/malformed doc
+ * returns the current list UNCHANGED). The ONLY difference is placement: the new
+ * views slot in immediately after the view whose id === `afterId`. A null or
+ * unknown `afterId` falls back to appending at the end, so importViewsDocAfter
+ * with no anchor === importViewsDoc. Returns a NEW array. Pure -> unit-tested;
+ * main.ts feeds it the clipboard text + the anchor chip's id.
+ */
+export function importViewsDocAfter(
+  current: SavedView[],
+  doc: string,
+  afterId: string | null,
+): SavedView[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(doc);
+  } catch {
+    return current;
+  }
+  if (!parsed || typeof parsed !== "object") return current;
+  const o = parsed as { tsk?: unknown; v?: unknown; views?: unknown };
+  if (o.tsk !== VIEWS_DOC_KIND || o.v !== VIEWS_DOC_VERSION || !Array.isArray(o.views)) {
+    return current;
+  }
+  const incoming = parseViews(JSON.stringify(o.views));
+  const have = new Set(current.map((v) => v.name.toLowerCase()));
+  const fresh: SavedView[] = [];
+  for (const v of incoming) {
+    if (have.has(v.name.toLowerCase())) continue;
+    have.add(v.name.toLowerCase());
+    fresh.push({ ...v, id: makeId() });
+  }
+  if (fresh.length === 0) return current;
+  // Place the fresh views right after the anchor; a null/unknown anchor appends.
+  const at = afterId === null ? -1 : current.findIndex((v) => v.id === afterId);
+  if (at < 0) return [...current, ...fresh];
+  return [...current.slice(0, at + 1), ...fresh, ...current.slice(at + 1)];
+}
+
+/**
  * F187: preview a paste WITHOUT committing — how many genuinely-NEW views a doc
  * would add to the current row, so main.ts can confirm "+N views" before
  * merging. Mirrors importViewsDoc's de-dup logic exactly (case-insensitive name,
