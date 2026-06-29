@@ -4018,12 +4018,23 @@ function pasteViews(): void {
       setTimeout(() => setStatus("ready", false), 2_000);
       return;
     }
+    // F195: snapshot the pre-paste row (detached, via the serialize round-trip)
+    // so the undo toast can restore it exactly — mirroring F151's stale-sweep
+    // undo. The merge only APPENDS (importViewsDoc never overwrites yours), so
+    // restoring the prior row simply drops the freshly-added ids.
+    const priorRow = parseViews(serializeViews(views));
     views = importViewsDoc(views, text);
     saveViews();
     render();
     setStatus(`pasted views: +${added} added`, false);
     setTimeout(() => setStatus("ready", false), 3_000);
-    showInfoToast(`Pasted +${added} view${added === 1 ? "" : "s"}`, 2);
+    // F195: a single-shot undo toast after the merge lands, so a misfired paste
+    // (wrong clipboard, didn't mean to share) is one click to reverse.
+    showInfoToast(
+      `Pasted +${added} view${added === 1 ? "" : "s"}`,
+      6,
+      { label: "Undo", run: () => undoPasteViews(priorRow, added) },
+    );
   };
   const clip = (navigator as Navigator | undefined)?.clipboard;
   if (clip && typeof clip.readText === "function") {
@@ -4035,6 +4046,26 @@ function pasteViews(): void {
     const t = typeof prompt === "function" ? prompt("Paste views JSON:") : null;
     if (t) merge(t);
   }
+}
+
+/**
+ * F195: restore the pre-paste Views row — the action behind the paste undo
+ * toast. F182's paste APPENDS the merged views; this puts the row back exactly
+ * as it was before the merge (dropping the freshly-added ids), persists, and
+ * repaints. The snapshot is a detached pre-paste copy, so this is a clean
+ * revert rather than a per-id removal. A quiet status + count confirm the undo.
+ */
+function undoPasteViews(priorRow: SavedView[], added: number): void {
+  views = priorRow;
+  // If the recalled chip was one of the just-pasted (now-removed) views, drop
+  // the stale recall pointer so the updatable-chip logic can't dangle.
+  if (recalledViewId !== null && !views.some((v) => v.id === recalledViewId)) {
+    recalledViewId = null;
+  }
+  saveViews();
+  renderViewsRow();
+  setStatus(`undid paste — removed ${added} view${added === 1 ? "" : "s"}`, false);
+  setTimeout(() => setStatus("ready", false), 2_000);
 }
 
 /**
