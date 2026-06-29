@@ -234,6 +234,7 @@ import {
   serializeViews,
   exportViewsDoc,
   importViewsDoc,
+  previewImportViews,
   addView,
   removeView,
   updateView,
@@ -500,6 +501,16 @@ let recalledViewId: string | null = null;
 let pendingPinFlashViewId: string | null = null;
 
 /**
+ * F186: a one-shot flag that flashes the task list after F178's "M done" recall
+ * fires, so the jump to the all-completions slice is FELT — the board briefly
+ * gets an `is-flash` highlight. Set when the done segment is clicked, consumed
+ * (cleared) on the next render which adds the class for exactly one paint. CSS
+ * gives `.content.is-flash` a brief one-shot animation; reduced-motion falls
+ * back to a static accent ring (mirrors the F119 chip flash). False otherwise.
+ */
+let pendingDoneFlash = false;
+
+/**
  * F156: the last stale-sweep snapshot still available to restore from Cmd-K — a
  * detached copy (via snapshotViews) of the views F144's sweep removed. F151's
  * undo TOAST holds the same snapshot for its 6s window; this stash keeps it past
@@ -622,6 +633,17 @@ function render(): void {
     query,
     allTasks: notDeleted as DepStatsTask[],
   });
+  // F186: flash the board once after an F178 done-recall, so the jump to the
+  // all-completions slice is felt. Add the class, force a reflow so the next
+  // paint restarts the animation, then drop the flag — a one-shot like F119.
+  if (pendingDoneFlash) {
+    els.content.classList.remove("is-flash");
+    void els.content.offsetWidth; // reflow so re-adding restarts the animation
+    els.content.classList.add("is-flash");
+    pendingDoneFlash = false;
+  } else {
+    els.content.classList.remove("is-flash");
+  }
   els.count.innerHTML = summarize(shown);
   renderFilterBar(routed, shown.length);
   renderTagPage(routed.length);
@@ -3744,6 +3766,14 @@ function renderViewsRow(): void {
     // chokepoint done / waiters all finished / id gone) reads as dead.
     staleCohort: (v) =>
       isStaleCohortView(v, (sourceId) => buildCohort(currentTasks as DepStatsTask[], sourceId) !== null),
+    // F190: a dead chip shows its age in its OWN title ("— stale 3d, recall to
+    // clear"), reading the same cohortStaleSince clock F184's sweep tooltip uses
+    // so the chip and the sweep can't disagree. null when no clock is tracked.
+    staleCohortAge: (v) => {
+      const since = cohortStaleSince.get(v.id);
+      if (since === undefined) return null;
+      return Math.floor((Date.now() - since) / 86_400_000);
+    },
     // F141: a quiet "·N" match-count badge per chip so the Views row reads as a
     // triage dashboard. countViewMatches dispatches per view kind over the same
     // live pool the board narrows from (not-deleted, the F15 tag route applied),
@@ -3946,6 +3976,9 @@ function copyViews(): void {
   const ok = (): void => {
     setStatus(`copied ${n} view${n === 1 ? "" : "s"} to clipboard`, false);
     setTimeout(() => setStatus("ready", false), 2_000);
+    // F188: confirm the exact N copied with a brief toast so the count is felt,
+    // not just whispered in the status line (mirrors the delete-undo toast).
+    showInfoToast(`Copied ${n} view${n === 1 ? "" : "s"} to clipboard`, 2);
   };
   const hint = (): void => {
     setStatus(`${n} view${n === 1 ? "" : "s"} ready — clipboard blocked`, true);
@@ -3969,15 +4002,28 @@ function copyViews(): void {
  */
 function pasteViews(): void {
   const merge = (text: string): void => {
-    const before = views.length;
-    views = importViewsDoc(views, text);
-    const added = views.length - before;
-    if (added > 0) {
-      saveViews();
-      render();
+    // F187: preview the merge before committing — show how many genuinely-new
+    // views would land. A 0-add doc (all names present / not a views doc) is
+    // reported as a no-op without touching the row; a real add confirms "+N".
+    const added = previewImportViews(views, text);
+    if (added === 0) {
+      setStatus("pasted views: nothing new to add", true);
+      setTimeout(() => setStatus("ready", false), 3_000);
+      return;
     }
-    setStatus(`pasted views: +${added} added`, added === 0);
+    const proceed =
+      typeof confirm === "function" ? confirm(`Add ${added} view${added === 1 ? "" : "s"}?`) : true;
+    if (!proceed) {
+      setStatus("paste cancelled", false);
+      setTimeout(() => setStatus("ready", false), 2_000);
+      return;
+    }
+    views = importViewsDoc(views, text);
+    saveViews();
+    render();
+    setStatus(`pasted views: +${added} added`, false);
     setTimeout(() => setStatus("ready", false), 3_000);
+    showInfoToast(`Pasted +${added} view${added === 1 ? "" : "s"}`, 2);
   };
   const clip = (navigator as Navigator | undefined)?.clipboard;
   if (clip && typeof clip.readText === "function") {
@@ -4377,6 +4423,9 @@ els.viewsSummary.addEventListener("click", (e) => {
   // active filter and show completed tasks (hide-done off) so the board reads
   // as the all-completions slice. Reuses the setFilter render path.
   if (target?.closest("[data-views-done]")) {
+    // F186: arm the board flash so the jump to the done slice is felt; render()
+    // (triggered by setFilter) consumes it for one paint.
+    pendingDoneFlash = true;
     setFilter({ query: "", priorities: [], tags: [], hideDone: false });
     return;
   }
@@ -4385,6 +4434,16 @@ els.viewsSummary.addEventListener("click", (e) => {
 });
 els.viewsChips.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
+  // F189: a "#tag" cluster divider recalls the tag — clicking the section
+  // heading filters the board to that tag. The whole cluster shares it, so the
+  // heading is a one-click "show me this tag". Checked first (it sits between
+  // chips, not inside one). data-divider-tag carries the bare tag (no #).
+  const divider = target?.closest<HTMLElement>("[data-divider-tag]");
+  if (divider) {
+    e.stopPropagation();
+    setFilter({ tags: [divider.dataset.dividerTag ?? ""] });
+    return;
+  }
   const del = target?.closest<HTMLElement>("[data-view-del]");
   if (del) {
     e.stopPropagation();
