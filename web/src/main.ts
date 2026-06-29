@@ -252,6 +252,7 @@ import {
   busiestViewId,
   viewsRowSummary,
   describeViewsRowSummary,
+  viewsRowDoneCount,
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
   peekViewLabel,
@@ -3773,9 +3774,15 @@ function renderViewsRow(): void {
     };
   })();
   // F148: the bare "N views · M tasks" base — numeric only, safe as text.
+  // F175: fold a "· M done" total across views beside the task count, summed the
+  // same way (chip coverage); reads the F145 done split per view.
+  const doneTotal = viewsRowDoneCount(views, (v) =>
+    countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).done,
+  );
   const baseText = describeViewsRowSummary(
     viewsRowSummary(views, (v) => countViewMatches(v, viewMatchPool(), viewMatchCounters())),
     null,
+    doneTotal,
   );
   // F159: the busiest headline is now a CLICKABLE recall (jump to the pile-up) —
   // only when there's a clear winner AND a task half to hang it off. F164: the

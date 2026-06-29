@@ -28,6 +28,7 @@ import {
   describeViewMatchBreakdown,
   busiestViewId,
   viewsRowSummary,
+  viewsRowDoneCount,
   describeViewsRowSummary,
   appendStaleSegment,
   busiestHeadlineHTML,
@@ -921,6 +922,40 @@ test("describeViewsRowSummary omits the busiest headline on an all-empty board",
     describeViewsRowSummary({ views: 3, tasks: 0 }, { name: "#work", count: 0 }),
     "3 views",
   );
+});
+
+// --- F175: views-row summary "· M done" segment ----------------------------
+
+test("describeViewsRowSummary folds a done total after the task count", () => {
+  assert.equal(
+    describeViewsRowSummary({ views: 2, tasks: 17 }, null, 5),
+    "2 views \u00b7 17 tasks \u00b7 5 done",
+  );
+});
+
+test("describeViewsRowSummary drops the done segment when nothing's done", () => {
+  assert.equal(describeViewsRowSummary({ views: 2, tasks: 17 }, null, 0), "2 views \u00b7 17 tasks");
+  assert.equal(describeViewsRowSummary({ views: 2, tasks: 17 }, null, -3), "2 views \u00b7 17 tasks");
+  assert.equal(describeViewsRowSummary({ views: 2, tasks: 17 }, null), "2 views \u00b7 17 tasks");
+});
+
+test("describeViewsRowSummary keeps done before the busiest headline", () => {
+  assert.equal(
+    describeViewsRowSummary({ views: 3, tasks: 17 }, { name: "#work", count: 9 }, 4),
+    "3 views \u00b7 17 tasks \u00b7 4 done \u00b7 busiest: #work (9)",
+  );
+});
+
+test("describeViewsRowSummary never shows done with no task half", () => {
+  assert.equal(describeViewsRowSummary({ views: 3, tasks: 0 }, null, 5), "3 views");
+});
+
+test("viewsRowDoneCount sums done across views, skipping nullish/negatives", () => {
+  const v = (id: string): SavedView => ({ id, name: id, filter: emptyF() });
+  const list = [v("a"), v("b"), v("c"), v("d")];
+  const counts: Record<string, number | null | undefined> = { a: 3, b: 0, c: null, d: -2 };
+  assert.equal(viewsRowDoneCount(list, (x) => counts[x.id]), 3);
+  assert.equal(viewsRowDoneCount([], () => 1), 0);
 });
 
 // --- F163: views-row summary "· N stale" segment ---------------------------

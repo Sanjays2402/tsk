@@ -656,15 +656,46 @@ export interface BusiestViewLabel {
   count: number;
 }
 
-export function describeViewsRowSummary(s: ViewsRowSummary, busiest?: BusiestViewLabel | null): string {
+export function describeViewsRowSummary(
+  s: ViewsRowSummary,
+  busiest?: BusiestViewLabel | null,
+  done?: number | null,
+): string {
   if (s.views === 0) return "";
   const v = `${s.views} view${s.views === 1 ? "" : "s"}`;
   if (s.tasks === 0) return v;
-  const base = `${v} \u00b7 ${s.tasks} task${s.tasks === 1 ? "" : "s"}`;
+  let base = `${v} \u00b7 ${s.tasks} task${s.tasks === 1 ? "" : "s"}`;
+  // F175: total completed across views, beside the task total — \"3 views · 18
+  // tasks · 5 done\". The done count is summed the same way viewsRowSummary sums
+  // tasks (chip coverage, counted once per view), so it pairs cleanly. Only
+  // appended when > 0 so a board with nothing done reads plainly; null/undefined
+  // / zero keeps existing callers byte-identical.
+  if (typeof done === "number" && done > 0) base += ` \u00b7 ${done} done`;
   if (busiest && busiest.name !== "") {
     return `${base} \u00b7 busiest: ${busiest.name} (${busiest.count})`;
   }
   return base;
+}
+
+/**
+ * F175: sum the DONE half of every view's coverage for the row-head summary —
+ * the completed sibling of viewsRowSummary's task total. Each view's done count
+ * is the SAME open/done split the F145 badge tooltip reads (countViewMatches-
+ * Breakdown), summed across the row exactly as the task total is (counted once
+ * per view, multi-matched tasks contribute per view). A null/undefined/negative
+ * count contributes 0; an empty list is 0. Pure → unit-tested; describeViews-
+ * RowSummary folds it onto the headline.
+ */
+export function viewsRowDoneCount(
+  views: SavedView[],
+  doneCount: (view: SavedView) => number | null | undefined,
+): number {
+  let done = 0;
+  for (const v of views) {
+    const c = doneCount(v);
+    if (typeof c === "number" && c > 0) done += c;
+  }
+  return done;
 }
 
 /**
