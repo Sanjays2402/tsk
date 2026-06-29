@@ -2962,13 +2962,53 @@ distinct render slices, sized on their own. Standing long-carries: F48, F49, F50
 
 ### T31 — depth (appended T30 so the loop never starves)
 Standing unstarted: F48, F49, F50, F54, F159, F162. Fresh follow-ons after T30:
-- [ ] **F159** Busiest headline clickable: wrap F154's "busiest: <name>" in a recall span.
-- [ ] **F162** Panel cohort densest-jump: mirror F155's ▲ on the F127 single-line readout.
-- [ ] **F164** Stale segment is clickable: F163's "· N stale" → trigger F144 sweep on click.
-- [ ] **F165** Peek-open-only command: F158's recall sibling that PREVIEWS the open-slice count.
-- [ ] **F166** Recall-open-only count in title: F158 + F157, fold the open-slice "·N" onto it.
+- [x] **F159** Busiest headline clickable: wrap F154's "busiest: <name>" in a recall span. (tick T31 2026-06-28, ba78c25)
+- [x] **F162** Panel cohort densest-jump: mirror F155's ▲ on the F127 single-line readout. (tick T31 2026-06-28, 5d200d6)
+- [x] **F164** Stale segment is clickable: F163's "· N stale" → trigger F144 sweep on click. (tick T31 2026-06-28, ba78c25)
+- [x] **F165** Peek-open-only command: F158's recall sibling that PREVIEWS the open-slice count. (tick T31 2026-06-28, ba78c25)
+- [x] **F166** Recall-open-only count in title: F158 + F157, fold the open-slice "·N" onto it. (tick T31 2026-06-28, ba78c25)
 - [ ] **F167** Views-row summary live tooltip: hover the headline → busiest+stale breakdown.
 - [ ] **F168** Archive view (read-only completed log) — long-pending; a dedicated done pane.
 - [ ] **F169** Recurring-task UI badge: render an "↻ weekly" chip when a task carries recur meta.
 - [ ] **F170** Saved-view import/export (JSON) — copy your Views row between machines.
 
+
+## Web tick T31 — 2026-06-28 18:39 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean. Canonical workdir
+`/Volumes/Projects/tsk`. The Views-row summary headline + the panel cohort line
+both turned interactive this tick — every readout now doubles as a one-click
+action (recall / sweep / densest-jump).
+
+### Features (grouped, revertible)
+- F162 5d200d6 — panel cohort line gains a densest-jump ▲ (renderCohortPanelLine
+  4th optional arg densestIndex; reuses data-cohort-densest hook the F132 trail
+  fires; main.ts passes densestCohortAncestorIndex over live graph). +3 tests.
+- F159+F164+F165+F166 ba78c25 — busiestHeadlineHTML (recall the pile-up) +
+  staleSweepSegmentHTML (forget stale) make the summary interactive via innerHTML;
+  viewsSummary click delegate routes to recallView/forgetStaleCohorts.
+  peekOpenOnlyLabel + peek-open:<id> command preview the open slice; recallOpenOnlyTitle
+  gains "·N" open count. F162 wiring in same commit. +10 tests.
+- bundle rebuild — web_dist (41 modules, JS 44.73KB gz, CSS 11.29KB gz).
+
+### Gates
+- web check: 943 -> 956 tests (+13), 0 fail; tsc app+test clean; build green.
+- gofmt/vet/build clean; go test ./... green (commands 67s, rest cached).
+- live serve: GET / 200; served JS carried views-summary-recall, views-summary-stale,
+  stat-cohort-densest, "Peek open-only", "(open only)", peek-open: hooks. Fixture cleaned.
+
+### Deferred / standing
+Long-carries F48, F49, F50, F54. T32 backlog (F167-F176) below.
+
+### T32 — depth (appended T31 so the loop never starves)
+Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after T31:
+- [ ] **F167** Views-row summary live tooltip: hover the headline -> busiest+stale breakdown.
+- [ ] **F168** Archive view (read-only completed log) -- long-pending; a dedicated done pane.
+- [ ] **F169** Recurring-task UI badge: render an "weekly" chip when a task carries recur meta.
+- [ ] **F170** Saved-view import/export (JSON) -- copy your Views row between machines.
+- [ ] **F171** Peek-open count badge in the title too: fold the open "·N" onto peek-open like F157.
+- [ ] **F172** Stale-segment count tooltip: hover "N stale" -> list the dead cohort names.
+- [ ] **F173** Busiest-recall keyboard cmd: Cmd-K "Recall busiest" already exists; pair with a peek.
+- [ ] **F174** Panel densest ▲ keyboard echo: Alt+D from panel focus mirrors trail Alt+D.
+- [ ] **F175** Views-row summary "M done" segment: total completed across views beside tasks.
+- [ ] **F176** Saved-view group by tag: cluster the chip row by first tag for big Views rows.
