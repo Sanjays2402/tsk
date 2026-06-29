@@ -55,6 +55,9 @@ import {
   viewDividerLabelBefore,
   exportViewsDoc,
   importViewsDoc,
+  previewImportViews,
+  renderViewDivider,
+  chipStaleTitle,
   doneSegmentHTML,
   staleSweepTitleAged,
   peekOpenRecallTitle,
@@ -1458,4 +1461,59 @@ test("staleSweepSegmentHTML accepts an aged title override", () => {
 test("staleSweepSegmentHTML falls back to names when no title given", () => {
   const html = staleSweepSegmentHTML(2, ["a", "b"]);
   assert.match(html, /Forget: a, b/);
+});
+
+// F187: previewImportViews counts genuinely-new views without committing.
+test("previewImportViews counts only the genuinely-new views", () => {
+  let mine = addView([], "A", { ...EMPTY, tags: ["work"] });
+  const theirs = addView([], "A", { ...EMPTY, tags: ["work"] }); // name dup
+  const more = addView(theirs, "B", { ...EMPTY, tags: ["home"] });
+  const doc = exportViewsDoc(more);
+  // mine has A; doc has A (dup, skip) + B (new) => +1
+  assert.equal(previewImportViews(mine, doc), 1);
+  // matches importViewsDoc's actual append count
+  assert.equal(importViewsDoc(mine, doc).length - mine.length, 1);
+});
+
+test("previewImportViews returns 0 for garbage / all-dup docs", () => {
+  const mine = addView([], "A", { ...EMPTY, tags: ["work"] });
+  assert.equal(previewImportViews(mine, "not json"), 0);
+  assert.equal(previewImportViews(mine, exportViewsDoc(mine)), 0); // all dups
+  assert.equal(previewImportViews([], '{"tsk":"nope","v":1,"views":[]}'), 0);
+});
+
+// F189: clickable cluster divider — "#tag" -> recall button, untagged stays inert.
+test("renderViewDivider makes a #tag heading a recall button", () => {
+  const html = renderViewDivider("#work");
+  assert.match(html, /data-divider-tag="work"/);
+  assert.match(html, /button/);
+  assert.match(html, />#work</);
+});
+
+test("renderViewDivider keeps untagged label inert", () => {
+  const html = renderViewDivider("untagged");
+  assert.match(html, /<span/);
+  assert.doesNotMatch(html, /data-divider-tag/);
+});
+
+// F190: chip stale age phrase.
+test("chipStaleTitle folds the age in when known", () => {
+  assert.equal(chipStaleTitle(3), " \u2014 stale 3d, recall to clear");
+  assert.equal(chipStaleTitle(0), " \u2014 stale today, recall to clear");
+});
+
+test("chipStaleTitle degrades to bare phrase without an age", () => {
+  assert.equal(chipStaleTitle(null), " \u2014 stale, recall to clear");
+  assert.equal(chipStaleTitle(-1), " \u2014 stale, recall to clear");
+});
+
+// F190: staleCohortAge resolver threads "stale Nd" into a stale cohort chip title.
+test("renderViewChips folds chip stale age into the title", () => {
+  const vs = addCohortView([], "Blocked", 7);
+  const html = renderViewChips(vs, EMPTY, {
+    activeCohort: null,
+    staleCohort: () => true,
+    staleCohortAge: () => 2,
+  });
+  assert.match(html, /stale 2d, recall to clear/);
 });

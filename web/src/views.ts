@@ -190,6 +190,39 @@ export function importViewsDoc(current: SavedView[], doc: string): SavedView[] {
 }
 
 /**
+ * F187: preview a paste WITHOUT committing — how many genuinely-NEW views a doc
+ * would add to the current row, so main.ts can confirm "+N views" before
+ * merging. Mirrors importViewsDoc's de-dup logic exactly (case-insensitive name,
+ * collisions skipped) but returns just the count: importViewsDoc(current,doc)
+ * appends precisely this many. A non-views/garbage doc, or one whose names all
+ * already exist, returns 0. Pure → unit-tested; main.ts shows the diff in the
+ * paste prompt/toast so a no-op paste reads honestly. Counting on the de-dupped
+ * incoming set means duplicate names INSIDE the doc are counted once.
+ */
+export function previewImportViews(current: SavedView[], doc: string): number {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(doc);
+  } catch {
+    return 0;
+  }
+  if (!parsed || typeof parsed !== "object") return 0;
+  const o = parsed as { tsk?: unknown; v?: unknown; views?: unknown };
+  if (o.tsk !== VIEWS_DOC_KIND || o.v !== VIEWS_DOC_VERSION || !Array.isArray(o.views)) {
+    return 0;
+  }
+  const incoming = parseViews(JSON.stringify(o.views));
+  const have = new Set(current.map((v) => v.name.toLowerCase()));
+  let added = 0;
+  for (const v of incoming) {
+    if (have.has(v.name.toLowerCase())) continue;
+    have.add(v.name.toLowerCase());
+    added++;
+  }
+  return added;
+}
+
+/**
  * F176: cluster a saved-view list into groups keyed by each view's FIRST tag, so
  * a big Views row reads as labeled clusters ("#work: a, b · #home: c") instead
  * of one long undifferentiated chip strip. The first tag (filter.tags[0]) is the
@@ -941,6 +974,21 @@ export function staleSweepTitleAged(items?: readonly StaleViewAge[]): string {
 }
 
 /**
+ * F190: the stale hint a cohort chip shows on its OWN title — F138 marks a dead
+ * cohort chip "— stale, recall to clear"; this folds the age in ("— stale 3d,
+ * recall to clear") so the chip reads how long it's been dead without hovering
+ * the F179 sweep tooltip. A non-negative days reads "stale Nd" (0 = "stale
+ * today"); a null/undefined/negative age degrades to the bare "stale" phrase so
+ * a chip without a tracked clock stays byte-identical with F138. Pure ->
+ * unit-tested; renderViewChips appends it to a stale chip's title.
+ */
+export function chipStaleTitle(days?: number | null): string {
+  if (typeof days !== "number" || days < 0) return " \u2014 stale, recall to clear";
+  const age = days === 0 ? "stale today" : `stale ${days}d`;
+  return ` \u2014 ${age}, recall to clear`;
+}
+
+/**
  * F167: the hover tooltip for the whole Views-row summary headline — a one-line
  * breakdown of the busiest pile-up + the stale-bookmark count, so resting on the
  * readout explains the row's state without clicking. The visible headline is
@@ -1219,6 +1267,16 @@ export interface ViewChipOpts {
    * existing callers byte-identical.
    */
   dividerLabel?: (view: SavedView) => string;
+  /**
+   * F190: a resolver giving the days-stale for a cohort chip's chokepoint, so a
+   * dead bookmark's chip title shows "dead 3d" inline (not just the sweep
+   * tooltip, F179). Returns days >= 0 (0 reads "dead today"), or null/undefined
+   * for a live chip / unknown age. Only consulted for stale cohort chips. Omit
+   * to keep the bare "— stale, recall to clear" hint, so existing callers stay
+   * byte-identical. main.ts backs it with the same cohortStaleSince clock F184's
+   * sweep tooltip uses, so the chip and the sweep age can't disagree.
+   */
+  staleCohortAge?: (view: SavedView) => number | null | undefined;
 }
 
 /**
@@ -1307,6 +1365,24 @@ export function peekOpenRecallTitle(name: string, openCount: number | null | und
   return typeof openCount === "number" ? `${base} \u00b7${openCount}` : base;
 }
 
+/**
+ * F189: render a Views-row cluster divider. F183 leads each tag cluster with a
+ * thin "#tag" span; this turns the "#tag" labels into a CLICKABLE recall so
+ * clicking the divider applies that tag as a filter (the whole cluster's common
+ * tag), making the section heading a one-click "show me this tag" jump. A "#tag"
+ * label becomes a `<button data-divider-tag>` carrying the bare tag (no #); the
+ * "untagged" label stays an inert span (no tag to recall). Pure → unit-tested;
+ * main.ts wires data-divider-tag through setFilter({tags:[tag]}). aria-hidden is
+ * dropped for the actionable form so the button is reachable.
+ */
+export function renderViewDivider(label: string): string {
+  if (label.startsWith("#") && label.length > 1) {
+    const tag = label.slice(1);
+    return `<button type="button" class="view-group-divider is-recall" data-divider-tag="${escapeHTML(tag)}" title="Filter to ${escapeHTML(label)}">${escapeHTML(label)}</button>`;
+  }
+  return `<span class="view-group-divider" aria-hidden="true">${escapeHTML(label)}</span>`;
+}
+
 export function renderViewChips(
   views: SavedView[],
   filter: ViewFilter,
@@ -1352,7 +1428,12 @@ export function renderViewChips(
       // dead bookmark is visible + a recall can self-clean it. Only consulted for
       // cohort chips (the predicate already short-circuits non-cohort views).
       const stale = cohortPin && opts.staleCohort && opts.staleCohort(v) ? " is-stale-cohort" : "";
-      const staleTitle = stale ? " \u2014 stale, recall to clear" : "";
+      // F190: when stale, fold the chip's age into its own title ("— stale 3d,
+      // recall to clear") so the dead bookmark reads how long it's been dead
+      // inline; without an age resolver this is the bare F138 hint.
+      const staleTitle = stale
+        ? chipStaleTitle(opts.staleCohortAge ? opts.staleCohortAge(v) : null)
+        : "";
       const glyphSpan = glyph
         ? `<span class="view-chip-lens-glyph" aria-hidden="true">${escapeHTML(glyph)}</span> `
         : "";
@@ -1397,7 +1478,7 @@ export function renderViewChips(
       // first chip gets a label (resolver returns "" otherwise); omitting the
       // resolver renders no dividers, so existing callers stay byte-identical.
       const dl = opts.dividerLabel ? opts.dividerLabel(v) : "";
-      const divider = dl ? `<span class="view-group-divider" aria-hidden="true">${escapeHTML(dl)}</span>` : "";
+      const divider = dl ? renderViewDivider(dl) : "";
       return `${divider}<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
