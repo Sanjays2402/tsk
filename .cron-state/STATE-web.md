@@ -3064,3 +3064,41 @@ Standing unstarted: F48, F49, F50, F54, F168, F169, F173, F174. Fresh after T33:
 - [ ] **F185** Wire F180: register the "recall-open-kbd:<id>" command using peekOpenRecallTitle.
 - [ ] **F186** Done-recall flash: brief is-flash on the task list after F178 fires so the jump is felt.
 - [ ] **F187** Import preview: show "+N views" diff before committing importViewsDoc.
+
+## Web tick T34 — 2026-06-29 02:32 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `f36f90c..5c71acc`.
+Canonical workdir `/Volumes/Projects/tsk`. This tick WIRED the five helpers
+T33 left as stubs: copy/paste of the whole Views row, the tag-cluster dividers,
+the aged stale tooltip, and a keyboard recall-open commit.
+
+### Features (one batch commit + bundle)
+- F181 1ed6b7b — copyViews(): "copy views" button + Cmd-K "Copy views" emit
+  exportViewsDoc clipboard JSON, guarded clipboard fallback. Button shows when views>0.
+- F182 1ed6b7b — pasteViews(): Cmd-K "Paste views" reads clipboard, importViewsDoc
+  merge (de-dup by name, fresh ids), prompt() fallback, reports "+N added".
+- F183 1ed6b7b — viewDividerLabelBefore() resolver + renderViewChips dividerLabel opt;
+  chips render cluster-order at 2+ groups, thin "#tag" span leads each cluster. CSS added.
+- F184 1ed6b7b — cohortStaleSince map tracks first-stale ts; staleSweepTitleAged feeds
+  staleSweepSegmentHTML's new title arg ("Forget: a (dead 3d)"). Pruned to live stale set.
+- F185 1ed6b7b — recall-open-kbd:<id> commands via peekOpenRecallTitle; dispatch before
+  recall-open: (prefix). Same recallViewHideDone path as badge/F158.
+- 5c71acc — bundle rebuild (JS 46.06KB gz, CSS 11.34KB gz).
+
+### Gates
+- web check: 979 -> 983 tests (+4 net, +6 added), 0 fail; tsc app+test clean; build green.
+- gofmt/vet/build clean; go test ./... green (commands 72s). live serve 8772 GET / 200;
+  served JS carried Copy/Paste views, view-group-divider, recall-open-kbd, Recall open-only.
+
+### Deferred / standing
+Long-carries F48, F49, F50, F54, F168, F169, F173, F174. F186/F187 carried to T35.
+
+### T35 — depth (appended T34 so the loop never starves)
+- [ ] **F186** Done-recall flash: brief is-flash on the task list after F178 fires.
+- [ ] **F187** Import preview: show "+N views" diff before committing importViewsDoc.
+- [ ] **F188** Copy-views toast count: confirm the exact N copied with an undo-style toast.
+- [ ] **F189** Views divider click = recall whole cluster: clicking "#work" recalls a tag filter.
+- [ ] **F190** Stale-age in chip title: show "dead 3d" on the chip itself, not just sweep tooltip.
+- [ ] **F191** Recall-open-kbd hint badge: surface a keyboard hint on the recall-open command rows.
+- [ ] **F192** Archive view pane (F168 long-pending) — read-only completed log surface.
+- [ ] **F193** Recurring-task chip (F169) — render "weekly" badge from recur meta.
