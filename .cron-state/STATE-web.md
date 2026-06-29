@@ -3047,10 +3047,20 @@ Long-carries F48, F49, F50, F54. T33 backlog (F168-F177) below.
 Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after T32:
 - [ ] **F168** Archive view (read-only completed log) -- long-pending; a dedicated done pane.
 - [ ] **F169** Recurring-task UI badge: render a "weekly" chip when a task carries recur meta.
-- [ ] **F170** Saved-view import/export (JSON) -- copy your Views row between machines.
+- [x] **F170** Saved-view import/export (JSON) -- copy your Views row between machines. (T33 bd962ca)
 - [ ] **F173** Busiest-recall keyboard cmd: Cmd-K "Recall busiest" already exists; pair with a peek.
 - [ ] **F174** Panel densest jump keyboard echo: Alt+D from panel focus mirrors trail Alt+D.
-- [ ] **F177** Group-by-tag chip dividers: render a thin "#tag" label between clusters in the row.
-- [ ] **F178** Views-summary done segment clickable: recall the all-completed slice across views.
-- [ ] **F179** Stale tooltip on the count itself: F172 names; add per-name age ("dead 3d").
-- [ ] **F180** Peek-open keyboard recall: Cmd-K pair so peek-open commits with one keystroke.
+- [x] **F177** Group-by-tag chip dividers: render a thin "#tag" label between clusters in the row. (T33 75ee6b6, helper)
+- [x] **F178** Views-summary done segment clickable: recall the all-completed slice across views. (T33 75ee6b6, wired)
+- [x] **F179** Stale tooltip on the count itself: F172 names; add per-name age ("dead 3d"). (T33 75ee6b6, helper)
+- [x] **F180** Peek-open keyboard recall: Cmd-K pair so peek-open commits with one keystroke. (T33 75ee6b6, helper)
+
+### T34 — depth (appended T33 so the loop never starves)
+Standing unstarted: F48, F49, F50, F54, F168, F169, F173, F174. Fresh after T33:
+- [ ] **F181** "Copy views" button: hang exportViewsDoc off the Views row; clipboard write + toast.
+- [ ] **F182** "Paste views" command: Cmd-K runs importViewsDoc against clipboard text + reports merged count.
+- [ ] **F183** Render F177 dividers: walk viewGroupDividers in main.ts, interleave thin "#tag" spans between chip clusters at 2+ groups.
+- [ ] **F184** Wire F179: track cohort stale-since timestamps, pass staleSweepTitleAged into the sweep button title.
+- [ ] **F185** Wire F180: register the "recall-open-kbd:<id>" command using peekOpenRecallTitle.
+- [ ] **F186** Done-recall flash: brief is-flash on the task list after F178 fires so the jump is felt.
+- [ ] **F187** Import preview: show "+N views" diff before committing importViewsDoc.
