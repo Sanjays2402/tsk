@@ -1846,6 +1846,45 @@ button.view-group-divider.is-recall:hover {
 .view-chip-del:hover {
   color: var(--color-overdue);
 }
+/* F196: the per-chip "copy this view" button — the per-chip sister of the
+   whole-row copy. Sits between the count/update affordances and the × delete,
+   styled like the update button (accent on hover) but quieter at rest so the
+   delete × stays the chip's loudest control. */
+.view-chip-copy {
+  font-size: var(--fs-sm);
+  line-height: 1;
+  color: var(--color-text-faint);
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--color-border-strong);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.view-chip-copy:hover,
+.view-chip-copy:focus-visible {
+  color: var(--color-accent);
+}
+/* F197: the VISIBLE stale-age badge on a dead cohort chip — a tiny "Nd" suffix
+   on the chip face (F190 keeps the longer phrase in the title). Tinted with the
+   muted/overdue hue + small caps so it reads as a quiet "this is N days dead"
+   marker without competing with the chip name. */
+.view-chip-stale-age {
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--color-text-faint);
+  background: var(--color-bg-subtle, transparent);
+  padding: 1px var(--sp-1);
+  margin: 0 2px;
+  border-radius: var(--radius-sm, 3px);
+  user-select: none;
+}
+.view-chip.is-stale-cohort .view-chip-stale-age {
+  color: var(--color-overdue);
+  opacity: 0.85;
+}
 .views-save {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);

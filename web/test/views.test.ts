@@ -54,10 +54,12 @@ import {
   viewGroupDividers,
   viewDividerLabelBefore,
   exportViewsDoc,
+  exportSingleViewDoc,
   importViewsDoc,
   previewImportViews,
   renderViewDivider,
   chipStaleTitle,
+  chipStaleBadge,
   doneSegmentHTML,
   staleSweepTitleAged,
   peekOpenRecallTitle,
@@ -1516,4 +1518,84 @@ test("renderViewChips folds chip stale age into the title", () => {
     staleCohortAge: () => 2,
   });
   assert.match(html, /stale 2d, recall to clear/);
+});
+
+// F196: exportSingleViewDoc wraps ONE view in the portable envelope and
+// round-trips through importViewsDoc exactly like a whole-row copy.
+test("exportSingleViewDoc wraps one view in the portable envelope", () => {
+  const vs = addView([], "Work", { query: "", priorities: ["high"], tags: ["work"], hideDone: false });
+  const doc = exportSingleViewDoc(vs[0]);
+  const parsed = JSON.parse(doc);
+  assert.equal(parsed.tsk, "tsk.views");
+  assert.equal(parsed.v, 1);
+  assert.equal(parsed.views.length, 1);
+  assert.equal(parsed.views[0].name, "Work");
+});
+
+test("exportSingleViewDoc round-trips through importViewsDoc (merge onto empty)", () => {
+  const vs = addView([], "Sprint", { query: "due", priorities: [], tags: ["sprint"], hideDone: true });
+  const doc = exportSingleViewDoc(vs[0]);
+  const merged = importViewsDoc([], doc);
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].name, "Sprint");
+  // fresh id on merge, not the original
+  assert.notEqual(merged[0].id, vs[0].id);
+});
+
+test("exportSingleViewDoc previewImportViews counts it as one genuinely-new add", () => {
+  const vs = addView([], "Solo", { query: "x", priorities: [], tags: [], hideDone: false });
+  const doc = exportSingleViewDoc(vs[0]);
+  assert.equal(previewImportViews([], doc), 1);
+  // a row that already has that name counts it as 0 (de-dup by name)
+  assert.equal(previewImportViews(vs, doc), 0);
+});
+
+// F197: the VISIBLE stale-age badge — bare "Nd" suffix for a dead chip face.
+test("chipStaleBadge renders the bare day count", () => {
+  assert.equal(chipStaleBadge(3), "3d");
+  assert.equal(chipStaleBadge(0), "0d");
+  assert.equal(chipStaleBadge(14), "14d");
+});
+
+test("chipStaleBadge suppresses when age is unknown or negative", () => {
+  assert.equal(chipStaleBadge(null), "");
+  assert.equal(chipStaleBadge(undefined), "");
+  assert.equal(chipStaleBadge(-1), "");
+});
+
+// F197: renderViewChips renders the visible stale-age badge on a stale chip
+// when a staleCohortAge resolver supplies a day count.
+test("renderViewChips renders the visible stale-age badge on a stale chip", () => {
+  const vs = addCohortView([], "Blocked", 9);
+  const html = renderViewChips(vs, EMPTY, {
+    activeCohort: null,
+    staleCohort: () => true,
+    staleCohortAge: () => 5,
+  });
+  assert.match(html, /view-chip-stale-age/);
+  assert.match(html, />5d</);
+});
+
+test("renderViewChips omits the stale-age badge for a live cohort chip", () => {
+  const vs = addCohortView([], "Live", 9);
+  const html = renderViewChips(vs, EMPTY, {
+    activeCohort: null,
+    staleCohort: () => false,
+    staleCohortAge: () => 5,
+  });
+  assert.doesNotMatch(html, /view-chip-stale-age/);
+});
+
+// F196: renderViewChips renders the per-chip copy button when copyable flags it.
+test("renderViewChips renders the per-chip copy button when copyable returns true", () => {
+  const vs = addView([], "Work", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  const html = renderViewChips(vs, EMPTY, { copyable: () => true });
+  assert.match(html, /data-view-copy="/);
+  assert.match(html, /Copy /);
+});
+
+test("renderViewChips omits the copy button when copyable is absent", () => {
+  const vs = addView([], "Work", { query: "", priorities: [], tags: ["work"], hideDone: false });
+  const html = renderViewChips(vs, EMPTY, {});
+  assert.doesNotMatch(html, /data-view-copy/);
 });

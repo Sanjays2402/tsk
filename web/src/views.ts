@@ -155,6 +155,20 @@ export function exportViewsDoc(views: SavedView[]): string {
 }
 
 /**
+ * F196: export a SINGLE saved view as a portable document — the per-chip sister
+ * of F181's whole-row exportViewsDoc, so you can copy just one bookmark to share
+ * (a teammate wants your "#work overdue" view, not your entire row). Wraps the
+ * one view in the SAME {tsk:"tsk.views",v:1,views:[v]} envelope exportViewsDoc
+ * uses, so it round-trips through importViewsDoc / previewImportViews exactly
+ * like a full-row paste (de-dup by name, fresh id on merge). Pretty-printed so a
+ * human can eyeball it. Pure → unit-tested; main.ts hangs it off a per-chip copy
+ * button.
+ */
+export function exportSingleViewDoc(view: SavedView): string {
+  return JSON.stringify({ tsk: VIEWS_DOC_KIND, v: VIEWS_DOC_VERSION, views: [view] }, null, 2);
+}
+
+/**
  * F170: import a portable views document (exportViewsDoc's output) and MERGE it
  * into a current list, so pasting a row from another machine adds its bookmarks
  * without clobbering yours. De-dups by case-insensitive name: an incoming view
@@ -989,6 +1003,21 @@ export function chipStaleTitle(days?: number | null): string {
 }
 
 /**
+ * F197: the VISIBLE stale-age badge for a dead cohort chip — F190 folds the age
+ * into the chip's TITLE ("stale 3d, recall to clear"); this renders the bare age
+ * ("3d") as a tiny suffix ON the chip face so the staleness is legible without
+ * hovering. A non-negative day count reads "Nd" (0 = "0d" so a freshly-dead chip
+ * still shows a badge rather than vanishing); a null/undefined/negative age
+ * returns "" so a chip without a tracked clock shows no badge (the F138 dot
+ * already marks it stale). Pure → unit-tested; renderViewChips renders it after
+ * the chip name when an age resolver is supplied and the chip is stale.
+ */
+export function chipStaleBadge(days?: number | null): string {
+  if (typeof days !== "number" || days < 0) return "";
+  return `${days}d`;
+}
+
+/**
  * F167: the hover tooltip for the whole Views-row summary headline — a one-line
  * breakdown of the busiest pile-up + the stale-bookmark count, so resting on the
  * readout explains the row's state without clicking. The visible headline is
@@ -1277,6 +1306,16 @@ export interface ViewChipOpts {
    * sweep tooltip uses, so the chip and the sweep age can't disagree.
    */
   staleCohortAge?: (view: SavedView) => number | null | undefined;
+  /**
+   * F196: a predicate enabling a per-chip "copy this view" button — when it
+   * returns true for a view, that chip renders a small `data-view-copy` button
+   * (alongside the × delete) that copies just that one view's portable doc
+   * (exportSingleViewDoc) to the clipboard. The per-chip sister of F181's
+   * whole-row copy. Omitting it (the default) renders no copy buttons, keeping
+   * existing callers byte-identical. main.ts supplies `() => true` to offer it
+   * on every chip and wires the click to a guarded clipboard write + toast.
+   */
+  copyable?: (view: SavedView) => boolean;
 }
 
 /**
@@ -1473,13 +1512,31 @@ export function renderViewChips(
       // (busiestViewId resolves a tie / empty board to null), so at most one chip
       // wears is-busiest; omitting busiestId marks nothing.
       const busiest = opts.busiestId && opts.busiestId === v.id ? " is-busiest" : "";
+      // F197: the VISIBLE stale-age badge — when a chip is stale and an age
+      // resolver gives a day count, render a tiny "Nd" suffix ON the chip face
+      // (not just the F190 title) so the staleness is legible at a glance. Shares
+      // the staleCohortAge resolver F190's title reads, so the face badge and the
+      // hover title can't show different ages. Only on stale chips with a known age.
+      const staleAge = stale && opts.staleCohortAge ? opts.staleCohortAge(v) : null;
+      const staleBadgeText = stale ? chipStaleBadge(staleAge) : "";
+      const staleBadge = staleBadgeText
+        ? `<span class="view-chip-stale-age" aria-hidden="true" title="${escapeHTML(`dead ${staleBadgeText}`)}">${escapeHTML(staleBadgeText)}</span>`
+        : "";
+      // F196: a per-chip "copy this view" button (the per-chip sister of F181's
+      // whole-row copy) — when the copyable predicate flags a chip, render a small
+      // data-view-copy button beside the × so just that one bookmark's portable
+      // doc can be copied. Omitting the predicate renders no copy buttons.
+      const copyBtn =
+        opts.copyable && opts.copyable(v)
+          ? `<button type="button" class="view-chip-copy" data-view-copy="${escapeHTML(v.id)}" title="Copy “${escapeHTML(v.name)}” to clipboard" aria-label="Copy view ${escapeHTML(v.name)}">&#9112;</button>`
+          : "";
       // F183: a thin "#tag" divider span leads the first chip of each tag
       // cluster so a big Views row reads as labeled groups. Only the cluster's
       // first chip gets a label (resolver returns "" otherwise); omitting the
       // resolver renders no dividers, so existing callers stay byte-identical.
       const dl = opts.dividerLabel ? opts.dividerLabel(v) : "";
       const divider = dl ? renderViewDivider(dl) : "";
-      return `${divider}<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${badge}${update}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
+      return `${divider}<span class="view-chip${active}${lensed}${pinClass}${stale}${flash}${busiest}"${dragAttrs} data-view-id="${escapeHTML(v.id)}" title="${escapeHTML(describeView(v) + staleTitle)}"><button type="button" class="view-chip-name" data-view-recall="${escapeHTML(v.id)}">${glyphSpan}${escapeHTML(v.name)}</button>${staleBadge}${badge}${update}${copyBtn}<button type="button" class="view-chip-del" data-view-del="${escapeHTML(v.id)}" aria-label="Delete view ${escapeHTML(v.name)}">&times;</button></span>`;
     })
     .join("");
 }
