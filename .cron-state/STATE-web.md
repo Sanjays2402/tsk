@@ -3191,10 +3191,80 @@ done-recall.
 Standing long-carries: F48, F49, F50, F54, F168, F169, F173, F174. The Views-row
 copy/paste/cluster/stale cluster is now mature; T37 leans into the still-open
 structural backlog plus a few fresh follow-ons from this tick.
-- [ ] **F199** Per-chip "Paste after" — drop a copied single-view doc to land right after a target chip (position-aware paste, sister of F196 copy).
-- [ ] **F200** Copy-row toast undo parity: give F181's whole-row copy the same brief confirm the single-view copy now shows (consistency).
-- [ ] **F201** Divider count badge: render "#work (3)" on the cluster heading so a big row's group sizes read at the divider, not just the F176 tooltip.
-- [ ] **F202** Stale-age badge on the row-head sweep segment too (F197 face form applied to the "N stale" summary count's per-name tooltip is text-only; surface the oldest age inline).
-- [ ] **F203** Export single view as a shareable URL hash (#view=<base64 doc>) so a bookmark travels in a link, not just the clipboard.
+- [x] **F199** Per-chip "Paste after" — drop a copied single-view doc to land right after a target chip (position-aware paste, sister of F196 copy). (tick T37 2026-06-29, 5819917)
+- [ ] **F200** Copy-row toast undo parity: give F181's whole-row copy the same brief confirm the single-view copy now shows (consistency). SKIPPED T37 — already satisfied by F188: copyViews already calls showInfoToast("Copied N views"). Shipping it would be a no-op; dropped honestly rather than padded.
+- [x] **F201** Divider count badge: render "#work (3)" on the cluster heading so a big row's group sizes read at the divider, not just the F176 tooltip. (tick T37 2026-06-29, e22b299)
+- [x] **F202** Stale-age badge on the row-head sweep segment too (F197 face form applied to the "N stale" summary count's per-name tooltip is text-only; surface the oldest age inline). (tick T37 2026-06-29, 2a3b7b9)
+- [x] **F203** Export single view as a shareable URL hash (#view=<base64 doc>) so a bookmark travels in a link, not just the clipboard. (tick T37 2026-06-29, f16e8d7)
+- [x] **F205** Whole-row shareable link (Copy share link, all views) — link form of F181, reusing the F203 #view= channel at row grain. (tick T37 2026-06-29, f911115)
 - [ ] **F192** Archive view pane (carry) — read-only completed-log surface; design the pane + route this tick.
 - [ ] **F191** Recall-open kbd binding (carry, reframed) — bind a real shortcut to the recall-open jump, THEN the F191 hint badge becomes truthful.
+
+## Web tick T37 — 2026-06-29 12:06 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `fffb250..a0065eb`.
+Canonical workdir `/Volumes/Projects/tsk`. This tick rounded out the Views-row
+portability + legibility story: a single bookmark (or the whole row) now travels
+in a LINK, a copied view can be pasted at a chosen position, the tag-cluster
+headings show their sizes, and the dead-bookmark pile names its oldest age on
+the sweep face. F200 was DROPPED honestly (already satisfied by F188).
+
+### Features (5 source commits + bundle)
+- F199 5819917 — importViewsDocAfter(current, doc, afterId): position-aware
+  merge inserting the new view(s) right AFTER the anchor chip (de-dup/fresh-id/
+  garbage-reject byte-identical to importViewsDoc; null anchor === append). Per-
+  view "Paste view(s) after (<name>)" Cmd-K command (paste-after:<id>) with the
+  same preview+confirm+undo as pasteViews, naming the anchor.
+- F201 e22b299 — viewGroupSizeBefore(groups) (size sibling of viewDivider-
+  LabelBefore, same first-chip keying); renderViewDivider(label, count?) folds
+  "#work (3)" into the heading + title/aria; renderViewChips dividerCount opt;
+  main.ts pairs dividerCountFor with dividerFor. .view-group-divider-count CSS.
+- F202 2a3b7b9 — staleSweepSegmentHTML gains oldestDays -> "N stale · Md" face
+  cue (0="today", negative/omitted = no suffix, back-compat); main.ts feeds the
+  max over the SAME staleAged clock the F179 tooltip uses. .views-summary-stale-age CSS.
+- F203 f16e8d7 — router "shared" route + "view=" prefix; parseHash/formatHash/
+  sharedViewHash encode-decode a base64url views doc (TextEncoder/btoa +
+  Buffer fallback; mangled -> all-tasks, never throws); copyShareLink(id) writes
+  origin+path+#view=<b64> to clipboard (guarded) + per-view "Copy share link"
+  command; applySharedViewDoc inbound path (preview+confirm+undo, clears hash)
+  wired into onRouteChange + boot.
+- F205 f911115 — copyRowShareLink(): whole-row link via the SAME shareLinkURL +
+  clipboard path; static "Copy share link (all views)" command (disabled empty).
+  Decoding reuses F203's importViewsDoc path (1 or N views identical).
+- a0065eb — bundle rebuild (41 modules, JS 47.90KB gz, CSS 11.57KB gz).
+
+### Gates
+- web check: 999 -> 1014 tests (+15: 9 views, 6 router), 0 fail; tsc app+test
+  clean; build green. gofmt/vet/build clean; go test ./... green.
+- Per-feature commits verified LOSSLESS: after committing all 5 source slices +
+  bundle, the reconstructed working tree was diff-IDENTICAL to the full validated
+  working copy across all 6 files (views.ts/main.ts/router.ts/app.css + 2 tests).
+  Each commit independently revertible.
+- live serve 8779 GET / 200; served JS carried share-link:, paste-after:,
+  "Copy share link", "Copy share link (all views)", view-group-divider-count,
+  views-summary-stale-age, #view=; CSS carried both new classes; POST
+  /api/tasks/1/toggle round-tripped [ ]->[x]->[ ] to .tsk.md (timestamps +
+  hand-editable format preserved).
+
+### Deferred / dropped (honest, not padded)
+- F200 DROPPED: already satisfied by F188 (copyViews toasts the count). A
+  separate commit would be a no-op.
+- F192 (archive pane) DEFERRED: large structural surface (pane + route + render);
+  its own design tick, carried to T38.
+- F191 (recall-open kbd binding) DEFERRED: still needs a real shortcut bound
+  before the hint badge can be truthful; carried to T38.
+
+### T38 — depth (appended T37 so the loop never starves)
+Standing long-carries: F48, F49, F50, F54, F168, F169, F173, F174. The Views-row
+copy/paste/share/cluster/stale cluster is now very mature; T38 leans into the
+still-open structural backlog (archive pane, recurring badge) plus fresh
+follow-ons from this tick's share-link + paste-after work.
+- [ ] **F206** Share-link preview: when opening a #view= link, show the view NAMES it would add ("Adds: Work, Sprint") in the confirm, not just the count (richer than F187's "+N").
+- [ ] **F207** Paste-after chip affordance: a small "paste after" action on the per-chip context menu / hover, so the position-aware paste is reachable by mouse, not just Cmd-K.
+- [ ] **F208** Share-link QR: render the #view= link as a small QR in a popover so a bookmark hops to a phone (local-first, no external service — draw the QR client-side).
+- [ ] **F209** Copy share link from the chip copy button: a modifier (Alt-click) on the F196 per-chip copy button copies the LINK instead of the raw JSON (one button, two grains).
+- [ ] **F210** Shared-link staleness guard: a #view= doc carrying a cohort view (chokepoint id) should note "this references task #N which may not exist here" on import.
+- [ ] **F192** Archive view pane (carry) — read-only completed-log surface; design the pane + route.
+- [ ] **F191** Recall-open kbd binding (carry) — bind a real shortcut, then make the hint badge truthful.
+- [ ] **F211** Divider count live-updates with filter: the "#work (3)" count is the cluster SIZE; consider a second "(N match)" when a board filter is active so the heading reads both saved-size and live-match.
+- [ ] **F212** Paste-after undo toast names the position: extend F199's undo toast to say "removed N (after <anchor>)" so the reversal is unambiguous in a long row.
