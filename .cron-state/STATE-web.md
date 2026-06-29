@@ -3134,10 +3134,67 @@ dead chip names its age, and the done-recall flashes the board.
 Long-carries F48, F49, F50, F54, F168, F169, F173, F174. F191-F193 carried to T36.
 
 ### T36 — depth (appended T35 so the loop never starves)
-- [ ] **F191** Recall-open-kbd hint badge: surface a keyboard hint on the recall-open command rows.
-- [ ] **F192** Archive view pane (F168 long-pending) — read-only completed log surface.
-- [ ] **F193** Recurring-task chip (F169) — render "weekly" badge from recur meta.
-- [ ] **F194** Divider recall toast: clicking a "#tag" divider flashes the board (reuse F186) so the cluster jump is felt.
-- [ ] **F195** Paste-views undo: a toast Undo after F187 commit, restoring the prior row (snapshotViews/restore like the sweep).
-- [ ] **F196** Copy single view: per-chip copy of just one view's doc (sister of F181 whole-row copy).
-- [ ] **F197** Stale-age chip badge: a small "3d" suffix ON the chip face, not just title (F190 visible form).
+- [ ] **F191** Recall-open-kbd hint badge: surface a keyboard hint on the recall-open command rows. DEFERRED T36 — the recall-open commands are Cmd-K-only with no bound shortcut, so a "hint" kbd badge would render a misleading key. Needs a real binding first.
+- [ ] **F192** Archive view pane (F168 long-pending) — read-only completed log surface. DEFERRED T36 — large structural surface (new pane + route + render path); deserves its own design tick, not a fold-in.
+- [ ] **F193** Recurring-task chip (F169) — render "weekly" badge from recur meta. BLOCKED T36 — there is NO recurrence metadata anywhere in internal/model, the serve DTO, or .tsk.md; nothing to render a badge from. Needs the CLI loop to ship recur storage first (still unstarted on STATE.md).
+- [x] **F194** Divider recall toast: clicking a "#tag" divider flashes the board (reuse F186) so the cluster jump is felt. (tick T36 2026-06-29, 5fb3ddc)
+- [x] **F195** Paste-views undo: a toast Undo after F187 commit, restoring the prior row (snapshotViews/restore like the sweep). (tick T36 2026-06-29, c4e4e9f)
+- [x] **F196** Copy single view: per-chip copy of just one view's doc (sister of F181 whole-row copy). (tick T36 2026-06-29, eb9f5eb helper + 517a8f5 wiring)
+- [x] **F197** Stale-age chip badge: a small "3d" suffix ON the chip face, not just title (F190 visible form). (tick T36 2026-06-29, eb9f5eb)
+- [x] **F198** Cmd-K "Copy view (<name>)" command — keyboard sibling of F196's per-chip copy button (mirrors F185 giving the badge a kbd entry). (tick T36 2026-06-29, e1bac12)
+
+## Web tick T36 — 2026-06-29 08:30 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `9360f76..e899b08`.
+Canonical workdir `/Volumes/Projects/tsk`. This tick finished the Views-row
+PORTABILITY + dead-chip-legibility story: a single bookmark can now be copied
+on its own (button + Cmd-K), a paste can be undone, a dead chip names its age
+ON its face, and clicking a "#tag" cluster heading flashes the board like a
+done-recall.
+
+### Features (1 helper commit + 4 wiring commits + bundle)
+- F194 5fb3ddc — divider recall flash: clicking a "#tag" cluster heading arms
+  the same pendingDoneFlash one-shot F186 fires on done-recall, so the tag jump
+  is felt. reduced-motion -> static ring.
+- F195 c4e4e9f — paste-views undo: snapshot the pre-paste row (detached serialize
+  round-trip) before the merge; 6s toast Undo restores it exactly, dropping the
+  added ids. Mirrors F151 stale-sweep undo. Clears a dangling recall pointer.
+- F196 eb9f5eb (helper) + 517a8f5 (wiring) — exportSingleViewDoc wraps ONE view
+  in the portable {tsk,v,views:[v]} envelope; renderViewChips `copyable` opt
+  renders a per-chip copy button; copySingleView writes it to the clipboard
+  (guarded like copyViews) + toast. Round-trips through importViewsDoc.
+- F197 eb9f5eb — chipStaleBadge renders the bare "Nd" age as a small badge ON a
+  dead cohort chip's face via the same staleCohortAge resolver F190's title reads;
+  .view-chip-stale-age CSS (overdue tint).
+- F198 e1bac12 — per-view "Copy view (<name>)" Cmd-K command (keyboard sibling of
+  F196's button), routed through the same copySingleView path so they can't diverge.
+- e899b08 — bundle rebuild (41 modules, JS 46.71KB gz, CSS 11.53KB gz).
+
+### Gates
+- web check: 990 -> 999 tests (+9 views), 0 fail; tsc app+test clean; build green.
+- gofmt/vet/build clean; go test ./... green (commands 64.4s; serve cached).
+  live serve 8774 GET / 200; served JS carried data-view-copy, view-chip-stale-age,
+  copy-view:, "Copy view (", "undid paste"; CSS carried view-chip-copy +
+  view-chip-stale-age; POST /api/tasks/1/toggle round-tripped [ ]->[x] to .tsk.md.
+- Per-feature commits verified lossless: reconstructed main.ts byte-identical to
+  the full-batch working copy (split-by-checkout-and-reapply, each independently
+  revertible). Each feature = its own commit, F196 helper+wiring grouped honestly.
+
+### Deferred / blocked (3 — honest, not padded)
+- F191 (kbd hint badge) DEFERRED: recall-open commands have no real shortcut, so
+  a hint would render a fake key. Needs a binding first.
+- F192 (archive pane) DEFERRED: large structural surface; its own design tick.
+- F193 (recurring-task chip) BLOCKED: zero recur metadata in model/DTO/.tsk.md —
+  nothing to render. Waits on the CLI loop shipping recur storage.
+
+### T37 — depth (appended T36 so the loop never starves)
+Standing long-carries: F48, F49, F50, F54, F168, F169, F173, F174. The Views-row
+copy/paste/cluster/stale cluster is now mature; T37 leans into the still-open
+structural backlog plus a few fresh follow-ons from this tick.
+- [ ] **F199** Per-chip "Paste after" — drop a copied single-view doc to land right after a target chip (position-aware paste, sister of F196 copy).
+- [ ] **F200** Copy-row toast undo parity: give F181's whole-row copy the same brief confirm the single-view copy now shows (consistency).
+- [ ] **F201** Divider count badge: render "#work (3)" on the cluster heading so a big row's group sizes read at the divider, not just the F176 tooltip.
+- [ ] **F202** Stale-age badge on the row-head sweep segment too (F197 face form applied to the "N stale" summary count's per-name tooltip is text-only; surface the oldest age inline).
+- [ ] **F203** Export single view as a shareable URL hash (#view=<base64 doc>) so a bookmark travels in a link, not just the clipboard.
+- [ ] **F192** Archive view pane (carry) — read-only completed-log surface; design the pane + route this tick.
+- [ ] **F191** Recall-open kbd binding (carry, reframed) — bind a real shortcut to the recall-open jump, THEN the F191 hint badge becomes truthful.
