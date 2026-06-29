@@ -4441,6 +4441,11 @@ els.viewsChips.addEventListener("click", (e) => {
   const divider = target?.closest<HTMLElement>("[data-divider-tag]");
   if (divider) {
     e.stopPropagation();
+    // F194: arm the board flash so the jump to the recalled cluster is FELT —
+    // the same one-shot is-flash F186 fires on the done-recall, reused here so
+    // clicking a "#tag" heading lands with the same spatial confirmation.
+    // render() (triggered by setFilter) consumes it for exactly one paint.
+    pendingDoneFlash = true;
     setFilter({ tags: [divider.dataset.dividerTag ?? ""] });
     return;
   }
