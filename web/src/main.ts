@@ -255,6 +255,7 @@ import {
   viewsRowDoneCount,
   busiestHeadlineHTML,
   staleSweepSegmentHTML,
+  doneSegmentHTML,
   viewsSummaryTooltip,
   peekViewLabel,
   peekCommandTitle,
@@ -3809,7 +3810,9 @@ function renderViewsRow(): void {
   } else {
     const hasTasks = !/^\d+ views?$/.test(baseText); // task half present
     const busiestHTML = hasTasks ? busiestHeadlineHTML(busiestForSummary, busiestId ?? "") : "";
-    els.viewsSummary.innerHTML = baseText + busiestHTML + staleSweepSegmentHTML(staleN, staleNames);
+    // F178: the "M done" total doubles as a one-click recall of everything done.
+    const doneHTML = hasTasks ? doneSegmentHTML(doneTotal) : "";
+    els.viewsSummary.innerHTML = baseText + doneHTML + busiestHTML + staleSweepSegmentHTML(staleN, staleNames);
     // F167: rest on the headline → busiest + stale breakdown explains the row.
     els.viewsSummary.title = viewsSummaryTooltip(hasTasks ? busiestForSummary : null, staleN);
     els.viewsSummary.hidden = false;
@@ -4257,6 +4260,13 @@ els.viewsSummary.addEventListener("click", (e) => {
   const target = e.target as HTMLElement | null;
   if (target?.closest("[data-views-sweep]")) {
     forgetStaleCohorts();
+    return;
+  }
+  // F178: the "M done" total recalls everything done across views — clear the
+  // active filter and show completed tasks (hide-done off) so the board reads
+  // as the all-completions slice. Reuses the setFilter render path.
+  if (target?.closest("[data-views-done]")) {
+    setFilter({ query: "", priorities: [], tags: [], hideDone: false });
     return;
   }
   const recall = target?.closest<HTMLElement>("[data-view-recall]");

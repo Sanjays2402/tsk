@@ -1527,7 +1527,8 @@ button.lens-legend-item:focus-visible {
    clickable buttons styled as inline text so the headline still reads as one
    quiet line — just the actionable spans pick up the accent on hover. */
 .views-summary-recall,
-.views-summary-stale {
+.views-summary-stale,
+.views-summary-done {
   border: 0;
   background: none;
   padding: 0;
@@ -1539,11 +1540,13 @@ button.lens-legend-item:focus-visible {
   text-underline-offset: 2px;
 }
 .views-summary-recall:hover,
-.views-summary-stale:hover {
+.views-summary-stale:hover,
+.views-summary-done:hover {
   color: var(--color-text);
 }
 .views-summary-recall:focus-visible,
-.views-summary-stale:focus-visible {
+.views-summary-stale:focus-visible,
+.views-summary-done:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--color-accent-soft);
   border-radius: 2px;
