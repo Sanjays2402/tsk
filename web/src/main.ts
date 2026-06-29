@@ -257,6 +257,7 @@ import {
   staleSweepSegmentHTML,
   peekViewLabel,
   peekCommandTitle,
+  peekOpenOnlyTitle,
   peekOpenOnlyLabel,
   enrichCohortPeek,
   badgeHidesDone,
@@ -5628,7 +5629,12 @@ function buildCommands(): Command[] {
     )
     .map((v) => ({
       id: `peek-open:${v.id}`,
-      title: `Peek open-only (${v.name})`,
+      // F171: fold the live open-slice count onto the title (\"·N\") so the peek-open
+      // group reads as an open-count column, mirroring F157 on plain peek.
+      title: peekOpenOnlyTitle(
+        v.name,
+        countViewMatchesBreakdown(v, viewMatchPool(), viewMatchCounters(), (t) => t.done).open,
+      ),
       group: "Views",
       keywords: ["peek", "open", "preview", "look", "view", "done", ...v.filter.tags],
     }));

@@ -1052,6 +1052,21 @@ export function peekOpenOnlyLabel(view: SavedView, openCount: number | null | un
   return `${countText} \u00b7 ${desc}`;
 }
 
+/**
+ * F171: the title for a "Peek open-only (<name>)" command, with the live OPEN
+ * count folded in as a quiet trailing "·N" — the open-slice sibling of F157's
+ * peekCommandTitle (which folds the FULL count onto "Peek view"). The peek-open
+ * group lists hide-done-able views; this lets you scan their open-slice depth in
+ * the title without highlighting each to read F165's preview. A null/undefined
+ * count keeps the bare "Peek open-only (<name>)" so callers without a live count
+ * stay byte-identical; a zero count still renders "·0" so an all-done view reads
+ * honestly. Pure → unit-tested; main.ts builds the peek-open command titles from it.
+ */
+export function peekOpenOnlyTitle(name: string, openCount: number | null | undefined): string {
+  const base = `Peek open-only (${name})`;
+  return typeof openCount === "number" ? `${base} \u00b7${openCount}` : base;
+}
+
 export function renderViewChips(
   views: SavedView[],
   filter: ViewFilter,

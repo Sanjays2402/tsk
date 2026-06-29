@@ -36,6 +36,7 @@ import {
   peekOpenOnlyLabel,
   peekViewLabel,
   peekCommandTitle,
+  peekOpenOnlyTitle,
   enrichCohortPeek,
   recallOpenOnlyTitle,
   badgeHidesDone,
@@ -1066,6 +1067,18 @@ test("peekOpenOnlyLabel drops the count half for a null/undefined open count", (
   const v = addView([], "work", { ...EMPTY, tags: ["work"] })[0];
   assert.doesNotMatch(peekOpenOnlyLabel(v, null), /open/);
   assert.doesNotMatch(peekOpenOnlyLabel(v, undefined), /open/);
+});
+
+// --- F171: peek-open title carries the open count ---------------------------
+
+test("peekOpenOnlyTitle folds a quiet open count onto the title", () => {
+  assert.equal(peekOpenOnlyTitle("work", 9), "Peek open-only (work) \u00b79");
+  assert.equal(peekOpenOnlyTitle("work", 0), "Peek open-only (work) \u00b70");
+});
+
+test("peekOpenOnlyTitle keeps the plain title with no open count", () => {
+  assert.equal(peekOpenOnlyTitle("work", null), "Peek open-only (work)");
+  assert.equal(peekOpenOnlyTitle("work", undefined), "Peek open-only (work)");
 });
 
 // --- F166: recall-open title carries the open count -------------------------
