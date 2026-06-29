@@ -140,6 +140,56 @@ export function serializeViews(views: SavedView[]): string {
 }
 
 /**
+ * F170: export the saved-view row as a PORTABLE document so the Views row can
+ * travel between machines/browsers. Unlike serializeViews (the raw localStorage
+ * array), this wraps the list in a tiny versioned envelope — {tsk:"tsk.views",
+ * v:1, views:[...]} — so an importer can sniff the format and reject a
+ * stranger's JSON blob. Pretty-printed (2-space) so a human can eyeball/diff it.
+ * Pure -> unit-tested; main.ts hangs it off a "copy views" affordance.
+ */
+export const VIEWS_DOC_KIND = "tsk.views";
+export const VIEWS_DOC_VERSION = 1;
+
+export function exportViewsDoc(views: SavedView[]): string {
+  return JSON.stringify({ tsk: VIEWS_DOC_KIND, v: VIEWS_DOC_VERSION, views }, null, 2);
+}
+
+/**
+ * F170: import a portable views document (exportViewsDoc's output) and MERGE it
+ * into a current list, so pasting a row from another machine adds its bookmarks
+ * without clobbering yours. De-dups by case-insensitive name: an incoming view
+ * whose name already exists is dropped (yours wins -- import never silently
+ * overwrites). Each genuinely-new view is normalized through parseViews (so its
+ * filter/lens/cohort are validated exactly like a stored view), gets a FRESH id
+ * (timestamp+random) so two machines' ids can't collide, and appends after the
+ * current row. A non-views document, malformed JSON, or wrong kind/version
+ * returns the current list UNCHANGED (no throw). Returns a NEW array. Pure ->
+ * unit-tested; main.ts feeds it the clipboard text.
+ */
+export function importViewsDoc(current: SavedView[], doc: string): SavedView[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(doc);
+  } catch {
+    return current;
+  }
+  if (!parsed || typeof parsed !== "object") return current;
+  const o = parsed as { tsk?: unknown; v?: unknown; views?: unknown };
+  if (o.tsk !== VIEWS_DOC_KIND || o.v !== VIEWS_DOC_VERSION || !Array.isArray(o.views)) {
+    return current;
+  }
+  const incoming = parseViews(JSON.stringify(o.views));
+  const have = new Set(current.map((v) => v.name.toLowerCase()));
+  const out = [...current];
+  for (const v of incoming) {
+    if (have.has(v.name.toLowerCase())) continue;
+    have.add(v.name.toLowerCase());
+    out.push({ ...v, id: makeId() });
+  }
+  return out;
+}
+
+/**
  * F176: cluster a saved-view list into groups keyed by each view's FIRST tag, so
  * a big Views row reads as labeled clusters ("#work: a, b · #home: c") instead
  * of one long undifferentiated chip strip. The first tag (filter.tags[0]) is the
@@ -183,6 +233,29 @@ export function describeViewGroups(groups: ViewGroup[]): string {
   return groups
     .map((g) => `${g.tag === "" ? "untagged" : "#" + g.tag}: ${g.views.length}`)
     .join(" \u00b7 ");
+}
+
+/**
+ * F177: build the chip-row divider labels for the F176 tag clusters so a big
+ * Views row reads as visibly-sectioned groups, not one long strip. F176 groups
+ * the views; describeViewGroups tooltips the layout; this returns the inline
+ * "#tag" divider label that main.ts renders BEFORE each cluster (untagged reads
+ * "untagged"). Like describeViewGroups it returns [] for fewer than 2 groups
+ * (one cluster needs no dividers). Each entry pairs the label with the view ids
+ * it leads, so the renderer can place a divider span and then the group's chips.
+ * Pure -> unit-tested; main.ts walks it to interleave divider spans with chips.
+ */
+export interface ViewGroupDivider {
+  label: string;
+  ids: string[];
+}
+
+export function viewGroupDividers(groups: ViewGroup[]): ViewGroupDivider[] {
+  if (groups.length < 2) return [];
+  return groups.map((g) => ({
+    label: g.tag === "" ? "untagged" : "#" + g.tag,
+    ids: g.views.map((v) => v.id),
+  }));
 }
 
 /** Generate a reasonably-unique id without a dependency. */
@@ -724,6 +797,22 @@ export function describeViewsRowSummary(
 }
 
 /**
+ * F178: render the F175 "M done" segment as a CLICKABLE recall so the completed
+ * total at the row head doubles as a one-click jump to everything done across
+ * the Views row. F175 shows the count as plain text; this returns the same
+ * "· M done" tail with the number wrapped in a `data-views-done` button so a
+ * click recalls a hide-done-OFF, show-done view (all completions in coverage).
+ * Reuses one delegated hook (no new dispatch). A zero/negative count returns ""
+ * (nothing to recall), keeping a clean board byte-identical. Composes after the
+ * task base like busiestHeadlineHTML. Pure -> unit-tested; main.ts appends it
+ * between the numeric base and the busiest segment.
+ */
+export function doneSegmentHTML(done: number): string {
+  if (done <= 0) return "";
+  return ` \u00b7 <button type="button" class="views-summary-done" data-views-done title="Recall everything done across views">${done} done</button>`;
+}
+
+/**
  * F175: sum the DONE half of every view's coverage for the row-head summary —
  * the completed sibling of viewsRowSummary's task total. Each view's done count
  * is the SAME open/done split the F145 badge tooltip reads (countViewMatches-
@@ -803,6 +892,30 @@ export function staleSweepSegmentHTML(staleCount: number, names?: readonly strin
 export function staleSweepTitle(names?: readonly string[]): string {
   if (!names || names.length === 0) return "Forget every stale cohort view";
   return `Forget: ${names.join(", ")}`;
+}
+
+/**
+ * F179: a richer stale-sweep tooltip that names EACH dead cohort view AND how
+ * long it's been dead, so the F172 title gains an age cue ("Forget: a (dead 3d),
+ * b (dead 1d)"). Each entry carries a name + days-stale; a view dead < 1 day
+ * reads "dead today" (no "0d"), and a negative/missing age drops the age clause
+ * (just the name) so a partial signal degrades gracefully. An empty list falls
+ * back to the generic F172 phrase. Names stay in list order. Pure ->
+ * unit-tested; main.ts pairs each stale id with a staleSince age before calling.
+ */
+export interface StaleViewAge {
+  name: string;
+  days: number;
+}
+
+export function staleSweepTitleAged(items?: readonly StaleViewAge[]): string {
+  if (!items || items.length === 0) return "Forget every stale cohort view";
+  const parts = items.map((it) => {
+    if (it.days < 0) return it.name;
+    const age = it.days === 0 ? "dead today" : `dead ${it.days}d`;
+    return `${it.name} (${age})`;
+  });
+  return `Forget: ${parts.join(", ")}`;
 }
 
 /**
@@ -1143,6 +1256,22 @@ export function peekOpenOnlyLabel(view: SavedView, openCount: number | null | un
  */
 export function peekOpenOnlyTitle(name: string, openCount: number | null | undefined): string {
   const base = `Peek open-only (${name})`;
+  return typeof openCount === "number" ? `${base} \u00b7${openCount}` : base;
+}
+
+/**
+ * F180: the title for a "Recall open-only (<name>)" Cmd-K command that COMMITS
+ * the peek-open jump in one keystroke -- the keyboard sibling of F171's
+ * preview-peek. F165/F171 let you PEEK a view's open slice (look, don't touch);
+ * this lets the keyboard fire the actual recall+hideDone jump without reaching
+ * for the badge. Folds the live open count as a quiet trailing "·N" like
+ * peekOpenOnlyTitle so you scan depth before committing; a null/undefined count
+ * keeps the bare title, a zero count still shows "·0" so an all-done view reads
+ * honestly. Pure -> unit-tested; main.ts maps "recall-open-kbd:<id>" through the
+ * same recallViewHideDone path the badge + F158 command use.
+ */
+export function peekOpenRecallTitle(name: string, openCount: number | null | undefined): string {
+  const base = `Recall open-only (${name})`;
   return typeof openCount === "number" ? `${base} \u00b7${openCount}` : base;
 }
 

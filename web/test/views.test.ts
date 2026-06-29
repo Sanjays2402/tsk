@@ -51,6 +51,12 @@ import {
   renderViewChips,
   groupViewsByTag,
   describeViewGroups,
+  viewGroupDividers,
+  exportViewsDoc,
+  importViewsDoc,
+  doneSegmentHTML,
+  staleSweepTitleAged,
+  peekOpenRecallTitle,
   type ViewFilter,
   type SavedView,
 } from "../src/views.ts";
@@ -1347,4 +1353,76 @@ test("snapshotViews + restoreSweptViews round-trip a stale-sweep faithfully", ()
   swept = restoreSweptViews(swept, snap);
   assert.equal(swept.length, 3);
   assert.deepEqual(new Set(swept.map((v) => v.cohort)), new Set([1, 2, undefined]));
+});
+
+// F170: portable export/import doc.
+test("exportViewsDoc wraps views in a versioned envelope", () => {
+  const views = addView([], "Work", { ...EMPTY, tags: ["work"] });
+  const doc = JSON.parse(exportViewsDoc(views));
+  assert.equal(doc.tsk, "tsk.views");
+  assert.equal(doc.v, 1);
+  assert.equal(doc.views.length, 1);
+  assert.equal(doc.views[0].name, "Work");
+});
+
+test("importViewsDoc merges new views with fresh ids", () => {
+  const mine = addView([], "Mine", { ...EMPTY, tags: ["a"] });
+  const theirs = addView([], "Theirs", { ...EMPTY, tags: ["b"] });
+  const merged = importViewsDoc(mine, exportViewsDoc(theirs));
+  assert.equal(merged.length, 2);
+  assert.deepEqual(new Set(merged.map((v) => v.name)), new Set(["Mine", "Theirs"]));
+  assert.notEqual(merged[1].id, theirs[0].id); // fresh id, no collision
+});
+
+test("importViewsDoc drops name dups (yours wins) and rejects garbage", () => {
+  const mine = addView([], "Work", { ...EMPTY, tags: ["mine"] });
+  const dup = addView([], "WORK", { ...EMPTY, tags: ["theirs"] });
+  assert.equal(importViewsDoc(mine, exportViewsDoc(dup)).length, 1);
+  assert.equal(importViewsDoc(mine, "not json").length, 1);
+  assert.equal(importViewsDoc(mine, JSON.stringify({ tsk: "other", v: 1, views: [] })).length, 1);
+  assert.equal(importViewsDoc(mine, JSON.stringify({ tsk: "tsk.views", v: 2, views: [] })).length, 1);
+});
+
+// F177: chip cluster dividers.
+test("viewGroupDividers labels each cluster with its ids", () => {
+  let vs = addView([], "A", { ...EMPTY, tags: ["work"] });
+  vs = addView(vs, "B", { ...EMPTY, tags: ["home"] });
+  const div = viewGroupDividers(groupViewsByTag(vs));
+  assert.equal(div.length, 2);
+  assert.equal(div[0].label, "#work");
+  assert.equal(div[1].label, "#home");
+  assert.equal(div[0].ids.length, 1);
+});
+
+test("viewGroupDividers empty under 2 groups; untagged reads untagged", () => {
+  let vs = addView([], "A", { ...EMPTY, tags: ["work"] });
+  assert.deepEqual(viewGroupDividers(groupViewsByTag(vs)), []);
+  vs = addView(vs, "B", { ...EMPTY, query: "x" });
+  const div = viewGroupDividers(groupViewsByTag(vs));
+  assert.equal(div[div.length - 1].label, "untagged");
+});
+
+// F178: clickable done segment.
+test("doneSegmentHTML wraps the done total in a recall button", () => {
+  const html = doneSegmentHTML(5);
+  assert.match(html, /data-views-done/);
+  assert.match(html, /5 done/);
+  assert.equal(doneSegmentHTML(0), "");
+  assert.equal(doneSegmentHTML(-2), "");
+});
+
+// F179: aged stale sweep title.
+test("staleSweepTitleAged names each dead view with its age", () => {
+  assert.equal(staleSweepTitleAged([{ name: "a", days: 3 }]), "Forget: a (dead 3d)");
+  assert.equal(staleSweepTitleAged([{ name: "a", days: 0 }]), "Forget: a (dead today)");
+  assert.equal(staleSweepTitleAged([{ name: "a", days: -1 }]), "Forget: a");
+  assert.equal(staleSweepTitleAged([]), "Forget every stale cohort view");
+  assert.equal(staleSweepTitleAged(), "Forget every stale cohort view");
+});
+
+// F180: peek-open keyboard recall title.
+test("peekOpenRecallTitle folds the open count when present", () => {
+  assert.equal(peekOpenRecallTitle("Work", 9), "Recall open-only (Work) \u00b79");
+  assert.equal(peekOpenRecallTitle("Work", 0), "Recall open-only (Work) \u00b70");
+  assert.equal(peekOpenRecallTitle("Work", null), "Recall open-only (Work)");
 });
