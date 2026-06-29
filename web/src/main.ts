@@ -233,6 +233,7 @@ import {
   parseViews,
   serializeViews,
   exportViewsDoc,
+  exportSingleViewDoc,
   importViewsDoc,
   previewImportViews,
   addView,
@@ -3811,6 +3812,11 @@ function renderViewsRow(): void {
     // and lead each cluster with a thin "#tag" divider span so a big row reads
     // as labeled groups. Single cluster -> no dividers, natural drag order kept.
     dividerLabel: dividerFor ? (v) => dividerFor(v.id) : undefined,
+    // F196: offer a per-chip "copy this view" button on every chip — the
+    // per-chip sister of F181's whole-row copy, so a single bookmark can be
+    // shared without exporting the entire row. The click is wired through the
+    // delegated chip handler (data-view-copy) to copySingleView.
+    copyable: () => true,
   });
   // F176: when the Views row carries 2+ tag clusters, set a hover tooltip that
   // groups the chips by first tag ("#work: 3 · #home: 2 · untagged: 1") so a big
@@ -3982,6 +3988,42 @@ function copyViews(): void {
   };
   const hint = (): void => {
     setStatus(`${n} view${n === 1 ? "" : "s"} ready — clipboard blocked`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.writeText === "function") {
+    clip.writeText(doc).then(ok, () => hint());
+  } else {
+    hint();
+  }
+}
+
+/**
+ * F196: copy a SINGLE saved view as a portable JSON document to the clipboard —
+ * the per-chip sister of F181's whole-row copyViews, so you can share just one
+ * bookmark (a teammate wants your "#work overdue" view, not your whole row). The
+ * payload is exportSingleViewDoc's {tsk:"tsk.views",v:1,views:[v]} envelope, the
+ * SAME shape importViewsDoc / previewImportViews round-trip, so a single-view
+ * copy pastes back exactly like a full-row paste (de-dup by name, fresh id).
+ * navigator.clipboard is guarded exactly like copyViews: an unavailable / blocked
+ * write degrades to a status hint so the user always gets feedback. A no-op (with
+ * a hint) when the id doesn't resolve to a live view.
+ */
+function copySingleView(id: string): void {
+  const view = views.find((v) => v.id === id);
+  if (!view) {
+    setStatus("view not found", true);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const doc = exportSingleViewDoc(view);
+  const ok = (): void => {
+    setStatus(`copied “${view.name}” to clipboard`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    showInfoToast(`Copied “${view.name}”`, 2);
+  };
+  const hint = (): void => {
+    setStatus(`“${view.name}” ready — clipboard blocked`, true);
     setTimeout(() => setStatus("ready", false), 3_000);
   };
   const clip = (navigator as Navigator | undefined)?.clipboard;
@@ -4484,6 +4526,15 @@ els.viewsChips.addEventListener("click", (e) => {
   if (del) {
     e.stopPropagation();
     deleteView(del.dataset.viewDel ?? "");
+    return;
+  }
+  // F196: the per-chip "copy" button copies just that one view's portable doc to
+  // the clipboard (the per-chip sister of the whole-row copy). Checked before the
+  // recall hook below so the button's own action wins over the chip-wide recall.
+  const copy = target?.closest<HTMLElement>("[data-view-copy]");
+  if (copy) {
+    e.stopPropagation();
+    copySingleView(copy.dataset.viewCopy ?? "");
     return;
   }
   // F32: the circular-arrow button overwrites the saved view with the live filter.
