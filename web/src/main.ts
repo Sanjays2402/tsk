@@ -109,7 +109,7 @@ import {
   modeTitle,
   type ThemeMode,
 } from "./theme";
-import { parseHash, tagHash, viewHash, type Route } from "./router";
+import { parseHash, tagHash, viewHash, sharedViewHash, type Route } from "./router";
 import {
   emptyBulk,
   isBulkActive,
@@ -1921,6 +1921,15 @@ function onRouteChange(): void {
       recallView(id);
       return;
     }
+  }
+  // F203: a #view=<b64> shared LINK carries a whole views doc. Decode + import
+  // it (de-dup, fresh ids) with a confirm + undo, then clear the hash so a
+  // reload doesn't re-prompt. Distinct from #view/<id> (an id reference).
+  if (route.kind === "shared") {
+    const doc = route.doc;
+    route = { kind: "all" };
+    applySharedViewDoc(doc);
+    return;
   }
   // Leaving a tag page after filtering shouldn't strand a stale selection.
   render();
@@ -4179,6 +4188,100 @@ function pasteViewsAfter(afterId: string): void {
 }
 
 /**
+ * F203: build the full shareable URL for a base64url-encoded views doc — the
+ * page origin + path (sans any existing hash) + the #view=<b64> fragment, so a
+ * recipient can paste the link and main.ts will import the view(s) on load. In
+ * a non-DOM (test) env without location, falls back to the bare hash so the
+ * encode is still exercised. Pure-ish helper shared by the single-view (F203)
+ * and whole-row (F205) share-link copiers.
+ */
+function shareLinkURL(doc: string): string {
+  const hash = sharedViewHash(doc);
+  if (typeof location === "undefined") return hash;
+  const base = `${location.origin}${location.pathname}${location.search}`;
+  return `${base}${hash}`;
+}
+
+/**
+ * F203: copy a SINGLE saved view as a shareable LINK to the clipboard — the
+ * link-grain sister of F196's copySingleView (which copies the raw JSON doc).
+ * Encodes the view's portable doc into a #view=<b64> URL so the bookmark travels
+ * in a clickable link, not just pasteable JSON; opening it imports the view
+ * (onRouteChange / boot). navigator.clipboard is guarded exactly like
+ * copySingleView — an unavailable / blocked write degrades to a status hint —
+ * so the user always gets feedback. A no-op (with a hint) when the id doesn't
+ * resolve to a live view.
+ */
+function copyShareLink(id: string): void {
+  const view = views.find((v) => v.id === id);
+  if (!view) {
+    setStatus("view not found", true);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const url = shareLinkURL(exportSingleViewDoc(view));
+  const ok = (): void => {
+    setStatus(`copied share link for “${view.name}”`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    showInfoToast(`Copied share link — “${view.name}”`, 2);
+  };
+  const hint = (): void => {
+    setStatus(`share link for “${view.name}” ready — clipboard blocked`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.writeText === "function") {
+    clip.writeText(url).then(ok, () => hint());
+  } else {
+    hint();
+  }
+}
+
+/**
+ * F203: adopt a shared-view link's payload — the inbound half of the share-link
+ * feature. When the page loads (or the hash changes) onto a #view=<b64> link,
+ * the router decodes it to the portable views doc; this previews the merge,
+ * confirms "+N", imports it (de-dup by name, fresh ids — never clobbers an
+ * existing bookmark), persists, and offers the same single-shot undo as a paste.
+ * A doc that adds nothing (all names present / not a views doc) reports a no-op
+ * without touching the row. Always clears the #view= hash afterward so a reload
+ * doesn't re-prompt the import.
+ */
+function applySharedViewDoc(doc: string): void {
+  // Strip the share hash so a reload / the post-import render doesn't re-trigger.
+  if (typeof location !== "undefined" && location.hash.startsWith("#view=")) {
+    suppressNextHashRoute = true;
+    location.hash = "";
+  }
+  const added = previewImportViews(views, doc);
+  if (added === 0) {
+    setStatus("shared link: nothing new to add", true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+    return;
+  }
+  const proceed =
+    typeof confirm === "function"
+      ? confirm(`This link shares ${added} view${added === 1 ? "" : "s"}. Add ${added === 1 ? "it" : "them"}?`)
+      : true;
+  if (!proceed) {
+    setStatus("shared link dismissed", false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const priorRow = parseViews(serializeViews(views));
+  views = importViewsDoc(views, doc);
+  saveViews();
+  render();
+  setStatus(`shared link: +${added} added`, false);
+  setTimeout(() => setStatus("ready", false), 3_000);
+  showInfoToast(
+    `Added +${added} shared view${added === 1 ? "" : "s"}`,
+    6,
+    { label: "Undo", run: () => undoPasteViews(priorRow, added) },
+  );
+}
+
+/**
  * F134: fade a chip out before removing its saved view — the shared exit helper
  * the lens unpin (F129), the cohort unpin (F133), and the chip × delete all run
  * through, so EVERY chip removal gets the same spatial "this one left"
@@ -6031,6 +6134,16 @@ function buildCommands(): Command[] {
     group: "Views",
     keywords: ["paste", "after", "insert", "position", "clipboard", "view", ...v.filter.tags],
   }));
+  // F203: a "Copy share link (<name>)" command per saved view — the link-grain
+  // sister of F196/F198's copy-view (which copies raw JSON). Encodes the view
+  // into a #view=<b64> URL so the bookmark travels in a clickable link. id
+  // shaped "share-link:<id>", routed through copyShareLink. One per view.
+  const shareLinkCommands: Command[] = views.map((v) => ({
+    id: `share-link:${v.id}`,
+    title: `Copy share link (${v.name})`,
+    group: "Views",
+    keywords: ["share", "link", "url", "copy", "send", "clipboard", "view", ...v.filter.tags],
+  }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -6248,6 +6361,9 @@ function buildCommands(): Command[] {
     // F199: per-view "Paste view(s) after (<name>)" — position-aware paste that
     // lands the merged view(s) right after this chip (sister of "Paste views").
     ...pasteAfterCommands,
+    // F203: per-view "Copy share link (<name>)" — encodes one view into a
+    // #view=<b64> URL so the bookmark travels in a clickable link.
+    ...shareLinkCommands,
   ];
 }
 
@@ -6415,6 +6531,11 @@ function runCommand(id: string): void {
   // the merged view(s) right after this chip. Same pasteViewsAfter path.
   if (id.startsWith("paste-after:")) {
     pasteViewsAfter(id.slice("paste-after:".length));
+  }
+  // F203: per-view "Copy share link (<name>)" — encode one view into a
+  // #view=<b64> URL and copy it; the link-grain sibling of copy-view.
+  if (id.startsWith("share-link:")) {
+    copyShareLink(id.slice("share-link:".length));
   }
   // F146: the "Peek view (<id>)" commands are look-don't-touch — the value is
   // the preview slot (the match-count + facet summary), shown while the command
@@ -7091,5 +7212,13 @@ if (route.kind === "view") {
     // Defer until after the first refresh so the filter applies to a painted list.
     setTimeout(() => recallView(bootViewId), 0);
   }
+}
+// F203: if the page loaded on a #view=<b64> shared LINK, adopt its view(s) once
+// the initial route is read (deferred past the first refresh so the row exists
+// to merge into). applySharedViewDoc previews + confirms + clears the hash.
+if (route.kind === "shared") {
+  const bootDoc = route.doc;
+  route = { kind: "all" };
+  setTimeout(() => applySharedViewDoc(bootDoc), 0);
 }
 refresh();

@@ -6,6 +6,7 @@ import {
   formatHash,
   tagHash,
   viewHash,
+  sharedViewHash,
   routesEqual,
   type Route,
 } from "../src/router.ts";
@@ -87,4 +88,50 @@ test("routesEqual compares kind + tag", () => {
   assert.ok(routesEqual({ kind: "view", id: "v1" }, { kind: "view", id: "v1" }));
   assert.ok(!routesEqual({ kind: "view", id: "v1" }, { kind: "view", id: "v2" }));
   assert.ok(!routesEqual({ kind: "view", id: "v1" }, { kind: "tag", tag: "v1" }));
+  // F203: shared routes compare by doc
+  assert.ok(routesEqual({ kind: "shared", doc: "x" }, { kind: "shared", doc: "x" }));
+  assert.ok(!routesEqual({ kind: "shared", doc: "x" }, { kind: "shared", doc: "y" }));
+});
+
+// F203: shared-view LINK route (#view=<base64url doc>) round-trips a portable
+// views doc through the URL hash so a bookmark travels in a link.
+test("sharedViewHash round-trips a doc through parseHash", () => {
+  const doc = JSON.stringify({ tsk: "tsk.views", v: 1, views: [{ id: "v1", name: "Work" }] });
+  const hash = sharedViewHash(doc);
+  assert.ok(hash.startsWith("#view="));
+  const r = parseHash(hash);
+  assert.equal(r.kind, "shared");
+  if (r.kind === "shared") assert.equal(r.doc, doc);
+});
+
+test("sharedViewHash uses base64url (no '/', '+', or '=' in the fragment)", () => {
+  // a doc engineered to produce '+' and '/' in standard base64 (so the URL-safe
+  // swap is actually exercised) — many bytes near 0xfb/0xff.
+  const doc = JSON.stringify({ tsk: "tsk.views", v: 1, note: "\u00ff\u00fe\u00fd\u00fc?>?>" });
+  const hash = sharedViewHash(doc);
+  const frag = hash.slice("#view=".length);
+  assert.doesNotMatch(frag, /[/+=]/);
+  // still decodes back to the exact doc
+  const r = parseHash(hash);
+  assert.equal(r.kind, "shared");
+  if (r.kind === "shared") assert.equal(r.doc, doc);
+});
+
+test("parseHash: tolerates a leading-slash shared link and unicode payload", () => {
+  const doc = JSON.stringify({ tsk: "tsk.views", v: 1, views: [{ id: "v1", name: "caf\u00e9 \u2615" }] });
+  const r = parseHash(`#/${sharedViewHash(doc).slice(1)}`);
+  assert.equal(r.kind, "shared");
+  if (r.kind === "shared") assert.equal(r.doc, doc);
+});
+
+test("parseHash: a mangled #view= blob falls back to all (never throws)", () => {
+  // an empty payload decodes to "" → all-tasks
+  assert.deepEqual(parseHash("#view="), ALL_ROUTE);
+});
+
+test("formatHash: shared route round-trips with parseHash", () => {
+  const doc = JSON.stringify({ tsk: "tsk.views", v: 1, views: [] });
+  const r: Route = { kind: "shared", doc };
+  const back = parseHash(formatHash(r));
+  assert.deepEqual(back, r);
 });
