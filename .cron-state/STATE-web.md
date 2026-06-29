@@ -3012,3 +3012,45 @@ Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after T31:
 - [ ] **F174** Panel densest ▲ keyboard echo: Alt+D from panel focus mirrors trail Alt+D.
 - [ ] **F175** Views-row summary "M done" segment: total completed across views beside tasks.
 - [ ] **F176** Saved-view group by tag: cluster the chip row by first tag for big Views rows.
+
+## Web tick T32 — 2026-06-28 21:34 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `3e1a4a0..1f080e1`.
+Canonical workdir `/Volumes/Projects/tsk`. This tick made the Views-row summary
+a full triage column: it now totals done across views, names the stale views on
+hover, expands the headline on hover, and the chip row labels its tag clusters.
+
+### Features (one commit each + bundle rebuild)
+- F175 3d937cd — describeViewsRowSummary gains a "· M done" segment + viewsRowDoneCount
+  sums the F145 done split across views; drops when zero. +6 tests.
+- F171 ccd4b2a — peekOpenOnlyTitle folds the live open count onto Peek open-only
+  command titles (mirrors F157 on plain peek). +2 tests.
+- F172 bc2872b — staleSweepTitle names the dead cohort views in the F164 sweep
+  button tooltip ("Forget: a, b") instead of the generic phrase. +3 tests.
+- F167 afb7b63 — viewsSummaryTooltip expands the terse headline on hover into a
+  busiest + stale breakdown, set as els.viewsSummary.title. +2 tests.
+- F176 08cd10f — groupViewsByTag clusters views by first tag (untagged last,
+  stable); describeViewGroups feeds the Views-chips hover tooltip at 2+ clusters. +4.
+- 1f080e1 — web_dist bundle rebuild (JS 45.07KB gz, CSS 11.29KB gz).
+
+### Gates
+- web check: 956 -> 971 tests (+15), 0 fail; tsc app+test clean; build green.
+- gofmt clean; go vet + build clean; go test ./... green.
+- live serve 127.0.0.1: GET / 200; served JS carried "Peek open-only", "Forget: ",
+  "busiest:", "views-summary-stale", "untagged:" hooks; POST toggle round-tripped
+  to .tsk.md ([x] flip + restore, hand-editable format preserved). Fixture cleaned.
+
+### Deferred / standing
+Long-carries F48, F49, F50, F54. T33 backlog (F168-F177) below.
+
+### T33 — depth (appended T32 so the loop never starves)
+Standing unstarted: F48, F49, F50, F54. Fresh follow-ons after T32:
+- [ ] **F168** Archive view (read-only completed log) -- long-pending; a dedicated done pane.
+- [ ] **F169** Recurring-task UI badge: render a "weekly" chip when a task carries recur meta.
+- [ ] **F170** Saved-view import/export (JSON) -- copy your Views row between machines.
+- [ ] **F173** Busiest-recall keyboard cmd: Cmd-K "Recall busiest" already exists; pair with a peek.
+- [ ] **F174** Panel densest jump keyboard echo: Alt+D from panel focus mirrors trail Alt+D.
+- [ ] **F177** Group-by-tag chip dividers: render a thin "#tag" label between clusters in the row.
+- [ ] **F178** Views-summary done segment clickable: recall the all-completed slice across views.
+- [ ] **F179** Stale tooltip on the count itself: F172 names; add per-name age ("dead 3d").
+- [ ] **F180** Peek-open keyboard recall: Cmd-K pair so peek-open commits with one keystroke.
