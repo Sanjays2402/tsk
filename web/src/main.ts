@@ -4238,6 +4238,39 @@ function copyShareLink(id: string): void {
 }
 
 /**
+ * F205: copy the WHOLE Views row as a single shareable LINK — the row-grain
+ * sister of F203's per-view copyShareLink (and the link form of F181's whole-row
+ * copyViews). Encodes the entire row's portable doc into one #view=<b64> URL, so
+ * a recipient adopts your full set of bookmarks by opening a single link. Routes
+ * through the SAME shareLinkURL + clipboard path as copyShareLink so the two
+ * can't diverge. A no-op (with a hint) when there are no views to share.
+ */
+function copyRowShareLink(): void {
+  if (views.length === 0) {
+    setStatus("no views to share", true);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    return;
+  }
+  const n = views.length;
+  const url = shareLinkURL(exportViewsDoc(views));
+  const ok = (): void => {
+    setStatus(`copied share link for ${n} view${n === 1 ? "" : "s"}`, false);
+    setTimeout(() => setStatus("ready", false), 2_000);
+    showInfoToast(`Copied share link — ${n} view${n === 1 ? "" : "s"}`, 2);
+  };
+  const hint = (): void => {
+    setStatus(`share link for ${n} view${n === 1 ? "" : "s"} ready — clipboard blocked`, true);
+    setTimeout(() => setStatus("ready", false), 3_000);
+  };
+  const clip = (navigator as Navigator | undefined)?.clipboard;
+  if (clip && typeof clip.writeText === "function") {
+    clip.writeText(url).then(ok, () => hint());
+  } else {
+    hint();
+  }
+}
+
+/**
  * F203: adopt a shared-view link's payload — the inbound half of the share-link
  * feature. When the page loads (or the hash changes) onto a #view=<b64> link,
  * the router decodes it to the portable views doc; this previews the merge,
@@ -6343,6 +6376,16 @@ function buildCommands(): Command[] {
       group: "Views",
       keywords: ["import", "merge", "json", "clipboard", "restore"],
     },
+    // F205: copy the WHOLE Views row as a single shareable LINK — the link form
+    // of F181's copy-views, encoding the row into a #view=<b64> URL so a teammate
+    // adopts your whole set by opening one link. Disabled with no views.
+    {
+      id: "share-link-row",
+      title: "Copy share link (all views)",
+      group: "Views",
+      keywords: ["share", "link", "url", "send", "clipboard", "all", "row", "export"],
+      disabled: views.length === 0,
+    },
     ...viewCommands,
     // F146: the per-view "Peek view (<name>)" commands sit after the recall
     // group so they're discoverable but don't crowd the recall list head.
@@ -6515,6 +6558,9 @@ function runCommand(id: string): void {
       break;
     case "paste-views":
       pasteViews();
+      break;
+    case "share-link-row":
+      copyRowShareLink();
       break;
   }
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
