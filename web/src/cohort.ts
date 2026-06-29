@@ -192,11 +192,20 @@ export function renderCohortHelp(focus: CohortFocus | null, historyDepth = 0): s
  * findCohortView. Omitted (`pinned` undefined) renders no star, keeping older
  * callers/tests byte-identical. The star sits after the walk button as a fourth
  * disjoint sibling.
+ *
+ * F162: an optional trailing "jump to densest" button (▲, data-cohort-densest)
+ * mirrors F155's trail affordance on this single-line readout, so the heaviest
+ * ancestor is one click away from BOTH cohort surfaces (the panel line + the
+ * F132 trail). main.ts passes `densestIndex` (densestCohortAncestorIndex over
+ * the live graph); a non-negative index renders the ▲ routing through the SAME
+ * data-cohort-densest hook the trail uses, so no new dispatch. Omitted / -1
+ * renders nothing, keeping count-less callers byte-identical.
  */
 export function renderCohortPanelLine(
   focus: CohortFocus | null,
   historyDepth = 0,
   pinned?: boolean,
+  densestIndex?: number,
 ): string {
   if (focus === null) return "";
   const summary = escapeHTML(cohortSummary(focus));
@@ -226,7 +235,15 @@ export function renderCohortPanelLine(
     const pinClass = pinned ? "stat-cohort-pin is-pinned" : "stat-cohort-pin";
     pin = `<button type="button" class="${pinClass}" data-cohort-pin="${focus.sourceId}" title="${escapeHTML(pinTitle)}" aria-label="${escapeHTML(pinTitle)}" aria-pressed="${pinned ? "true" : "false"}">${star}</button>`;
   }
-  return `<div class="stat-cohort-row">${back}${clear}${walk}${pin}</div>`;
+  // F162: the densest-jump button — leaps to the heaviest ancestor cohort,
+  // mirroring F155's trail ▲. Rendered only when a non-negative densestIndex is
+  // supplied; routes through the SAME data-cohort-densest hook the trail uses.
+  let densest = "";
+  if (typeof densestIndex === "number" && densestIndex >= 0) {
+    const dTitle = `Jump to the densest ancestor cohort`;
+    densest = `<button type="button" class="stat-cohort-densest" data-cohort-densest="${densestIndex}" title="${escapeHTML(dTitle)}" aria-label="${escapeHTML(dTitle)}">&#9650;</button>`;
+  }
+  return `<div class="stat-cohort-row">${back}${clear}${walk}${pin}${densest}</div>`;
 }
 
 /**

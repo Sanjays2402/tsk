@@ -530,6 +530,29 @@ test("renderCohortPanelLine pin star is the last disjoint sibling in the row", (
   assert.ok(back < clear && clear < walk && walk < pin);
 });
 
+// --- F162: panel cohort densest-jump button --------------------------------
+
+test("renderCohortPanelLine omits the densest button when no index supplied", () => {
+  const html = renderCohortPanelLine({ sourceId: 1, ids: [2] }, 0, false);
+  assert.doesNotMatch(html, /data-cohort-densest/);
+  // Byte-identical to the densest-less form.
+  assert.equal(html, renderCohortPanelLine({ sourceId: 1, ids: [2] }, 0, false, -1));
+});
+
+test("renderCohortPanelLine emits a densest-jump button at a non-negative index", () => {
+  const html = renderCohortPanelLine({ sourceId: 9, ids: [10] }, 2, false, 1);
+  assert.match(html, /data-cohort-densest="1"/);
+  assert.match(html, /&#9650;/); // ▲ glyph (entity), same as the trail's
+});
+
+test("renderCohortPanelLine densest button is the last disjoint sibling", () => {
+  const html = renderCohortPanelLine({ sourceId: 2, ids: [3] }, 1, true, 0);
+  const pin = html.indexOf("data-cohort-pin");
+  const densest = html.indexOf("data-cohort-densest");
+  assert.ok(pin >= 0 && densest >= 0);
+  assert.ok(pin < densest); // back < clear < walk < pin < densest
+});
+
 // --- F137: cohort trail keyboard navigation --------------------------------
 
 test("cohortTrailKeyTarget steps to the most-recent ancestor (one level back)", () => {
