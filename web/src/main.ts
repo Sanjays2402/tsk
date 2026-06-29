@@ -5940,6 +5940,19 @@ function buildCommands(): Command[] {
       group: "Views",
       keywords: ["recall", "open", "jump", "commit", "hide", "done", "view", ...v.filter.tags],
     }));
+  // F198: a "Copy view (<name>)" command per saved view — the keyboard sibling
+  // of F196's per-chip copy button, so a single bookmark's portable doc can be
+  // copied to the clipboard without reaching for the mouse (mirrors how F185
+  // gives the badge's recall-open action a Cmd-K entry). One per view; id shaped
+  // "copy-view:<id>", routed through the same copySingleView path the button uses
+  // so the two can't diverge. The whole-row "Copy views" / "Paste views" commands
+  // (F181/F182) stay separate — this is the single-view grain.
+  const copyViewCommands: Command[] = views.map((v) => ({
+    id: `copy-view:${v.id}`,
+    title: `Copy view (${v.name})`,
+    group: "Views",
+    keywords: ["copy", "share", "export", "clipboard", "view", "single", ...v.filter.tags],
+  }));
   return [
     { id: "add", title: "Add task", group: "Task", keywords: ["new", "create", "compose"], hint: "n" },
     {
@@ -6151,6 +6164,9 @@ function buildCommands(): Command[] {
     ...peekOpenCommands,
     // F185: per-view "Recall open-only" — keyboard commit of the open-slice jump.
     ...recallOpenKbdCommands,
+    // F198: per-view "Copy view (<name>)" — keyboard sibling of F196's per-chip
+    // copy button, copies one bookmark's portable doc to the clipboard.
+    ...copyViewCommands,
   ];
 }
 
@@ -6307,6 +6323,12 @@ function runCommand(id: string): void {
   // F25: dynamic per-view recall commands (id shaped "view:<id>").
   if (id.startsWith("view:")) {
     recallView(id.slice("view:".length));
+  }
+  // F198: per-view "Copy view (<name>)" — copy a single bookmark's portable doc
+  // to the clipboard from the keyboard, the Cmd-K sibling of F196's chip button.
+  // Same copySingleView path the button click uses, so they can't diverge.
+  if (id.startsWith("copy-view:")) {
+    copySingleView(id.slice("copy-view:".length));
   }
   // F146: the "Peek view (<id>)" commands are look-don't-touch — the value is
   // the preview slot (the match-count + facet summary), shown while the command
