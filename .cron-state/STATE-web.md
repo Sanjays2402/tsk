@@ -3094,11 +3094,50 @@ the aged stale tooltip, and a keyboard recall-open commit.
 Long-carries F48, F49, F50, F54, F168, F169, F173, F174. F186/F187 carried to T35.
 
 ### T35 — depth (appended T34 so the loop never starves)
-- [ ] **F186** Done-recall flash: brief is-flash on the task list after F178 fires.
-- [ ] **F187** Import preview: show "+N views" diff before committing importViewsDoc.
-- [ ] **F188** Copy-views toast count: confirm the exact N copied with an undo-style toast.
-- [ ] **F189** Views divider click = recall whole cluster: clicking "#work" recalls a tag filter.
-- [ ] **F190** Stale-age in chip title: show "dead 3d" on the chip itself, not just sweep tooltip.
+- [x] **F186** Done-recall flash: brief is-flash on the task list after F178 fires. (tick T35 2026-06-29, 632610a)
+- [x] **F187** Import preview: show "+N views" diff before committing importViewsDoc. (tick T35 2026-06-29, 3e1a34b)
+- [x] **F188** Copy-views toast count: confirm the exact N copied with an undo-style toast. (tick T35 2026-06-29, 632610a)
+- [x] **F189** Views divider click = recall whole cluster: clicking "#work" recalls a tag filter. (tick T35 2026-06-29, 3e1a34b)
+- [x] **F190** Stale-age in chip title: show "dead 3d" on the chip itself, not just sweep tooltip. (tick T35 2026-06-29, 3e1a34b)
 - [ ] **F191** Recall-open-kbd hint badge: surface a keyboard hint on the recall-open command rows.
 - [ ] **F192** Archive view pane (F168 long-pending) — read-only completed log surface.
 - [ ] **F193** Recurring-task chip (F169) — render "weekly" badge from recur meta.
+
+## Web tick T35 — 2026-06-29 04:53 PT
+
+Shipped 5/5 web slices on `main`, gated once, pushed clean `6bf3b01..b45d8b0`.
+Canonical workdir `/Volumes/Projects/tsk`. This tick made the Views row's
+copy/paste + cluster headings + dead-chip aging all FELT: paste previews its
+diff, copy toasts the count, the "#tag" cluster heading recalls the tag, the
+dead chip names its age, and the done-recall flashes the board.
+
+### Features (3 commits + bundle)
+- F186 632610a — pendingDoneFlash arms an is-flash one-shot on [data-content]
+  after the F178 done-recall; reflow-restart restarts the keyframe; reduced-
+  motion -> static ring. content-done-flash CSS. (in main.ts batch w/ F188/189 wiring)
+- F187 3e1a34b — previewImportViews counts genuinely-new views (de-dup mirror of
+  importViewsDoc); pasteViews confirms "Add N views?" + toast, no-ops 0-add.
+- F188 632610a — copyViews ok-path showInfoToast "Copied N views"; status kept.
+- F189 3e1a34b — renderViewDivider: a "#tag" cluster heading -> data-divider-tag
+  recall button; click setFilter({tags:[tag]}). untagged stays inert span. CSS.
+- F190 3e1a34b — chipStaleTitle + staleCohortAge opt: dead chip title reads
+  "stale 3d, recall to clear" off the F184 cohortStaleSince clock. +9 tests.
+- b45d8b0 — bundle rebuild (41 modules, JS 46.37KB gz, CSS 11.43KB gz).
+
+### Gates
+- web check: 983 -> 990 tests (+7 net, +9 views), 0 fail; tsc app+test clean; build green.
+- gofmt/vet/build clean; go test ./... green (commands 69.7s). live serve 8773 GET / 200;
+  served JS carried data-divider-tag, Copied/Pasted, stale today, recall to clear; CSS
+  carried content-done-flash + view-group-divider.is-recall; POST toggle round-tripped to .tsk.md.
+
+### Deferred / standing
+Long-carries F48, F49, F50, F54, F168, F169, F173, F174. F191-F193 carried to T36.
+
+### T36 — depth (appended T35 so the loop never starves)
+- [ ] **F191** Recall-open-kbd hint badge: surface a keyboard hint on the recall-open command rows.
+- [ ] **F192** Archive view pane (F168 long-pending) — read-only completed log surface.
+- [ ] **F193** Recurring-task chip (F169) — render "weekly" badge from recur meta.
+- [ ] **F194** Divider recall toast: clicking a "#tag" divider flashes the board (reuse F186) so the cluster jump is felt.
+- [ ] **F195** Paste-views undo: a toast Undo after F187 commit, restoring the prior row (snapshotViews/restore like the sweep).
+- [ ] **F196** Copy single view: per-chip copy of just one view's doc (sister of F181 whole-row copy).
+- [ ] **F197** Stale-age chip badge: a small "3d" suffix ON the chip face, not just title (F190 visible form).
