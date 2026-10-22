@@ -2,7 +2,7 @@
   "name": "tsk-web",
   "private": true,
   "version": "0.1.0",
-  "description": "Web UI for tsk — bundled into the Go binary via go:embed.",
+  "description": "Web UI for tsk \u2014 bundled into the Go binary via go:embed.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -16,6 +16,6 @@
   "devDependencies": {
     "@types/node": "^22.10.2",
     "typescript": "^5.6.3",
-    "vite": "^6.4.3"
+    "vite": "^6.4.4"
   }
 }
